@@ -50,7 +50,6 @@ func _ready() -> void:
 	jugador = _armar_jugador()
 	add_child(jugador)
 	jugador.quiere_interactuar.connect(_al_interactuar)
-	jugador.tecleando = interfaz.escribiendo
 	jugador.quiere_golpear.connect(_al_golpear)
 
 	_poblar_sotobosque()
@@ -58,6 +57,8 @@ func _ready() -> void:
 	interfaz = preload("res://escenas/interfaz.tscn").instantiate()
 	add_child(interfaz)
 	interfaz.conectar_api(api)
+	# Va acá y no arriba: la interfaz recién existe en esta línea.
+	jugador.tecleando = interfaz.escribiendo
 
 	_captura_si_corresponde()
 
