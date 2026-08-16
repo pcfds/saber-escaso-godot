@@ -35,6 +35,10 @@ var _arrastrando := false
 @onready var _pivote: Node3D = $Pivote
 @onready var _camara: Camera3D = $Pivote/Camara
 @onready var _malla: Node3D = $Malla
+var figura: Figura
+## Lo setea el valle: mientras devuelva true, el teclado es del chat y no
+## del personaje. Sin esto escribirle "andá" a un NPC te hace caminar.
+var tecleando := Callable()
 
 
 func _ready() -> void:
@@ -42,7 +46,13 @@ func _ready() -> void:
 	_recolocar_camara(true)
 
 
+func _tecleando() -> bool:
+	return tecleando.is_valid() and bool(tecleando.call())
+
+
 func _unhandled_input(evento: InputEvent) -> void:
+	if _tecleando() and not (evento is InputEventMouseMotion or evento is InputEventMouseButton):
+		return
 	if evento is InputEventMouseButton:
 		var e := evento as InputEventMouseButton
 		if e.button_index == MOUSE_BUTTON_RIGHT:
@@ -62,14 +72,15 @@ func _unhandled_input(evento: InputEvent) -> void:
 
 
 func _physics_process(dt: float) -> void:
+	var mudo := _tecleando()
 	if not is_on_floor():
 		velocity.y -= GRAVEDAD * dt
-	elif Input.is_action_just_pressed("saltar"):
+	elif Input.is_action_just_pressed("saltar") and not mudo:
 		velocity.y = FUERZA_SALTO
 
 	# La dirección es relativa a la cámara, aplanada al piso. Sin esto, girar
 	# la cámara invierte los controles.
-	var eje := Input.get_vector("izquierda", "derecha", "adelante", "atras")
+	var eje := Vector2.ZERO if mudo else Input.get_vector("izquierda", "derecha", "adelante", "atras")
 	var base := Basis(Vector3.UP, _yaw)
 	var dir := (base * Vector3(eje.x, 0.0, eje.y)).normalized()
 
@@ -83,6 +94,8 @@ func _physics_process(dt: float) -> void:
 		_malla.rotation.y = lerp_angle(_malla.rotation.y, objetivo, 12.0 * dt)
 
 	move_and_slide()
+	if figura != null:
+		figura.animar(dt, Vector2(velocity.x, velocity.z).length(), is_on_floor())
 	_dist = lerp(_dist, _dist_objetivo, 8.0 * dt)
 	_recolocar_camara(false)
 
@@ -102,8 +115,11 @@ func _recolocar_camara(inmediato: bool) -> void:
 	_camara.look_at(global_position + Vector3.UP * 1.1, Vector3.UP)
 
 
-## Empujón visual al pegar. Sin animaciones todavía: esto al menos da feedback.
 func amagar_golpe() -> void:
-	var t := create_tween()
-	t.tween_property(_malla, "scale", Vector3(1.15, 0.88, 1.15), 0.06)
-	t.tween_property(_malla, "scale", Vector3.ONE, 0.14)
+	if figura != null:
+		figura.atacar()
+
+
+func doler() -> void:
+	if figura != null:
+		figura.doler()

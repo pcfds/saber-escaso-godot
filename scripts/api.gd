@@ -20,15 +20,24 @@ func _ready() -> void:
 
 
 func _leer_config() -> void:
-	# 1) --token=xxx en la línea de comandos
-	for arg in OS.get_cmdline_user_args():
+	# 1) --token=xxx en la línea de comandos. Se miran LOS DOS arrays: en un
+	#    build exportado los argumentos no siempre caen del lado de
+	#    get_cmdline_user_args(), y el juego terminaba pidiendo el token con
+	#    una caja de texto que además se robaba el teclado.
+	for arg in OS.get_cmdline_user_args() + OS.get_cmdline_args():
 		if arg.begins_with("--token="):
 			token = arg.substr(8)
 		elif arg.begins_with("--url="):
 			base_url = arg.substr(6)
+	# 2) token.txt al lado del ejecutable: la forma más simple de repartirle
+	#    su personaje a cada uno sin recompilar.
+	if token == "":
+		var junto := OS.get_executable_path().get_base_dir().path_join("token.txt")
+		if FileAccess.file_exists(junto):
+			token = FileAccess.open(junto, FileAccess.READ).get_as_text().strip_edges()
 	if token != "":
 		return
-	# 2) usuario://config.json, para no tener que pasar el token cada vez
+	# 3) usuario://config.json, para no tener que pasar el token cada vez
 	if FileAccess.file_exists("user://config.json"):
 		var f := FileAccess.open("user://config.json", FileAccess.READ)
 		var j: Variant = JSON.parse_string(f.get_as_text())
@@ -46,8 +55,11 @@ func pedir_mundo() -> void:
 	_hacer_get("/j/%s/mundo" % token, func(d: Dictionary) -> void: mundo_recibido.emit(d))
 
 
-func hablar(npc: String) -> void:
-	_hacer_post("/j/%s/hablar" % token, "npc=" + npc.uri_encode(),
+func hablar(npc: String, dice: String = "") -> void:
+	var cuerpo := "npc=" + npc.uri_encode()
+	if dice.strip_edges() != "":
+		cuerpo += "&dice=" + dice.uri_encode()
+	_hacer_post("/j/%s/hablar" % token, cuerpo,
 		func(d: Dictionary) -> void: dialogo_recibido.emit(d))
 
 

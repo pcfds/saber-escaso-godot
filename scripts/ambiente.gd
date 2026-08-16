@@ -46,7 +46,7 @@ func _construir_entorno() -> Environment:
 	e.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 
 	# (3) Iluminación global. La luz rebota: la pared iluminada tiñe el piso.
-	e.sdfgi_enabled = false
+	e.sdfgi_enabled = true
 	e.sdfgi_use_occlusion = true
 	e.sdfgi_cascades = 4
 	e.sdfgi_min_cell_size = 0.2
@@ -90,7 +90,7 @@ func _construir_entorno() -> Environment:
 	e.ssao_detail = 0.5
 
 	# Reflejos en el río sin pagar raytracing.
-	e.ssr_enabled = false
+	e.ssr_enabled = true
 	e.ssr_max_steps = 48
 	e.ssr_fade_in = 0.3
 

@@ -23,7 +23,8 @@ var interfaz: CanvasLayer
 
 var _ruido := FastNoiseLite.new()
 var _npcs: Dictionary = {}
-var _cerca: Dictionary = {}   ## nombre -> Node3D, los NPCs a distancia de hablar
+var _monstruos: Array[Monstruo] = []
+var vida_jugador := 100
 
 
 func _ready() -> void:
@@ -37,6 +38,11 @@ func _ready() -> void:
 	for slug: String in LUGARES:
 		_armar_lugar(slug, LUGARES[slug])
 
+	Detalles.pasto(self, altura_en, 9000, 48.0)
+	Detalles.piedras(self, altura_en, 90, 52.0)
+	Detalles.luciernagas(self, Vector3(0, 2.5, 0), 40, 16.0)
+	Detalles.luciernagas(self, LUGARES['bosque']['pos'] + Vector3(0, 2.0, 0), 55, 13.0)
+
 	api = Api.new()
 	add_child(api)
 	api.mundo_recibido.connect(_al_recibir_mundo)
@@ -44,7 +50,10 @@ func _ready() -> void:
 	jugador = _armar_jugador()
 	add_child(jugador)
 	jugador.quiere_interactuar.connect(_al_interactuar)
+	jugador.tecleando = interfaz.escribiendo
 	jugador.quiere_golpear.connect(_al_golpear)
+
+	_poblar_sotobosque()
 
 	interfaz = preload("res://escenas/interfaz.tscn").instantiate()
 	add_child(interfaz)
@@ -228,6 +237,7 @@ func _armar_lugar(slug: String, def: Dictionary) -> void:
 		casa.mesh = caja
 		casa.position = Vector3(px, py + h / 2.0, pz)
 		casa.rotation.y = a + randf_range(-0.2, 0.2)
+		Detalles.ventanas_y_puerta(casa, 2.7, h)
 		g.add_child(casa)
 
 		var col := StaticBody3D.new()
@@ -241,6 +251,7 @@ func _armar_lugar(slug: String, def: Dictionary) -> void:
 		g.add_child(col)
 
 		if slug != "ruina":
+			Detalles.chimenea(g, Vector3(px + 0.85, py + h + 1.25, pz - 0.65), 2.7)
 			var cono := CylinderMesh.new()
 			cono.top_radius = 0.0
 			cono.bottom_radius = 2.35
@@ -372,7 +383,9 @@ func _armar_jugador() -> Jugador:
 	var malla := Node3D.new()
 	malla.name = "Malla"
 	j.add_child(malla)
-	malla.add_child(_figura(Color(0.30, 0.72, 0.62), 1.85, true))
+	var fig := _figura(Color(0.30, 0.72, 0.62), 1.85, true)
+	malla.add_child(fig)
+	j.figura = fig
 
 	var pivote := Node3D.new()
 	pivote.name = "Pivote"
@@ -384,37 +397,54 @@ func _armar_jugador() -> Jugador:
 	return j
 
 
-func _figura(color: Color, altura: float, es_jugador: bool) -> Node3D:
-	var g := Node3D.new()
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = 0.7
-	if es_jugador:
-		mat.emission_enabled = true
-		mat.emission = color
-		mat.emission_energy_multiplier = 0.35
+func _figura(color: Color, altura: float, es_jugador: bool) -> Figura:
+	var f := Figura.new()
+	f.set_script(preload('res://scripts/figura.gd'))
+	f.altura = altura
+	f.color = color
+	f.brilla = es_jugador
+	f.construir()
+	return f
 
-	var cuerpo_m := CapsuleMesh.new()
-	cuerpo_m.radius = 0.33
-	cuerpo_m.height = altura * 0.78
-	cuerpo_m.material = mat
-	var cuerpo := MeshInstance3D.new()
-	cuerpo.mesh = cuerpo_m
-	cuerpo.position.y = altura * 0.52
-	g.add_child(cuerpo)
 
-	var piel := StandardMaterial3D.new()
-	piel.albedo_color = Color(0.82, 0.70, 0.56)
-	piel.roughness = 0.85
-	var cab_m := SphereMesh.new()
-	cab_m.radius = 0.27
-	cab_m.height = 0.54
-	cab_m.material = piel
-	var cabeza := MeshInstance3D.new()
-	cabeza.mesh = cab_m
-	cabeza.position.y = altura * 0.95
-	g.add_child(cabeza)
-	return g
+## Los monstruos viven en el Sotobosque. Fuera de la aldea el valle muerde:
+## esa es la razón de que la gente se quede junta y de que salir cueste algo.
+func _poblar_sotobosque() -> void:
+	var centro: Vector3 = LUGARES['bosque']['pos']
+	for i in 5:
+		var a := TAU * i / 5.0 + randf()
+		var r := randf_range(5.0, 12.0)
+		var px := centro.x + cos(a) * r
+		var pz := centro.z + sin(a) * r
+		var m := Monstruo.new()
+		m.set_script(preload('res://scripts/monstruo.gd'))
+		add_child(m)
+		m.preparar(Vector3(px, altura_en(px, pz) + 0.6, pz), altura_en)
+		m.objetivo = jugador
+		m.pego.connect(_al_recibir_danio)
+		m.murio.connect(_al_morir_monstruo)
+		_monstruos.append(m)
+
+
+func _al_recibir_danio(danio: int) -> void:
+	vida_jugador = maxi(0, vida_jugador - danio)
+	jugador.doler()
+	interfaz.mostrar_vida(vida_jugador)
+	if vida_jugador == 0:
+		_caer_jugador()
+
+
+func _al_morir_monstruo(_quien: Monstruo) -> void:
+	_monstruos = _monstruos.filter(func(m: Monstruo) -> bool: return is_instance_valid(m))
+	interfaz.avisar('Cayó uno.')
+
+
+func _caer_jugador() -> void:
+	interfaz.avisar('Te tumbaron. No perdiste lo que sabés — eso vive en tu cabeza.')
+	await get_tree().create_timer(2.4).timeout
+	vida_jugador = 100
+	interfaz.mostrar_vida(vida_jugador)
+	jugador.position = Vector3(0, altura_en(0, 8) + 2.0, 8)
 
 
 func _al_recibir_mundo(datos: Dictionary) -> void:
@@ -493,8 +523,17 @@ func _al_interactuar() -> void:
 		api.hablar(quien)
 
 
+const ALCANCE_JUGADOR := 3.2
+const DANIO_JUGADOR := 14
+
 func _al_golpear() -> void:
 	jugador.amagar_golpe()
+	for m in _monstruos:
+		if not is_instance_valid(m):
+			continue
+		if m.global_position.distance_to(jugador.global_position) < ALCANCE_JUGADOR:
+			m.recibir(DANIO_JUGADOR)
+			break
 
 
 ## Captura de verificación: `--captura` guarda un PNG y sale. Sirve para

@@ -5,6 +5,7 @@ extends CanvasLayer
 var npc_cercano := ""
 
 var _api: Api
+var _decir: LineEdit
 var _titulo: Label
 var _sub: Label
 var _pista: Label
@@ -55,7 +56,53 @@ func _ready() -> void:
 	ayuda.add_theme_color_override("font_color", Color(0.45, 0.50, 0.48))
 	add_child(ayuda)
 
+	_armar_vida()
 	_armar_caja()
+
+
+var _vida_barra: ColorRect
+var _aviso: Label
+
+func _armar_vida() -> void:
+	var fondo := ColorRect.new()
+	fondo.color = Color(0.05, 0.07, 0.08, 0.85)
+	fondo.anchor_left = 0.5; fondo.anchor_right = 0.5
+	fondo.anchor_top = 1.0; fondo.anchor_bottom = 1.0
+	fondo.offset_left = -140; fondo.offset_right = 140
+	fondo.offset_top = -44; fondo.offset_bottom = -32
+	add_child(fondo)
+
+	_vida_barra = ColorRect.new()
+	_vida_barra.color = Color(0.44, 0.73, 0.62)
+	_vida_barra.anchor_left = 0.5; _vida_barra.anchor_right = 0.5
+	_vida_barra.anchor_top = 1.0; _vida_barra.anchor_bottom = 1.0
+	_vida_barra.offset_left = -139; _vida_barra.offset_right = 139
+	_vida_barra.offset_top = -43; _vida_barra.offset_bottom = -33
+	add_child(_vida_barra)
+
+	_aviso = Label.new()
+	_aviso.anchor_left = 0.5; _aviso.anchor_right = 0.5
+	_aviso.anchor_top = 0.5; _aviso.anchor_bottom = 0.5
+	_aviso.offset_left = -320; _aviso.offset_right = 320
+	_aviso.offset_top = -140
+	_aviso.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_aviso.add_theme_font_size_override('font_size', 20)
+	_aviso.add_theme_color_override('font_color', Color(0.90, 0.72, 0.62))
+	add_child(_aviso)
+
+
+func mostrar_vida(v: int) -> void:
+	var t := create_tween()
+	t.tween_property(_vida_barra, 'offset_right', -139.0 + 278.0 * (v / 100.0), 0.18)
+	_vida_barra.color = Color(0.44, 0.73, 0.62) if v > 50 else (Color(0.79, 0.64, 0.31) if v > 20 else Color(0.81, 0.55, 0.52))
+
+
+func avisar(texto: String) -> void:
+	_aviso.text = texto
+	_aviso.modulate.a = 1.0
+	var t := create_tween()
+	t.tween_interval(2.2)
+	t.tween_property(_aviso, 'modulate:a', 0.0, 0.8)
 
 
 func _armar_caja() -> void:
@@ -95,9 +142,24 @@ func _armar_caja() -> void:
 	_opciones.add_theme_constant_override("separation", 6)
 	col.add_child(_opciones)
 
+	# Escribirle lo que se te cante. Las opciones de abajo siguen siendo las
+	# únicas que mueven el mundo; esto es la conversación.
+	_decir = LineEdit.new()
+	_decir.placeholder_text = "decile algo…  (Enter)"
+	_decir.max_length = 300
+	_decir.text_submitted.connect(func(t: String) -> void:
+		if t.strip_edges() == "":
+			return
+		_decir.editable = false
+		_texto.text = "[color=#7d867f]…[/color]"
+		_api.hablar(npc_cercano, t))
+	col.add_child(_decir)
+
 	var cerrar := Button.new()
 	cerrar.text = "seguir"
-	cerrar.pressed.connect(func() -> void: _caja.visible = false)
+	cerrar.pressed.connect(func() -> void:
+		_caja.visible = false
+		_decir.release_focus())
 	col.add_child(cerrar)
 
 	add_child(_caja)
@@ -152,6 +214,9 @@ func _al_dialogo(d: Dictionary) -> void:
 		_opciones.add_child(b)
 
 	_caja.visible = true
+	_decir.editable = true
+	_decir.text = ""
+	_decir.grab_focus()
 	_pista.text = ""
 
 
@@ -174,6 +239,14 @@ func pedir_token() -> void:
 	caja.offset_right = 280
 	caja.offset_top = -18
 	caja.offset_bottom = 18
+	var ayuda := Label.new()
+	ayuda.text = "Pegá tu link de jugador y apretá Enter"
+	ayuda.anchor_left = 0.5; ayuda.anchor_right = 0.5
+	ayuda.anchor_top = 0.5; ayuda.anchor_bottom = 0.5
+	ayuda.offset_left = -280; ayuda.offset_right = 280; ayuda.offset_top = -56
+	ayuda.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	add_child(ayuda)
+	caja.tree_exited.connect(func() -> void: ayuda.queue_free())
 	add_child(caja)
 	caja.grab_focus()
 	caja.text_submitted.connect(func(t: String) -> void:
@@ -184,3 +257,9 @@ func pedir_token() -> void:
 		_api.guardar_config()
 		caja.queue_free()
 		_api.pedir_mundo())
+
+
+## ¿El jugador está tecleando? El jugador 3D lo consulta para no caminar
+## mientras uno escribe — sin esto, "hola" te manda a saltar y a atacar.
+func escribiendo() -> bool:
+	return _decir != null and _decir.has_focus()
