@@ -59,6 +59,7 @@ var _atlas := 4096
 
 
 func _ready() -> void:
+	_esconder_la_ventana()
 	_elegir_nivel()
 	_armar_cartel()
 	_aplicar_global()
@@ -115,6 +116,29 @@ func _elegir_nivel() -> void:
 		nivel = ALTO
 	print("[rendimiento] primera vez: %s en %s — F1 lo cambia" % [
 		NOMBRES[nivel], RenderingServer.get_video_adapter_name()])
+
+
+## Con `--captura`, la ventana se va fuera de la pantalla.
+##
+## **Esto está en código y no en una convención porque una convención no
+## alcanzó.** Godot en `--headless` no rasteriza —el shader del cielo ni se
+## compila—, así que para juzgar el look hay que abrir una ventana de verdad, y
+## bajo WSLg esa ventana aparece en el escritorio de Windows y se roba el foco.
+## Quien está jugando a otra cosa se come el salto, y pasó: *"me seguís
+## pisando"*, con una captura del juego encima de una partida.
+##
+## Hay un `mirar.sh` que ya lo hacía con `--position`, pero cualquiera que corra
+## `godot --display-driver x11 ... --captura` a mano —y son cuatro agentes en
+## paralelo— vuelve a abrir la ventana encima. Acá no hay forma de olvidarse.
+##
+## No hay Xvfb en esta máquina; el día que lo haya, esto se reemplaza por
+## `xvfb-run` y el número mágico se borra.
+func _esconder_la_ventana() -> void:
+	if not _pidieron("--captura"):
+		return
+	if DisplayServer.get_name() == "headless":
+		return
+	DisplayServer.window_set_position(Vector2i(9000, 9000))
 
 
 func _pidieron(bandera: String) -> bool:
