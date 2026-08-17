@@ -20,7 +20,11 @@ Toda mecánica nueva escribe en la base o es una demo.
 
 ```
 escenas/valle.tscn      la escena; todo lo demás lo arma valle.gd por código
-scripts/valle.gd        terreno, lugares, NPCs, monstruos, el pegamento
+scripts/valle.gd        terreno, lugares, NPCs, amenazas, otros jugadores, el pegamento
+scripts/paleta.gd       LA PALETA. Ningún script inventa un color: salen de acá
+scripts/sonido.gd       el lecho de ambiente, sintetizado al arrancar (0 bytes en disco)
+scripts/vegetacion.gd   lo que crece
+scripts/mapa.gd         el mapa de la tecla M
 scripts/jugador.gd      CharacterBody3D, cámara en órbita acotada
 scripts/figura.gd       cuerpo articulado animado con senos, sin archivos de animación
 scripts/monstruo.gd     máquina de tres estados con un momento de duda
@@ -97,17 +101,59 @@ Tres reglas que ya se aplicaron y conviene no perder:
   que mantiene viable mobile alguna vez. Los primeros planos son un modo
   aparte, no una posición libre.
 
-Y una pendiente que bloquea arte: **el piso de zoom no está decidido**
-(`DISENO.md` §16). Define si hacen falta caras modeladas. Hasta que se decida,
-no hagas nada que dependa de leer una expresión.
+### Las dos decisiones de arte. Están cerradas — no las reabras.
 
-## Lo que falta (al 17 de agosto de 2026)
+Estuvieron abiertas meses y tenían la rama de arte parada. Se cerraron el 17 de
+agosto y están en `DISENO.md` §6.
 
-- Los ojos: las figuras no tienen cara. Los monstruos sí (dos esferas emisivas).
-- Inventario en pantalla: los objetos existen en el servidor y no se ven acá —
-  y tiene que decir **quién hizo cada cosa**, que es la mitad del punto.
-- Las amenazas del servidor no se dibujan; los monstruos de la escena todavía
-  son locales y no están atados a la tabla `threats`.
-- No hay otros jugadores visibles en la escena de Godot.
-- No hay lugares para frenar: el valle es todo tránsito, no hay dónde sentarse
-  ni esperar a alguien.
+- **Piso de zoom: silueta, postura y ropa. Nunca la expresión.** O sea que **no
+  hacen falta caras modeladas ni animación facial.** Un ojo humano a 27 metros
+  mide dos píxeles: modelarlo es gastar en ruido. Todo el presupuesto va a
+  silueta, valor y color.
+- **El look es estilizado, y comprometido con serlo.** No es una concesión al
+  rendimiento ni un paso hacia algo más realista.
+
+  > **Hoy el juego no es realista ni estilizado: es indeciso, y eso es
+  > exactamente lo que se lee como Playmobil.** Playmobil no se ve mal por ser
+  > estilizado. Se ve mal por ser plástico de color plano bajo una luz que
+  > pretende ser real. Minecraft y Stardew son mucho más simples que esto y no
+  > se ven baratos, porque están comprometidos con una decisión. Lo que se lee
+  > como barato no es la simpleza: es la indecisión.
+
+  Tres consecuencias, y son las que se usan al trabajar:
+  1. **El color decide separación, no imita materiales.** Un techo no es marrón
+     porque la teja sea marrona: es el valor que necesita para separarse del
+     pasto a veinte metros. Si el color "correcto" no separa, el correcto está
+     mal. **Por eso `paleta.gd` tiene autoridad sobre el resto.**
+  2. **La silueta hace el trabajo pesado.** Es lo único que se lee a la
+     distancia a la que se juega.
+  3. **Menos geometría, no más.** Subir detalle para que se vea menos rústico
+     es el camino equivocado.
+
+  Vale para las cuatro ramas de arte —paleta, vegetación, arquitectura,
+  cuerpos— y **las cuatro usan el mismo criterio o se rompe.**
+
+## Lo que falta (al 17 de agosto de 2026, tarde)
+
+> Este bloque estuvo desactualizado varios días y mandó a más de un agente a
+> rehacer algo que ya existía. **Si arreglás algo de acá, borralo de acá.**
+
+- **Interiores.** Las casas tienen una puerta dibujada y no se abre ninguna:
+  *"no hay puertas para entrar"*.
+- **Los NPCs están clavados en un punto.** Es el pedido más repetido después de
+  "le falta la vida". Que caminen dentro de su lugar es barato y no depende del
+  servidor — ojo: eso es animación de presencia, no estado. El NPC sigue estando
+  *en la fragua* para el mundo.
+- **La paleta existe y todavía no la usa nadie.** `paleta.gd` está escrito con
+  los 95 literales mapeados, y los nueve scripts siguen con sus colores a mano.
+  Hasta que se migren, de a un archivo por vez, el valle se ve igual.
+- **No hay lugares para frenar:** el valle es todo tránsito, no hay dónde
+  sentarse ni esperar a alguien.
+- **El bicho no dice quién es.** En la base hay amenazas con nombre propio y
+  pueblo —"Kerrak el que quedó", de "Los del Sotobosque"— y en pantalla son
+  bichos genéricos. El dato ya viaja en `/mundo`.
+
+**Ya está hecho, no lo rehagas:** los ojos y la ropa por oficio en las figuras;
+el inventario en pantalla con quién hizo cada cosa; las amenazas dibujadas
+desde la tabla `threats`; los otros jugadores visibles; la vida del jugador
+mandada por el servidor.

@@ -26,6 +26,14 @@ const LUGARES := {
 
 const RADIO_VALLE := 165.0
 
+## El color de la gente de carne y hueso: vos y los otros jugadores. Estaba
+## suelto como literal en el cuerpo del jugador; ahora tiene nombre porque lo
+## comparten dos lados y esa coincidencia **es la señal**, no una casualidad.
+## Un habitante del valle es gris (ver los NPC más abajo); alguien que está del
+## otro lado de una pantalla tiene tu color y tu altura.
+const COLOR_JUGADOR := Color(0.30, 0.72, 0.62)
+const ALTURA_JUGADOR := 1.85
+
 ## Distancias para decidir en qué lugar estás. SALIR es más grande que ENTRAR
 ## a propósito — ver la histéresis en _avisar_donde_estoy().
 const ENTRAR := 30.0
@@ -37,8 +45,29 @@ var interfaz: CanvasLayer
 
 var _ruido := FastNoiseLite.new()
 var _npcs: Dictionary = {}
+## Dónde quedó cada casa de cada lugar, en coordenadas del mundo: slug ->
+## Array[Vector2]. Lo llena `_armar_lugar()` mientras las construye, y lo lee la
+## ronda de la gente para no meterse adentro de ninguna. Se anota acá en vez de
+## recorrer el árbol buscando colisionadores porque el dato ya lo tenemos en la
+## mano en el momento exacto en que existe.
+var _casas: Dictionary = {}
+## La ronda de cada persona, cacheada por nombre. Se calcula una sola vez: sale
+## del hash del nombre, así que recalcularla daría siempre lo mismo.
+var _rondas: Dictionary = {}
+## El reloj con el que anda la gente. Ver `_reloj_del_valle()`.
+var _reloj_ronda := -1.0
+## Los otros jugadores que están en el valle ahora mismo: nombre -> Node3D.
+## Va aparte de `_npcs` a propósito — con un NPC se habla (E manda /hablar) y
+## con una persona todavía no hay nada que el servidor sepa resolver. Meterlos
+## en la misma bolsa te dejaría apretando E contra alguien y mandando un
+## /hablar que vuelve vacío.
+var _jugadores: Dictionary = {}
+## Cómo te llama el servidor a vos. Sólo para no dibujarte dos veces.
+var _mi_nombre := ""
 var _monstruos: Array[Monstruo] = []
 var ciclo: Ciclo
+var vegetacion: Vegetacion
+var sonido: Sonido
 var _lugar_actual := ""
 var _monstruos_por_id: Dictionary = {}
 ## Cómo te trata cada uno al pasar. Lo manda el servidor con /mundo.
@@ -77,6 +106,13 @@ func _ready() -> void:
 	for slug: String in LUGARES:
 		_armar_lugar(slug, LUGARES[slug])
 
+	# La vegetación de verdad, a la escala del valle. Antes eran 46 árboles
+	# apretados en 13 metros de un mapa de 360: el problema nunca fue que
+	# faltaran árboles, fue que nunca escalaron cuando el mapa creció 2,7×.
+	vegetacion = Vegetacion.new()
+	add_child(vegetacion)
+	vegetacion.poblar(altura_en, LUGARES)
+
 	Detalles.pasto(self, altura_en, 26000, 130.0)
 	Detalles.piedras(self, altura_en, 320, 145.0)
 	var bichos: Array[GPUParticles3D] = [
@@ -110,8 +146,32 @@ func _ready() -> void:
 	mapa.jugador = jugador
 	interfaz.add_child(mapa)
 
+	# El lecho de ambiente. Va último a propósito: un error acá no puede
+	# llevarse puesto nada de lo de arriba, y en este archivo ya pasó una vez
+	# que un error en `_ready()` abortó la función entera y el juego arrancó
+	# sin HUD y sin API.
+	#
+	# Se sintetiza al arrancar: cero bytes en disco y cero en la descarga. Los
+	# buses de audio se crean en tiempo de ejecución, así que no hay nada que
+	# registrar en `project.godot`.
+	var sonido := Sonido.new()
+	add_child(sonido)
+	sonido.ciclo = ciclo
+	sonido.oyente = jugador
+	sonido.preparar(LUGARES)
+
+	# El valle suena. Va acá y no antes porque necesita el ciclo para saber la
+	# hora: el lecho de ambiente cambia con el lugar Y con el momento del día.
+	sonido = Sonido.new()
+	sonido.ciclo = ciclo
+	add_child(sonido)
+	sonido.preparar(LUGARES)
+	if jugador != null:
+		sonido.oyente = jugador
+
 	_refrescar_cada_tanto()
 	_captura_si_corresponde()
+	_ANDAMIO_ronda()
 
 	if api.token == "":
 		interfaz.pedir_token()
@@ -288,6 +348,8 @@ func _armar_lugar(slug: String, def: Dictionary) -> void:
 	techo_mat.roughness = 0.95
 
 	var n: int = def["casas"]
+	var huellas: Array[Vector2] = []
+	_casas[slug] = huellas
 	for i in n:
 		var a := TAU * i / float(n) + 0.4
 		var r := 5.0 if n > 3 else 2.6
@@ -295,6 +357,8 @@ func _armar_lugar(slug: String, def: Dictionary) -> void:
 		var px := cos(a) * r
 		var pz := sin(a) * r
 		var py := altura_en(base.x + px, base.z + pz) - base.y
+		# Para la ronda de la gente: acá hay una casa y no se atraviesa.
+		huellas.append(Vector2(base.x + px, base.z + pz))
 
 		var caja := BoxMesh.new()
 		caja.size = Vector3(2.7, h, 2.5)
@@ -449,7 +513,7 @@ func _armar_jugador() -> Jugador:
 	var malla := Node3D.new()
 	malla.name = "Malla"
 	j.add_child(malla)
-	var fig := _figura(Color(0.30, 0.72, 0.62), 1.85, true)
+	var fig := _figura(COLOR_JUGADOR, ALTURA_JUGADOR, true)
 	malla.add_child(fig)
 	j.figura = fig
 
@@ -533,6 +597,581 @@ func _sincronizar_amenazas(amenazas: Array) -> void:
 		_monstruos_por_id.erase(id)
 		if is_instance_valid(viejo_m) and viejo_m.vida > 0:
 			viejo_m.recibir(9999)   # que caiga en pantalla, no que desaparezca
+
+
+## La otra gente. No los NPC: **las otras personas conectadas al mismo valle.**
+##
+## Hasta acá dos jugadores en el mismo lugar no se veían: no era multijugador,
+## era gente compartiendo una base de datos. El servidor manda en /mundo una
+## lista `jugadores` con `name`, `place_slug`, `health` y `caido`, ya sin vos y
+## ya filtrada por presencia (90 segundos con reloj de pared, del lado del
+## servidor). Acá no se vuelve a filtrar nada: si está en la lista, está.
+##
+## Lo que NO se hace, y es la mitad del trabajo:
+##  - **No hay interpolación ni predicción.** El servidor da LUGARES, no
+##    coordenadas: alguien está "en la fragua", no en un punto. Deslizarlo de
+##    la fragua a la ruina sería dibujar un viaje que el mundo no conoce.
+##    Aparece en el lugar nuevo, que es lo honesto con el dato que hay.
+##  - **No quedan fantasmas.** El que no vino en la lista se fue del valle o
+##    dejó de dar señales; se lo saca de la escena aunque quedara lindo.
+func _sincronizar_jugadores(jugadores: Array) -> void:
+	var vistos := {}
+	for j in jugadores:
+		var d: Dictionary = j
+		var nombre := str(d.get("name", ""))
+		if nombre == "" or nombre == _mi_nombre:
+			# El servidor ya te saca de la lista. El corte igual va: si algún
+			# día cambiara, verte a vos mismo parado en la aldea mientras
+			# caminás es mucho peor que una rama de más.
+			continue
+		var slug := str(d.get("place_slug", ""))
+		if not LUGARES.has(slug):
+			# Puede venir "" cuando el servidor no pudo resolver el lugar. Sin
+			# lugar no hay dónde pararlo, y elegir uno sería inventarlo.
+			continue
+		vistos[nombre] = true
+
+		var nodo: Node3D = _jugadores.get(nombre)
+		var recien := nodo == null or not is_instance_valid(nodo)
+		if recien:
+			nodo = _armar_otro_jugador(nombre)
+			add_child(nodo)
+			_jugadores[nombre] = nodo
+
+		# Se reescribe la posición en cada poll y no sólo al crearlo: es el
+		# único momento en que nos enteramos de que se mudó de lugar.
+		nodo.position = _punto_de(nombre, slug)
+		nodo.set_meta("vida", int(d.get("health", 100)))
+		_tumbar_a(nodo, bool(d.get("caido", false)), recien)
+
+	for nombre: String in _jugadores.keys():
+		if vistos.has(nombre):
+			continue
+		var viejo: Node3D = _jugadores[nombre]
+		_jugadores.erase(nombre)
+		if is_instance_valid(viejo):
+			viejo.queue_free()
+
+
+## Dónde se para alguien dentro de su lugar.
+##
+## Sale del NOMBRE, nunca de `randf()`, por el mismo motivo que la posición de
+## las amenazas sale del id: es lo que hace que la misma persona esté en el
+## mismo punto en la pantalla de todos. Si cada máquina tirara sus dados,
+## señalar "está ahí" no querría decir nada y dejó de ser el mismo mundo.
+##
+## El hash es el de `Figura` —FNV-1a a mano— y no `String.hash()`: el de Godot
+## no promete el mismo número entre versiones del motor, y acá "el mismo número
+## siempre" ES el requisito. De paso es el mismo hash del que ya salen la
+## altura, la piel y la ropa de esa persona: una sola identidad, no dos.
+##
+## El anillo va de 7,5 a 12 m del centro: afuera de los NPC (6,5 m) y de las
+## casas, adentro del radio con el que el lugar se considera "acá" (30 m).
+func _punto_de(nombre: String, slug: String) -> Vector3:
+	var centro: Vector3 = LUGARES[slug]['pos']
+	var h := Figura._hash32(nombre)
+	var ang := float(h % 997) / 997.0 * TAU
+	var rad := 7.5 + float((h / 997) % 450) / 100.0
+	var px := centro.x + cos(ang) * rad
+	var pz := centro.z + sin(ang) * rad
+	return Vector3(px, altura_en(px, pz), pz)
+
+
+## El cuerpo de otro jugador.
+##
+## Que se lea que **no es un habitante del valle** se resuelve con tres cosas
+## que ya existen y que se leen desde 27 m, que es donde está la cámara:
+##  1. Tu color y tu altura (1,85 contra 1,72 de los NPC). Es literalmente el
+##     mismo cuerpo que estás manejando vos.
+##  2. `brilla`: la ropa emite apenas, como la tuya. De noche, un jugador
+##     lejano es una lucecita y un NPC no. No pisa la firma del monstruo, que
+##     son los ojos naranjas, no la ropa.
+##  3. Sin oficio. Los oficios de `figura.gd` visten a los que viven acá
+##     —delantal de herrera, capucha de cazadora, hombreras de guardia— y el
+##     servidor no le da oficio a un jugador. Ponerle uno sería inventarlo, así
+##     que se queda con el cinturón, que es el default. Nadie de afuera lleva
+##     el uniforme de un oficio del valle.
+func _armar_otro_jugador(nombre: String) -> Node3D:
+	var nodo := Node3D.new()
+	nodo.name = "jugador_" + nombre.validate_node_name()
+	# Van ANTES de colgar la figura: su `_ready()` las lee del padre para
+	# sacarse el cuerpo del hash del nombre, y ya corrió si la agregamos antes.
+	nodo.set_meta("nombre", nombre)
+	nodo.set_meta("oficio", "")
+
+	var fig := _figura(COLOR_JUGADOR, ALTURA_JUGADOR, true)
+	fig.name = "Cuerpo"
+	nodo.add_child(fig)
+	# El nombre en el color de la gente: dos carteles distintos a la misma
+	# distancia dicen "esa es una persona y ese es un vecino" sin leerlos.
+	nodo.add_child(_cartel(nombre, COLOR_JUGADOR.lightened(0.45)))
+	return nodo
+
+
+## Alguien con la vida en cero se dibuja **tumbado, no invisible**. Que haya un
+## cuerpo en el piso de la ruina es información sobre la ruina: ahí pasó algo,
+## y probablemente sigue pasando. Esconderlo borraría un hecho del mundo.
+##
+## Se inclina el cuerpo y NO se llama a `figura.caer()`, igual que con tu
+## propia caída: ese apaga la animación para siempre y de esta caída se vuelve
+## —el otro aprieta levantarse y el /mundo siguiente lo trae de pie—. Sigue
+## respirando y parpadeando tirado, que es lo correcto: está caído, no muerto.
+##
+## El cartel no se inclina, se baja: queda flotando sobre el cuerpo en vez de
+## dos metros y medio arriba de un bulto anónimo.
+func _tumbar_a(nodo: Node3D, si: bool, instantaneo: bool) -> void:
+	if not instantaneo and bool(nodo.get_meta("caido", false)) == si:
+		return          # ya está como corresponde; no re-tweenear cada 12 s
+	nodo.set_meta("caido", si)
+	var cuerpo := nodo.get_node_or_null("Cuerpo") as Node3D
+	var cartel := nodo.get_node_or_null("Cartel") as Node3D
+	if cuerpo == null:
+		return
+	var giro := (-PI / 2.0 + 0.15) if si else 0.0
+	var hundir := -0.3 if si else 0.0
+	var alto_cartel := ALTO_CARTEL_CAIDO if si else ALTO_CARTEL
+	if instantaneo:
+		# Recién aparece: si ya estaba en el piso, ya estaba. Tweenearlo sería
+		# contar una caída que pasó cuando no estábamos mirando.
+		cuerpo.rotation.x = giro
+		cuerpo.position.y = hundir
+		if cartel != null:
+			cartel.position.y = alto_cartel
+		return
+	# El tween se crea desde el nodo del jugador para que muera con él: si se
+	# va del valle mientras cae, no queda un tween apuntando a un nodo liberado.
+	var t := nodo.create_tween().set_parallel(true)
+	t.tween_property(cuerpo, "rotation:x", giro, 0.45) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN if si else Tween.EASE_OUT)
+	t.tween_property(cuerpo, "position:y", hundir, 0.45)
+	if cartel != null:
+		t.tween_property(cartel, "position:y", alto_cartel, 0.45)
+
+
+# ---------------------------------------------------------------------------
+# La gente del valle, y su ronda
+# ---------------------------------------------------------------------------
+#
+# **Esto es animación de presencia, no estado.** Para el mundo, Ilde está EN LA
+# FRAGUA: el servidor manda lugares, no coordenadas, y eso no se toca acá. Lo
+# único que cambia es que adentro de su lugar no está congelada. Nadie camina
+# de un lugar a otro por su cuenta —eso sería inventar un viaje que el mundo no
+# conoce, que es exactamente el error que ya se cometió con los monstruos— y
+# esta pasada entera no manda un solo request nuevo.
+#
+# Cuando el /mundo dice que alguien se mudó, se mueve de lugar y se acabó: la
+# ronda se vuelve a plantar alrededor del anclaje nuevo, sin deslizarse.
+
+## El anillo donde se para la gente del lugar. Los otros jugadores van de 7,5 a
+## 12 m (ver `_punto_de`) y las casas de la aldea están a 5 m: 6,5 es el hueco.
+const ANILLO_GENTE := 6.5
+## Cuánto ocupa una casa. La caja mide 2,7 × 2,5, o sea 1,84 m de semidiagonal;
+## el resto es el cuerpo de la persona más un margen para no rozar la pared.
+const CASA_RADIO := 2.3
+## Hasta dónde puede llegar alguien haciendo su ronda, medido desde el centro
+## del lugar. **Los dos números de arriba están elegidos para que este límite
+## alcance:** una casa de la aldea está a 5,0 m y empuja hasta 5,0 + 2,3 = 7,3,
+## que es justo esto, y esto es justo lo que queda por debajo del 7,5 donde
+## empiezan a pararse los otros jugadores. Nadie se mete en una casa, nadie se
+## va de su lugar y nadie se le sube a nadie.
+const RONDA_LIMITE := 7.3
+
+## La forma de una ronda. Todo esto sale del nombre y NADA de la máquina.
+const RONDA_TANGENTE := 1.9    ## cuánto se corre a lo largo del anillo
+const RONDA_ADENTRO := 1.6     ## cuánto se mete hacia el centro del lugar
+const RONDA_AFUERA := 0.85     ## y cuánto se aleja (poco: ahí está el límite)
+const RONDA_MIRADA := 1.0      ## desvío máximo, en radianes, de mirar al centro
+const RONDA_PASO := 0.95       ## m/s. Paso de andar por su lugar, no de ir a algún lado.
+const RONDA_QUIETO_MIN := 1.8  ## segundos parado en una parada
+const RONDA_QUIETO_MAX := 7.0
+## Un salto más grande que esto no es caminar, es cambiarse de lugar: no se le
+## anima una zancada ni se le gira el cuerpo, se lo planta y listo.
+const RONDA_SALTO := 1.5
+
+## Los períodos posibles de una ronda, en segundos.
+##
+## **Todos dividen a `Ciclo.DIA_REAL` (21600 s).** No es cosmético: la posición
+## sale de `fposmod(hora_del_valle, período)`, y si el período divide al día
+## entonces ese resto no depende de en qué día del valle estemos. O sea que
+## cuando el día cambia no hay ningún salto, y tampoco importa que el número de
+## día llegue con doce segundos de atraso respecto de la hora.
+const RONDA_PERIODOS: Array[int] = [18, 20, 24, 27, 30, 32, 36, 40, 45, 48, 54, 60, 72, 75, 80, 90]
+
+## A cuánto empieza a importarle a alguien que llegaste.
+const RECELO := 9.0
+## Y cuánto se corre el que te tiene miedo. Medio paso: es un respingo, no una
+## huida — huir sería irse del lugar, y de eso decide el servidor.
+const RECELO_PASO := 0.9
+
+
+## Los NPC.
+##
+## Antes se borraban y se rehacían enteros en cada /mundo: siete cuerpos
+## articulados de quince mallas cada uno, cada doce segundos. Mientras estaban
+## parados no se notaba. Con la ronda sí — rehacerlos les borra la fase de la
+## caminata, el desfase del parpadeo y el de la respiración, y cada refresco se
+## veía como un tirón colectivo. Ahora se sincronizan como los otros jugadores
+## y como las amenazas: se crea el que llegó, se re-ancla el que se mudó, se
+## saca el que ya no está. De paso el /mundo pasa a costar casi nada.
+func _sincronizar_gente(gente: Array, lugares: Array) -> void:
+	var slug_por_id := {}
+	for p in lugares:
+		var lp: Dictionary = p
+		slug_por_id[str(lp.get("id", ""))] = str(lp.get("slug", ""))
+
+	var por_lugar := {}
+	for p in gente:
+		var d: Dictionary = p
+		var slug: String = slug_por_id.get(str(d.get("place_id", "")), "")
+		if not LUGARES.has(slug):
+			continue          # un lugar que este cliente todavía no dibuja
+		if not por_lugar.has(slug):
+			por_lugar[slug] = []
+		por_lugar[slug].append(d)
+
+	var yo := Vector2.ZERO
+	if jugador != null:
+		yo = Vector2(jugador.global_position.x, jugador.global_position.z)
+
+	var vistos := {}
+	for slug: String in por_lugar:
+		var lista: Array = por_lugar[slug]
+		var centro: Vector3 = LUGARES[slug]["pos"]
+		for i in lista.size():
+			var persona: Dictionary = lista[i]
+			var nombre := str(persona.get("name", "?"))
+			vistos[nombre] = true
+
+			# El anclaje sale del ÍNDICE dentro del lugar y no del nombre, igual
+			# que antes: es lo que reparte a la gente en el anillo sin que dos
+			# caigan encima. El orden lo manda el servidor, así que el anillo
+			# sale igual en todas las pantallas.
+			var a := TAU * i / maxf(lista.size(), 3.0) + 0.7
+
+			var nodo: Node3D = _npcs.get(nombre)
+			var recien: bool = nodo == null or not is_instance_valid(nodo)
+			if recien:
+				nodo = _armar_vecino(nombre, str(persona.get("trade", "")))
+				add_child(nodo)
+				_npcs[nombre] = nodo
+			nodo.set_meta("lugar", slug)
+			nodo.set_meta("angulo", a)
+			nodo.set_meta("ancla", Vector2(
+				centro.x + cos(a) * ANILLO_GENTE, centro.z + sin(a) * ANILLO_GENTE))
+			if recien:
+				# Que aparezca ya en el punto que le toca de su ronda, sin la
+				# zancada de llegar desde el origen del mundo.
+				_ubicar_vecino(nombre, nodo, _reloj_del_valle(), 0.0, yo)
+
+	for nombre: String in _npcs.keys():
+		if vistos.has(nombre):
+			continue
+		var viejo: Node3D = _npcs[nombre]
+		_npcs.erase(nombre)
+		_rondas.erase(nombre)
+		if is_instance_valid(viejo):
+			viejo.queue_free()
+
+
+func _armar_vecino(nombre: String, oficio: String) -> Node3D:
+	var nodo := Node3D.new()
+	nodo.name = "vecino_" + nombre.validate_node_name()
+	# Van ANTES de colgar la figura: su `_ready()` las lee del padre para
+	# sacarse el cuerpo del hash del nombre.
+	nodo.set_meta("nombre", nombre)
+	nodo.set_meta("oficio", oficio)
+	var fig := _figura(Color(0.56, 0.60, 0.64), 1.72, false)
+	fig.name = "Cuerpo"
+	nodo.add_child(fig)
+	nodo.add_child(_cartel(nombre))
+	return nodo
+
+
+## El reloj con el que anda la gente.
+##
+## Arranca del reloj del VALLE —el que manda el servidor, el mismo que mueve el
+## sol— y no del de esta máquina: si cada uno usara el suyo, Ilde estaría en un
+## punto distinto de su ronda en cada pantalla y "está martillando" dejaría de
+## ser un hecho del mundo.
+##
+## De ahí en más avanza solo, sumando el tiempo de cada cuadro. No se re-lee el
+## del servidor en cada /mundo a propósito: la corrección sería de unas décimas
+## —lo que tardó el pedido en volver— pero se vería como un tirón de medio
+## metro en toda la gente del valle cada doce segundos. Un reloj que arranca
+## bien y corre solo se aparta unos milisegundos por hora, que es exactamente
+## nada al lado de eso.
+func _reloj_del_valle() -> float:
+	if _reloj_ronda < 0.0:
+		_reloj_ronda = (ciclo.fraccion() * Ciclo.DIA_REAL) if ciclo != null else 0.0
+	return _reloj_ronda
+
+
+## Mueve a toda la gente del valle. Se llama una vez por cuadro.
+##
+## Cuesta lo que cuesta recorrer siete nodos: una consulta a la tabla de la
+## ronda (cinco tramos como mucho), un empujón fuera de las casas y las diez
+## rotaciones que ya escribía `Figura.animar()` para el jugador y los bichos.
+## Sin asignar memoria: la ronda está cacheada y la consulta devuelve un
+## Vector3, no un diccionario.
+func _mover_gente(dt: float) -> void:
+	if _npcs.is_empty() or jugador == null:
+		return
+	_reloj_ronda = _reloj_del_valle() + dt
+	var yo := Vector2(jugador.global_position.x, jugador.global_position.z)
+	for nombre: String in _npcs:
+		var nodo: Node3D = _npcs[nombre]
+		if is_instance_valid(nodo):
+			_ubicar_vecino(nombre, nodo, _reloj_ronda, dt, yo)
+
+
+## Dónde va una persona en este cuadro. `dt <= 0` la planta sin animarla.
+func _ubicar_vecino(nombre: String, nodo: Node3D, t: float, dt: float, yo: Vector2) -> void:
+	var slug := str(nodo.get_meta("lugar", ""))
+	if not LUGARES.has(slug):
+		return
+	var centro3: Vector3 = LUGARES[slug]["pos"]
+	var centro := Vector2(centro3.x, centro3.z)
+	var ancla: Vector2 = nodo.get_meta("ancla", centro)
+	var angulo: float = nodo.get_meta("angulo", 0.0)
+
+	# El marco de la ronda: "afuera" apunta del centro del lugar hacia el
+	# anclaje, "tangente" corre a lo largo del anillo. Que la ronda se mida así
+	# y no en X/Z del mundo es lo que hace que andar de un lado a otro mantenga
+	# la distancia al centro — o sea, que se pasee POR su lugar, alrededor de la
+	# fragua, y no en diagonal hacia adentro del fuego.
+	var afuera := Vector2(cos(angulo), sin(angulo))
+	var tangente := Vector2(-afuera.y, afuera.x)
+	var r := _ronda_punto(nombre, t)
+	var p := ancla + tangente * r.x + afuera * r.y
+	# Parado, mira hacia el centro de su lugar con el desvío que le tocó. Es lo
+	# que hace que un corro de gente se lea como gente ocupada en algo y no como
+	# figuras mirando al vacío cada una para su lado.
+	var rumbo := atan2(centro.x - p.x, centro.y - p.y) + r.z
+
+	# Cómo te trata al llegar. Sale del `animo` que YA viaja en /mundo con el
+	# saludo, no de un dato nuevo: el que te teme se corre medio paso y te da la
+	# espalda, el que te aprecia se da vuelta a mirarte. Es lo único de acá que
+	# depende de dónde estás vos, y tiene que serlo — es una reacción a vos.
+	var animo := str((_actitudes.get(nombre, {}) as Dictionary).get("animo", "neutral"))
+	if animo == "hostil" or animo == "calido":
+		var hacia_vos := yo - p
+		var d := hacia_vos.length()
+		if d > 0.05 and d < RECELO:
+			var cerca := 1.0 - d / RECELO
+			hacia_vos /= d
+			if animo == "hostil":
+				p -= hacia_vos * cerca * RECELO_PASO
+				if cerca > 0.15:
+					rumbo = atan2(-hacia_vos.x, -hacia_vos.y)
+			elif cerca > 0.15:
+				rumbo = atan2(hacia_vos.x, hacia_vos.y)
+
+	# Los dos límites, en este orden: primero no salirse del lugar, después no
+	# estar adentro de una casa. Al revés, el recorte por el lugar podría volver
+	# a meter a alguien contra una pared.
+	var fuera := p - centro
+	if fuera.length() > RONDA_LIMITE:
+		p = centro + fuera.normalized() * RONDA_LIMITE
+	p = _afuera_de_casas(slug, p)
+
+	var antes := Vector2(nodo.position.x, nodo.position.z)
+	var tramo := p.distance_to(antes)
+	var planta: bool = dt <= 0.0 or tramo > RONDA_SALTO
+	nodo.position = Vector3(p.x, altura_en(p.x, p.y), p.y)
+
+	var cuerpo := nodo.get_node_or_null(^"Cuerpo") as Figura
+	if cuerpo == null:
+		return
+	# La velocidad sale del desplazamiento REAL y no de la fórmula: así los
+	# rodeos que le hace dar una casa mueven las piernas igual que el tramo
+	# recto, y frenar contra el límite del lugar frena también la caminata.
+	var vel := 0.0 if planta else tramo / dt
+	if vel > 0.15:
+		rumbo = atan2(p.x - antes.x, p.y - antes.y)
+	if planta:
+		cuerpo.rotation.y = rumbo
+	else:
+		# Girar lleva su tiempo. Es la mitad de que se lea como una persona
+		# decidiendo y no como un cartel rotando: 3,5 rad/s son unos 200 ms para
+		# darse vuelta del todo.
+		cuerpo.rotation.y = lerp_angle(cuerpo.rotation.y, rumbo, minf(1.0, 3.5 * dt))
+		# El único lugar donde el nivel de calidad puede meterse: la ronda misma
+		# NO puede depender de él —es la identidad de la persona y tiene que dar
+		# igual en las tres máquinas— pero dibujar la zancada de alguien que está
+		# a cien metros sí es opcional. A 90 m un paso mide cinco píxeles, y ahí
+		# ya está detrás del desenfoque de lejanía y de la niebla.
+		if p.distance_squared_to(yo) < _ANIMAR_HASTA[Rendimiento.nivel]:
+			cuerpo.animar(dt, vel, true)
+
+
+## Hasta dónde se le anima la caminata a alguien, al cuadrado (bajo/medio/alto).
+const _ANIMAR_HASTA: Array[float] = [3600.0, 6400.0, 12100.0]
+
+
+## Empuja un punto fuera de la huella de las casas del lugar.
+##
+## Es lo que deja calcular la ronda libre y sin caminos: la trayectoria pasa
+## por donde quiera y acá se la desvía, así que rodear una casa sale solo. Y
+## como la velocidad se mide del desplazamiento real, el rodeo se camina.
+func _afuera_de_casas(slug: String, p: Vector2) -> Vector2:
+	for c: Vector2 in _casas.get(slug, []):
+		var d := p - c
+		var l := d.length()
+		if l < CASA_RADIO:
+			# Justo en el centro de la casa no hay hacia dónde empujar; cualquier
+			# dirección sirve y esto no pasa nunca, pero dividir por cero sí.
+			d = Vector2(0.0, 1.0) if l < 0.001 else d / l
+			p = c + d * CASA_RADIO
+	return p
+
+
+# ---------------------------------------------------------------------------
+# La ronda: una vuelta de paradas, sacada del nombre
+# ---------------------------------------------------------------------------
+#
+# Lo que separa esto de "los maniquíes ahora vibran" es una sola idea: **el
+# tiempo quieto es parte del movimiento.** Alguien que camina en círculos sin
+# parar se lee peor que alguien clavado — se lee como un objeto en un carrusel.
+# Alguien que va a un punto, se queda ahí un rato largo dando media vuelta, y
+# después va a otro, se lee como alguien haciendo algo. Por eso la ronda son
+# PARADAS con su tiempo de estar quieto, y la caminata es el rato corto que hay
+# entre dos: unas tres cuartas partes de la vuelta las pasa parada.
+#
+# Y todo sale del nombre, con el mismo hash del que ya salen su altura, su piel
+# y su ropa: cuántas paradas tiene, dónde están, cuánto se queda en cada una,
+# hacia dónde mira, y cuánto dura la vuelta entera. Una sola identidad, no dos.
+
+## La ronda de una persona, cacheada. Devuelve las paradas en el marco de la
+## ronda (tangente, radial), el desvío de la mirada en cada una, y la tabla de
+## cortes: el tramo par 2k es el camino hasta la parada k y el impar 2k+1 es el
+## rato que se queda ahí.
+func _ronda(nombre: String) -> Dictionary:
+	if _rondas.has(nombre):
+		return _rondas[nombre]
+
+	var cuantas := 3 + int(_dado(nombre, "ronda_n") * 3.0)   # 3, 4 o 5 paradas
+	var paradas := PackedVector2Array()
+	var mirada := PackedFloat32Array()
+	var quieto := PackedFloat32Array()
+	for k in cuantas:
+		var c := "ronda%d" % k
+		paradas.append(Vector2(
+			(_dado(nombre, c + "t") - 0.5) * 2.0 * RONDA_TANGENTE,
+			_dado(nombre, c + "r") * (RONDA_ADENTRO + RONDA_AFUERA) - RONDA_ADENTRO))
+		mirada.append((_dado(nombre, c + "m") - 0.5) * 2.0 * RONDA_MIRADA)
+		quieto.append(RONDA_QUIETO_MIN
+			+ _dado(nombre, c + "q") * (RONDA_QUIETO_MAX - RONDA_QUIETO_MIN))
+
+	# Cuánto duraría la vuelta caminando a paso de andar por su lugar.
+	var andar := PackedFloat32Array()
+	var crudo := 0.0
+	for k in cuantas:
+		var largo := paradas[k].distance_to(paradas[(k + cuantas - 1) % cuantas])
+		var s: float = maxf(largo / RONDA_PASO, 0.5)
+		andar.append(s)
+		crudo += s + quieto[k]
+
+	# Y ahora se la estira o se la encoge hasta el período válido más cercano
+	# (ver RONDA_PERIODOS). El ajuste es de menos del 10%, así que lo único que
+	# cambia es que cada uno camina a su ritmo, que es lo que queríamos igual.
+	var periodo: float = RONDA_PERIODOS[0]
+	for candidato: int in RONDA_PERIODOS:
+		if absf(candidato - crudo) < absf(periodo - crudo):
+			periodo = candidato
+	var escala := periodo / crudo
+
+	var cortes := PackedFloat32Array()
+	var acum := 0.0
+	for k in cuantas:
+		acum += andar[k] * escala
+		cortes.append(acum)
+		acum += quieto[k] * escala
+		cortes.append(acum)
+
+	var r := {
+		"periodo": periodo,
+		# El desfase es lo que evita que los siete arranquen a caminar juntos.
+		"desfase": _dado(nombre, "ronda_f") * periodo,
+		"paradas": paradas, "mirada": mirada, "cortes": cortes,
+	}
+	_rondas[nombre] = r
+	return r
+
+
+## Dónde está y hacia dónde mira, dentro de su ronda, en el segundo `t` del
+## valle. Devuelve (tangente, radial, desvío de la mirada).
+##
+## Un Vector3 y no un diccionario porque esto se llama una vez por persona y por
+## cuadro: un diccionario por llamada es basura que después alguien junta.
+func _ronda_punto(nombre: String, t: float) -> Vector3:
+	var r := _ronda(nombre)
+	var paradas: PackedVector2Array = r["paradas"]
+	var mirada: PackedFloat32Array = r["mirada"]
+	var cortes: PackedFloat32Array = r["cortes"]
+	var n := paradas.size()
+	var tt: float = fposmod(t + float(r["desfase"]), float(r["periodo"]))
+
+	var i := 0
+	while i < cortes.size() - 1 and tt >= cortes[i]:
+		i += 1
+	var k := i / 2
+	if i % 2 == 1:
+		return Vector3(paradas[k].x, paradas[k].y, mirada[k])   # quieto en la parada
+
+	var inicio: float = cortes[i - 1] if i > 0 else 0.0
+	var u: float = clampf((tt - inicio) / maxf(cortes[i] - inicio, 0.001), 0.0, 1.0)
+	# Arranca y frena. Un tramo a velocidad constante entre dos paradas se lee
+	# como una figura deslizándose; con el arranque y el freno se lee como
+	# alguien que se decidió a ir hasta ahí. Y `Figura.animar()` ya suaviza la
+	# intensidad de la caminata encima de esto, así que el paso también entra y
+	# sale de a poco.
+	var p: Vector2 = paradas[(k + n - 1) % n].lerp(paradas[k], smoothstep(0.0, 1.0, u))
+	return Vector3(p.x, p.y, mirada[k])
+
+
+## Un número 0..1 estable por persona y por rasgo, con el mismo FNV-1a que usa
+## `Figura` para la altura, la piel y la ropa. No es `String.hash()` ni un
+## `randf()` sembrado: ninguno de los dos promete el mismo número entre
+## versiones del motor, y acá "el mismo número siempre" ES el requisito.
+static func _dado(nombre: String, canal: String) -> float:
+	return float(Figura._hash32(nombre + "/" + canal) % 100003) / 100003.0
+
+
+## ANDAMIO TEMPORAL — se borra.
+func _ANDAMIO_ronda() -> void:
+	if not OS.get_cmdline_user_args().has("--ronda"):
+		return
+	await get_tree().create_timer(4.0).timeout
+	print("=== TABLA (misma persona, mismo t del valle -> mismo punto) ===")
+	for nombre: String in _npcs:
+		var linea := "%-22s" % nombre
+		for t in [0, 7, 14, 21, 28, 35, 42, 49]:
+			var r := _ronda_punto(nombre, float(t))
+			linea += " (%+.3f,%+.3f,%+.2f)" % [r.x, r.y, r.z]
+		print(linea)
+		var ro := _ronda(nombre)
+		print("    periodo %.0fs  desfase %.2f  paradas %d  cortes %s"
+			% [ro["periodo"], ro["desfase"], (ro["paradas"] as PackedVector2Array).size(),
+			str(ro["cortes"])])
+	print("=== EN VIVO (pos del mundo, dist al centro del lugar, a la casa mas cerca) ===")
+	for paso in 14:
+		var s := "t=%5.1f " % (Time.get_ticks_msec() / 1000.0)
+		for nombre: String in _npcs:
+			var n: Node3D = _npcs[nombre]
+			var slug := str(n.get_meta("lugar", ""))
+			var c: Vector3 = LUGARES[slug]["pos"]
+			var p := Vector2(n.position.x, n.position.z)
+			var dcasa := 99.0
+			for casa: Vector2 in _casas.get(slug, []):
+				dcasa = minf(dcasa, p.distance_to(casa))
+			s += "| %s %s x%+8.3f z%+8.3f r%5.2f casa%5.2f giro%+.2f " % [
+				nombre.substr(0, 10), slug, p.x, p.y,
+				p.distance_to(Vector2(c.x, c.z)), dcasa,
+				(n.get_node(^"Cuerpo") as Node3D).rotation.y]
+		print(s)
+		await get_tree().create_timer(2.0).timeout
+	print("=== FIN ANDAMIO ===")
+	get_tree().quit()
 
 
 ## Mientras devuelva true, el teclado no es del personaje. Dos motivos, y los
@@ -650,6 +1289,7 @@ func _al_levantarse(d: Dictionary) -> void:
 func _al_recibir_mundo(datos: Dictionary) -> void:
 	var region: Dictionary = datos.get("region", {})
 	var yo: Dictionary = datos.get("player", {})
+	_mi_nombre = str(yo.get("name", _mi_nombre))
 	interfaz.mostrar_region(region, yo)
 	_sincronizar_mi_estado(yo)
 
@@ -667,6 +1307,7 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 		}
 
 	_sincronizar_amenazas(datos.get("amenazas", []))
+	_sincronizar_jugadores(datos.get("jugadores", []))
 	interfaz.mostrar_inventario(datos.get("objetos", []))
 	interfaz.mostrar_pasos(datos.get("primeros_pasos", []))
 	if mapa != null:
@@ -680,42 +1321,7 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 		_ya_pedimos_cronica = true
 		api.pedir_cronica()
 
-	var lugares_por_id := {}
-	for p: Dictionary in datos.get("places", []):
-		lugares_por_id[p["id"]] = p
-
-	# Rehacer los NPCs. Son pocos; no vale la pena diferenciar.
-	for n: Node3D in _npcs.values():
-		n.queue_free()
-	_npcs.clear()
-
-	var por_lugar := {}
-	for p: Dictionary in datos.get("people", []):
-		var pid: String = p.get("place_id", "")
-		if not por_lugar.has(pid):
-			por_lugar[pid] = []
-		por_lugar[pid].append(p)
-
-	for pid: String in por_lugar:
-		var lug: Dictionary = lugares_por_id.get(pid, {})
-		var slug: String = lug.get("slug", "")
-		if not LUGARES.has(slug):
-			continue
-		var centro: Vector3 = LUGARES[slug]["pos"]
-		var lista: Array = por_lugar[pid]
-		for i in lista.size():
-			var persona: Dictionary = lista[i]
-			var a := TAU * i / maxf(lista.size(), 3.0) + 0.7
-			var px := centro.x + cos(a) * 6.5
-			var pz := centro.z + sin(a) * 6.5
-			var nodo := Node3D.new()
-			nodo.position = Vector3(px, altura_en(px, pz), pz)
-			nodo.add_child(_figura(Color(0.56, 0.60, 0.64), 1.72, false))
-			nodo.add_child(_cartel(persona.get("name", "?")))
-			nodo.set_meta("nombre", persona.get("name", "?"))
-			nodo.set_meta("oficio", persona.get("trade", ""))
-			add_child(nodo)
-			_npcs[persona.get("name", "?")] = nodo
+	_sincronizar_gente(datos.get("people", []), datos.get("places", []))
 
 
 ## Cómo estás, según el mundo. Esta es la fuente de verdad de la vida: si te
@@ -739,23 +1345,34 @@ func _sincronizar_mi_estado(yo: Dictionary) -> void:
 		interfaz.ocultar_caida()
 
 
-func _cartel(texto: String) -> Node3D:
+const ALTO_CARTEL := 2.35
+## Dónde queda el nombre cuando el cuerpo está en el piso. No se apaga: el
+## cartel es lo único que a 27 m dice de quién es ese bulto.
+const ALTO_CARTEL_CAIDO := 1.05
+
+func _cartel(texto: String, color := Color(0.88, 0.92, 0.89)) -> Node3D:
 	var l := Label3D.new()
+	l.name = "Cartel"
 	l.text = texto
 	l.font_size = 44
 	l.pixel_size = 0.006
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	l.position.y = 2.35
-	l.modulate = Color(0.88, 0.92, 0.89)
+	l.position.y = ALTO_CARTEL
+	l.modulate = color
 	l.outline_size = 14
 	l.outline_modulate = Color(0.04, 0.06, 0.06, 0.85)
 	l.no_depth_test = false
 	return l
 
 
-func _process(_dt: float) -> void:
+func _process(dt: float) -> void:
 	if jugador == null:
 		return
+	# La gente anda por su lugar. Va en `_process()` y no en `animar()` porque a
+	# los NPC nadie les llamaba `animar()` nunca: el sistema de caminata de
+	# `figura.gd` estaba entero y sin usar, y por eso eran maniquíes.
+	_mover_gente(dt)
+
 	# ¿A quién tengo al lado? Es lo que habilita hablar con E.
 	var mas_cerca := ""
 	var d_min := 4.5

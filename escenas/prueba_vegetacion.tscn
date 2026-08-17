@@ -1,0 +1,52 @@
+; La escena de prueba de la vegetación. Corre sola, sin servidor, sin token y
+; sin el resto del juego — por eso existe: `valle.gd` está tomado por otra
+; rama y el bosque igual tiene que poder mirarse y medirse aparte. Es el mismo
+; trato que se le dio a `escenas/prueba_sonido.tscn`.
+;
+;   godot escenas/prueba_vegetacion.tscn              ← con pantalla, MIRALO
+;   godot --headless escenas/prueba_vegetacion.tscn   ← imprime las cuentas
+;
+; El nodo raíz es el módulo con `modo_prueba` prendido: arma un suelo y un río
+; mínimos (los del valle, en versión barata, sólo para que la silueta se apoye
+; en algo), siembra el valle entero e imprime el informe — instancias,
+; MultiMesh, baldosas, triángulos, baldosas dentro del cono de cámara desde
+; cinco puntos, y la densidad por zona en árboles por hectárea.
+;
+; La cámara y las dos luces las APUNTA el script (`_encuadrar_prueba()`), no
+; esta escena: una matriz de 3×4 escrita a mano en un .tscn es imposible de
+; revisar y ya nos comió tiempo una vez. Acá sólo están los nodos y lo que se
+; ajusta a ojo.
+;
+; El encuadre por defecto es el que hay que juzgar: desde la aldea hacia el
+; Sotobosque, con el río cruzando adelante. Lo que se mira es si el bosque es
+; UNA masa oscura con contorno contra el cielo, si la tala se lee como un
+; mordisco y no como un bache, y si el vado se lee como un hueco a propósito.
+;
+; `Ambiente` es el WorldEnvironment del juego de verdad (cielo propio, niebla
+; volumétrica, desenfoque de lejanía) para que una captura de esta escena se
+; pueda comparar con una del valle sin descontar nada.
+
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/vegetacion.gd" id="1_veg"]
+[ext_resource type="Script" path="res://scripts/ambiente.gd" id="2_amb"]
+
+[node name="Vegetacion" type="Node3D"]
+script = ExtResource("1_veg")
+modo_prueba = true
+
+[node name="Ambiente" type="WorldEnvironment" parent="."]
+script = ExtResource("2_amb")
+
+[node name="Sol" type="DirectionalLight3D" parent="."]
+light_energy = 1.6
+shadow_enabled = true
+directional_shadow_max_distance = 220.0
+
+[node name="Relleno" type="DirectionalLight3D" parent="."]
+light_energy = 0.35
+
+[node name="Camara" type="Camera3D" parent="."]
+fov = 42.0
+far = 900.0
+current = true

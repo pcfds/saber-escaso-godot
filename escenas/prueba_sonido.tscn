@@ -1,0 +1,28 @@
+; La escena de prueba del sonido. Corre sola, sin servidor, sin token y sin
+; el resto del juego — por eso existe: el valle está tomado por otros y el
+; ambiente hay que poder juzgarlo aparte.
+;
+;   godot escenas/prueba_sonido.tscn                 ← con parlantes, ESCUCHALO
+;   godot --headless escenas/prueba_sonido.tscn      ← imprime el lecho y sale
+;
+; El nodo raíz es el módulo de sonido con `modo_prueba` prendido: imprime qué
+; lecho eligió para cada lugar a siete horas del día, y después camina el
+; valle entero mientras pasa un día, haciendo sonar todo de verdad.
+;
+; `Oyente` es el jugador de mentira: el módulo lo mueve por la ruta. La cámara
+; que cuelga de él es el oído — en Godot el que escucha es la cámara activa,
+; así que sin ella los emisores 3D no llegan a ningún lado.
+
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/sonido.gd" id="1_sonido"]
+
+[node name="Sonido" type="Node3D"]
+script = ExtResource("1_sonido")
+modo_prueba = true
+volumen_general = 0.62
+
+[node name="Oyente" type="Node3D" parent="."]
+
+[node name="Camara" type="Camera3D" parent="Oyente"]
+current = true

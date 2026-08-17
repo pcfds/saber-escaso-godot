@@ -61,6 +61,15 @@ func sincronizar(tick_del_valle: int, segundos_en_el_dia: float) -> void:
 	_fraccion = fposmod(segundos_en_el_dia / DIA_REAL, 1.0)
 
 
+## Qué hora es en el valle, de 0 a 1. La lee `sonido.gd`.
+##
+## Existe para que nadie tenga que leer `_fraccion` por nombre: sin esto, el
+## día que alguien renombre la variable el ambiente se queda mudo en silencio,
+## sin error y sin que nadie se entere hasta escucharlo.
+func fraccion() -> float:
+	return _fraccion
+
+
 func _process(dt: float) -> void:
 	_fraccion = fposmod(_fraccion + dt / DIA_REAL, 1.0)
 
