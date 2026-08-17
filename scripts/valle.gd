@@ -171,7 +171,6 @@ func _ready() -> void:
 
 	_refrescar_cada_tanto()
 	_captura_si_corresponde()
-	_ANDAMIO_ronda()
 
 	if api.token == "":
 		interfaz.pedir_token()
@@ -811,9 +810,13 @@ const RONDA_QUIETO_MAX := 7.0
 ## Así que se le miente la velocidad. No es un parche: es la decisión de arte
 ## del proyecto aplicada al movimiento. **Un caminar estilizado y claro es lo
 ## correcto; uno "más realista" y blando es el error.** Con este factor la
-## cadencia queda en 1,3 pasos por segundo (zancada de 70 cm, que es andar) y el
-## pie se mueve unos 30 px en pantalla a la distancia a la que se juega.
-const RONDA_ZANCADA := 4.5
+## pierna queda en 25° para cada lado, la cadencia en 1,2 pasos por segundo y la
+## zancada en 80 cm. Es una zancada larga para andar por el patio, y es a
+## propósito: pocos pasos grandes se leen a 27 m y un trotecito rápido no.
+##
+## Medido en pantalla: la pierna mide 55 cm, así que el pie recorre 46 cm, y a
+## 27 m con FOV 42° eso son 24 píxeles. El maniquí que teníamos movía tres.
+const RONDA_ZANCADA := 4.0
 
 ## Un salto más grande que esto no es caminar, es cambiarse de lugar: no se le
 ## anima una zancada ni se le gira el cuerpo, se lo planta y listo.
@@ -1035,7 +1038,7 @@ func _ubicar_vecino(nombre: String, nodo: Node3D, t: float, dt: float, yo: Vecto
 		# a cien metros sí es opcional. A 90 m un paso mide cinco píxeles, y ahí
 		# ya está detrás del desenfoque de lejanía y de la niebla.
 		if p.distance_squared_to(yo) < _ANIMAR_HASTA[Rendimiento.nivel]:
-			cuerpo.animar(dt, vel, true)
+			cuerpo.animar(dt, vel * RONDA_ZANCADA, true)
 
 
 ## Hasta dónde se le anima la caminata a alguien, al cuadrado (bajo/medio/alto).
@@ -1184,47 +1187,6 @@ static func _dado(nombre: String, canal: String) -> float:
 	return float(Figura._hash32(nombre + "/" + canal) % 100003) / 100003.0
 
 
-## ANDAMIO TEMPORAL — se borra.
-func _ANDAMIO_ronda() -> void:
-	if not OS.get_cmdline_user_args().has("--ronda"):
-		return
-	await get_tree().create_timer(4.0).timeout
-	print("=== TABLA (misma persona, mismo t del valle -> mismo punto) ===")
-	for nombre: String in _npcs:
-		var linea := "%-22s" % nombre
-		for t in [0, 7, 14, 21, 28, 35, 42, 49]:
-			var r := _ronda_punto(nombre, float(t))
-			linea += " (%+.3f,%+.3f,%+.2f)" % [r.x, r.y, r.z]
-		print(linea)
-		var ro := _ronda(nombre)
-		print("    periodo %.0fs  desfase %.2f  paradas %d  cortes %s"
-			% [ro["periodo"], ro["desfase"], (ro["paradas"] as PackedVector2Array).size(),
-			str(ro["cortes"])])
-	print("=== EN VIVO (pos del mundo, dist al centro del lugar, a la casa mas cerca) ===")
-	for paso in 14:
-		var s := "t=%5.1f " % (Time.get_ticks_msec() / 1000.0)
-		for nombre: String in _npcs:
-			var n: Node3D = _npcs[nombre]
-			var slug := str(n.get_meta("lugar", ""))
-			var c: Vector3 = LUGARES[slug]["pos"]
-			var p := Vector2(n.position.x, n.position.z)
-			# Penetración en la caja REAL de la casa (1,35 × 1,25, sin margen):
-			# positivo = adentro de una casa, que es lo que no puede pasar.
-			var dentro := -99.0
-			for casa: Vector3 in _casas.get(slug, []):
-				var l := (p - Vector2(casa.x, casa.y)).rotated(casa.z)
-				dentro = maxf(dentro, minf(1.35 - absf(l.x), 1.25 - absf(l.y)))
-			var fig := n.get_node(^"Cuerpo") as Figura
-			s += "| %s %s x%+8.3f z%+8.3f r%5.2f casa%+6.2f giro%+.2f pierna%+.2f int%.2f " % [
-				nombre.substr(0, 10), slug, p.x, p.y,
-				p.distance_to(Vector2(c.x, c.z)), dentro, fig.rotation.y,
-				(fig.get("_pierna_i") as Node3D).rotation.x, fig.get("_intensidad")]
-		print(s)
-		await get_tree().create_timer(2.0).timeout
-	print("=== FIN ANDAMIO ===")
-	get_tree().quit()
-
-
 ## Mientras devuelva true, el teclado no es del personaje. Dos motivos, y los
 ## dos son estados en los que caminar sería raro: le estás escribiendo a
 ## alguien, o estás tirado en el piso. Pegar se corta aparte (en _al_golpear)
@@ -1251,6 +1213,15 @@ func _al_recibir_danio(_danio_local: int, id_amenaza: String) -> void:
 	if _caido:
 		return
 	jugador.doler()
+	# Que se sepa quién te está pegando. Sin esto la vida baja sola y el
+	# jugador no entiende de dónde vino: "me ataca el monstruo sin decirme
+	# nada" fue exactamente el reclamo.
+	var quien := ""
+	for m in _monstruos:
+		if is_instance_valid(m) and m.id_servidor == id_amenaza:
+			quien = m.nombre_servidor
+			break
+	interfaz.golpe_recibido(quien)
 	api.danio(id_amenaza)
 
 
@@ -1485,15 +1456,29 @@ func _avisar_donde_estoy() -> void:
 		interfaz.avisar("Llegaste a %s." % LUGARES[cerca].get("nombre", cerca))
 
 
+## Apretaste E. Se abre la conversación EN EL ACTO con lo que ya sabemos que
+## esa persona diría, y la respuesta del modelo la reemplaza cuando llega.
+##
+## Sin esto hay un segundo largo de nada entre el botón y la pantalla, y ese
+## silencio es lo que hace sentir que el juego colgó. Los saludos guardados
+## existen justo para esto: están escritos en la voz de cada uno, así que lo
+## que ves mientras esperás no es un cartel de carga, es la persona mirándote.
 func _al_interactuar() -> void:
 	if _caido:
 		return          # desde el piso no se conversa
 	var quien: String = interfaz.npc_cercano
-	if quien != "":
-		api.hablar(quien)
+	if quien == "":
+		return
+	var a: Dictionary = _actitudes.get(quien, {})
+	interfaz.abrir_charla(quien, str(a.get("saludo", "")), str(a.get("animo", "neutral")))
+	api.hablar(quien)
 
 
-const ALCANCE_JUGADOR := 3.2
+## El alcance del golpe. Estaba en 3,2 m y era imposible: con la cámara a 40
+## metros no ves la diferencia entre 3 y 5, así que el jugador aprieta y no
+## pasa nada, que es el peor resultado posible. Un juego que se ve de lejos
+## necesita un alcance generoso o se siente roto.
+const ALCANCE_JUGADOR := 6.5
 const DANIO_JUGADOR := 14
 
 func _al_golpear() -> void:
@@ -1502,19 +1487,43 @@ func _al_golpear() -> void:
 	if _caido:
 		return
 	jugador.amagar_golpe()
+
+	# Al MÁS CERCA de los que están en alcance, no al primero de la lista. El
+	# orden del array no tiene nada que ver con lo que el jugador está mirando,
+	# y pegarle a uno que está detrás tuyo se siente un bug aunque no lo sea.
+	var elegido: Monstruo = null
+	var mejor := ALCANCE_JUGADOR
 	for m in _monstruos:
-		if not is_instance_valid(m):
+		if not is_instance_valid(m) or m.vida <= 0:
 			continue
-		if m.global_position.distance_to(jugador.global_position) >= ALCANCE_JUGADOR:
-			continue
-		# Se muestra el golpe YA y se le avisa al servidor en paralelo. Esperar
-		# la respuesta para reaccionar mete 200 ms entre el clic y el efecto, y
-		# eso alcanza para que se sienta roto. Cuando llega la respuesta se
-		# corrige la vida con la del servidor, que es la que vale.
-		m.doler_ahora()
-		if m.id_servidor != "":
-			api.pelear(m.id_servidor)
+		var d := m.global_position.distance_to(jugador.global_position)
+		if d < mejor:
+			mejor = d
+			elegido = m
+
+	if elegido == null:
+		# Decirle que no llegó. El silencio es lo que hace que parezca roto:
+		# el jugador no sabe si falló, si el botón no anda, o si el bicho es
+		# decorado.
+		var lejos: Monstruo = null
+		var d_lejos := 40.0
+		for m in _monstruos:
+			if is_instance_valid(m) and m.vida > 0:
+				var d := m.global_position.distance_to(jugador.global_position)
+				if d < d_lejos:
+					d_lejos = d
+					lejos = m
+		if lejos != null:
+			interfaz.avisar("Estás lejos de %s." % lejos.nombre_servidor)
 		return
+
+	# Se muestra el golpe YA y se le avisa al servidor en paralelo. Esperar la
+	# respuesta para reaccionar mete 200 ms entre el clic y el efecto, y eso
+	# alcanza para que se sienta roto. Cuando llega la respuesta se corrige la
+	# vida con la del servidor, que es la que vale.
+	elegido.doler_ahora()
+	if elegido.id_servidor != "":
+		api.pelear(elegido.id_servidor)
 
 
 ## Captura de verificación: `--captura` guarda un PNG y sale. Sirve para

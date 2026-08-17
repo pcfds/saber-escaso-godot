@@ -2,6 +2,22 @@
 ## agregás tapa lo que hace que el juego se vea bien.
 extends CanvasLayer
 
+# ── Las franjas de la pantalla ──────────────────────────────────────────────
+#
+# Cada panel se anclaba por su cuenta con números a ojo y el resultado fue que
+# se pisaban entre sí: el diálogo encima de la vida, la lista de qué hacer
+# encima del diálogo. Declarar las zonas de una vez no es prolijidad — es lo
+# que hace que agregar el panel número ocho no sea una lotería.
+#
+# De abajo hacia arriba, en píxeles desde el borde inferior:
+const Y_AYUDA   := 30     # la línea de teclas, siempre última
+const Y_VIDA    := 74     # la barra y el número
+const Y_PISTA   := 112    # "[E] hablar con X"
+const Y_SALUDO  := 152    # lo que te dicen al pasar
+const ALTO_CAJA := 330    # el diálogo, que es lo más alto que hay abajo
+# Y a los costados:
+const X_MARGEN  := 22
+
 var npc_cercano := ""
 
 var _api: Api
@@ -9,6 +25,8 @@ var _decir: LineEdit
 var _bolsa: RichTextLabel
 var _pasos: RichTextLabel
 var _saludo: RichTextLabel
+var _flash: ColorRect
+var _tw_flash: Tween
 var _fundido: Tween
 var _ya_saludamos := false
 var _ultima_region: Dictionary = {}
@@ -43,20 +61,21 @@ func _ready() -> void:
 	_pista.anchor_bottom = 1.0
 	_pista.offset_left = -260
 	_pista.offset_right = 260
-	_pista.offset_top = -92
+	_pista.offset_top = -Y_PISTA
 	_pista.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_pista.add_theme_font_size_override("font_size", 16)
 	_pista.add_theme_color_override("font_color", Color(0.85, 0.78, 0.55))
 	add_child(_pista)
 
 	var ayuda := Label.new()
-	ayuda.anchor_left = 1.0
+	ayuda.anchor_left = 0.0
 	ayuda.anchor_right = 1.0
 	ayuda.anchor_top = 1.0
 	ayuda.anchor_bottom = 1.0
-	ayuda.offset_left = -420
-	ayuda.offset_right = -24
-	ayuda.offset_top = -44
+	ayuda.offset_left = X_MARGEN
+	ayuda.offset_right = -X_MARGEN
+	ayuda.offset_top = -Y_AYUDA
+	ayuda.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ayuda.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ayuda.text = "WASD caminar · shift correr · E hablar · M mapa · F1 calidad · F2 captura"
 	ayuda.add_theme_font_size_override("font_size", 12)
@@ -78,7 +97,7 @@ func _armar_vida() -> void:
 	fondo.anchor_left = 0.5; fondo.anchor_right = 0.5
 	fondo.anchor_top = 1.0; fondo.anchor_bottom = 1.0
 	fondo.offset_left = -140; fondo.offset_right = 140
-	fondo.offset_top = -44; fondo.offset_bottom = -32
+	fondo.offset_top = -Y_VIDA; fondo.offset_bottom = -Y_VIDA + 12
 	add_child(fondo)
 
 	_vida_barra = ColorRect.new()
@@ -86,7 +105,7 @@ func _armar_vida() -> void:
 	_vida_barra.anchor_left = 0.5; _vida_barra.anchor_right = 0.5
 	_vida_barra.anchor_top = 1.0; _vida_barra.anchor_bottom = 1.0
 	_vida_barra.offset_left = -139; _vida_barra.offset_right = 139
-	_vida_barra.offset_top = -43; _vida_barra.offset_bottom = -33
+	_vida_barra.offset_top = -Y_VIDA + 1; _vida_barra.offset_bottom = -Y_VIDA + 11
 	add_child(_vida_barra)
 
 	# El número, además de la barra. Una barra dice "poco"; un número dice
@@ -96,7 +115,7 @@ func _armar_vida() -> void:
 	_vida_numero.anchor_left = 0.5; _vida_numero.anchor_right = 0.5
 	_vida_numero.anchor_top = 1.0; _vida_numero.anchor_bottom = 1.0
 	_vida_numero.offset_left = -140; _vida_numero.offset_right = 140
-	_vida_numero.offset_top = -62
+	_vida_numero.offset_top = -Y_VIDA - 20
 	_vida_numero.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_vida_numero.add_theme_font_size_override('font_size', 13)
 	_vida_numero.add_theme_color_override('font_color', Color(0.62, 0.68, 0.65))
@@ -205,7 +224,7 @@ func _armar_caja() -> void:
 	_caja.anchor_bottom = 1.0
 	_caja.offset_left = -380
 	_caja.offset_right = 380
-	_caja.offset_top = -330
+	_caja.offset_top = -ALTO_CAJA  # 330
 	_caja.offset_bottom = -70
 	_caja.visible = false
 
@@ -419,12 +438,11 @@ func mostrar_pasos(lista: Array) -> void:
 		_pasos.bbcode_enabled = true
 		_pasos.fit_content = true
 		_pasos.scroll_active = false
-		_pasos.anchor_top = 1.0
-		_pasos.anchor_bottom = 1.0
-		_pasos.offset_left = 16
-		_pasos.offset_right = 480
-		_pasos.offset_top = -108
-		_pasos.offset_bottom = -16
+		_pasos.anchor_top = 0.0
+		_pasos.anchor_bottom = 0.0
+		_pasos.offset_left = X_MARGEN
+		_pasos.offset_right = 430
+		_pasos.offset_top = 96
 		add_child(_pasos)
 
 	_ultimos_pasos = lista
@@ -499,7 +517,7 @@ func reconocer(linea: String, animo: String) -> void:
 		_saludo.anchor_left = 0.5; _saludo.anchor_right = 0.5
 		_saludo.anchor_top = 1.0; _saludo.anchor_bottom = 1.0
 		_saludo.offset_left = -330; _saludo.offset_right = 330
-		_saludo.offset_top = -168; _saludo.offset_bottom = -128
+		_saludo.offset_top = -Y_SALUDO - 34; _saludo.offset_bottom = -Y_SALUDO
 		_saludo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(_saludo)
 
@@ -516,3 +534,63 @@ func reconocer(linea: String, animo: String) -> void:
 	_fundido = create_tween()
 	_fundido.tween_interval(3.2)
 	_fundido.tween_property(_saludo, "modulate:a", 0.0, 1.1)
+
+
+## Te pegaron: un flash rojo en los bordes y quién fue.
+##
+## La vida bajando sola no alcanza — el reclamo fue literal: "me ataca el
+## monstruo sin decirme nada". Un golpe tiene que responder en el borde de la
+## pantalla, que es donde el ojo lo ve sin estar mirando la barra.
+func golpe_recibido(quien: String) -> void:
+	if _flash == null:
+		_flash = ColorRect.new()
+		_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_flash.color = Color(0.7, 0.12, 0.08, 0.0)
+		# El degradé va por shader: un rectángulo rojo plano tapa el juego, y
+		# lo que queremos es que se encienda el marco y no la escena.
+		var sh := Shader.new()
+		sh.code = """
+shader_type canvas_item;
+uniform float fuerza = 0.0;
+void fragment() {
+	vec2 d = abs(UV - vec2(0.5)) * 2.0;
+	float borde = max(d.x, d.y);
+	COLOR = vec4(0.62, 0.08, 0.05, smoothstep(0.35, 1.0, borde) * fuerza);
+}"""
+		var m := ShaderMaterial.new()
+		m.shader = sh
+		_flash.material = m
+		add_child(_flash)
+		move_child(_flash, 0)
+
+	var m2 := _flash.material as ShaderMaterial
+	m2.set_shader_parameter("fuerza", 0.85)
+	if _tw_flash != null and _tw_flash.is_valid():
+		_tw_flash.kill()
+	_tw_flash = create_tween()
+	_tw_flash.tween_method(
+		func(v: float) -> void: m2.set_shader_parameter("fuerza", v),
+		0.85, 0.0, 0.45)
+
+	if quien != "":
+		avisar("%s te está pegando." % quien)
+
+
+## Abre la charla ya, con lo que sabemos, mientras el modelo escribe.
+##
+## El "…" que aparece abajo no es decorativo: es la única señal de que hay algo
+## en camino. Sin él, una respuesta que tarda un segundo se lee como que el
+## juego se colgó.
+func abrir_charla(quien: String, adelanto: String, animo: String) -> void:
+	var tono: String = {
+		"calido": "6fb99e", "neutral": "dde3de", "seco": "98a29c", "hostil": "ce8b84",
+	}.get(animo, "dde3de")
+	_texto.text = "[color=#%s][b]%s[/b][/color]\n%s\n\n[color=#5f6864]…[/color]" % [
+		tono, quien, adelanto if adelanto != "" else "",
+	]
+	for hijo in _opciones.get_children():
+		hijo.queue_free()
+	if _decir != null:
+		_decir.editable = false
+	_caja.visible = true
