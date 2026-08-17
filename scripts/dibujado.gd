@@ -31,7 +31,12 @@ extends MeshInstance3D
 
 const CODIGO := "
 shader_type spatial;
-render_mode unshaded, cull_disabled, depth_test_disabled, depth_draw_never;
+// `blend_mix` no es cosmético: en Godot las texturas de pantalla, profundidad
+// y normales **sólo existen en la pasada transparente**. Dibujado como opaco,
+// el quad se pintaba antes de que se resolvieran y las leía constantes — se
+// midió sacándolas por color: profundidad y normal daban cero en toda la
+// pantalla, así que no había un solo borde que detectar.
+render_mode unshaded, blend_mix, cull_disabled, depth_test_disabled, depth_draw_never;
 
 uniform sampler2D pantalla : hint_screen_texture, filter_linear;
 uniform sampler2D profundidad : hint_depth_texture;
@@ -98,6 +103,7 @@ void fragment() {
 	col *= mix(1.0, paso / max(lum, 0.001), fuerza_escalones);
 
 	ALBEDO = mix(col, color_linea, borde);
+	ALPHA = 1.0;
 }
 "
 
