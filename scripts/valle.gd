@@ -24,7 +24,12 @@ extends Node3D
 ## identidad declarada y nadie lo lee todavía—, y así y todo tiene que salir de
 ## la paleta: el día que alguien lo use, ya está en el escalón correcto.
 const LUGARES := {
-	"aldea":  {"pos": Vector3(0, 0, 0),      "color": Paleta.MURO_ALDEA,  "casas": 7, "nombre": "Vado Bajo"},
+	# ONCE Y NO SIETE. La segunda fila con dos casas sigue siendo una ronda con un
+	# apéndice; recién con seis atrás hay calle. Y las que sobran de la gente que
+	# el servidor manda **no son relleno**: una casa cerrada es la mejor forma que
+	# tiene este juego de decir que acá vivía alguien y ya no. El valle pierde
+	# gente, ésa es la tesis, y hasta ahora la única forma de enterarse era leerlo.
+	"aldea":  {"pos": Vector3(0, 0, 0),      "color": Paleta.MURO_ALDEA,  "casas": 11, "nombre": "Vado Bajo"},
 	"fragua": {"pos": Vector3(62, 0, -18),   "color": Paleta.MURO_FRAGUA, "casas": 2, "nombre": "La Fragua de Ilde"},
 	"bosque": {"pos": Vector3(-58, 0, -54),  "color": Paleta.COPA,        "casas": 0, "nombre": "El Sotobosque"},
 	"ruina":  {"pos": Vector3(-26, 0, -108), "color": Paleta.MURO_RUINA,  "casas": 3, "nombre": "La Casa Quemada"},
@@ -594,16 +599,55 @@ const SITIO_MUESTRAS := 7
 const SITIO_SEPARACION := 9.0
 const SITIO_MULTA := 6.0
 
+## Cuántas casas entran en el anillo de adentro, el que da a la plaza. Las que
+## sobran se van a un anillo de atrás.
+##
+## ── POR QUÉ HAY DOS ANILLOS ────────────────────────────────────────────────
+##
+## Dicho jugando: *"son cuatro casas que no hay distancia, no es un pueblo"*, y
+## el número lo confirma. Con las siete de Vado Bajo en un solo círculo, el radio
+## daba 11,9 m: el caserío entero medía **24 metros de punta a punta** y la
+## cámara está a 27. O sea que lo veías completo desde cualquier lado, sin nada
+## atrás, y no había un solo lugar del pueblo al que hiciera falta caminar. Un
+## anillo único no es una plaza: es una ronda.
+##
+## Y agrandar el círculo solo no alcanza —siete casas en un círculo de veinte
+## metros son siete casas con veinte metros de pasto entre cada una, que se lee
+## peor todavía: caserío disperso, no pueblo—. Lo que hace pueblo es que haya
+## **fondo**: una primera fila que da a la plaza y algo detrás de ella. Entre las
+## dos filas queda una calle, y por primera vez hay un adentro y un atrás.
+##
+## Cinco adelante y el resto atrás, a `SITIO_FONDO` de distancia y corridas medio
+## paso para no quedar en la misma radial que las de adelante — si se alinean, la
+## de atrás desaparece detrás de la de adelante y volvemos a tener una fila.
+const SITIO_FRENTE := 5
+const SITIO_FONDO := 8.6
+
 
 ## `puestas` son las casas que ya se colocaron en este lugar, como
 ## `Vector3(x, z, giro)` en coordenadas del mundo. Ver `SITIO_SEPARACION`.
 func _sitio_de_casa(base: Vector3, i: int, n: int, puestas: Array[Vector3]) -> Dictionary:
-	var a0 := TAU * i / float(n) + 0.4
+	# Cuántas van adelante y cuántas atrás. Con `n` chico —la fragua tiene dos y
+	# la ruina tres— no hay segunda fila y esto se comporta como el anillo único
+	# de siempre, que es lo correcto: dos casas no hacen un pueblo ni con calle.
+	var frente: int = mini(n, SITIO_FRENTE)
+	var atras := n - frente
+	var fila := 0 if i < frente else 1
+	var cuantas := frente if fila == 0 else atras
+	var orden := i if fila == 0 else i - frente
+
 	# El radio tiene que crecer con la cantidad, o las casas se encaraman unas
 	# sobre otras — que es exactamente lo que pasaba con siete en un círculo de
 	# 5 metros. La cuerda entre dos vecinas tiene que superar los 5,4 m de la
-	# planta con aire.
-	var r0: float = maxf(8.0, 4.4 * n / TAU + 7.0)
+	# planta con aire. La cuenta va sobre las de LA FILA, no sobre el total: si
+	# no, la segunda fila hereda un radio pensado para el doble de casas.
+	var a0 := TAU * orden / float(cuantas) + 0.4
+	var r0: float = maxf(8.0, 4.4 * cuantas / TAU + 7.0)
+	if fila == 1:
+		# Medio paso de corrimiento: la de atrás mira por el hueco entre dos de
+		# adelante, no por la nuca de una.
+		a0 += PI / float(cuantas)
+		r0 += SITIO_FONDO
 	var mejor := INF
 	var salida := {}
 

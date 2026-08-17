@@ -384,6 +384,13 @@ func amueblar(clave: String, casa: Dictionary, quemada: bool,
 		"nodo": g, "cuarto": cuarto, "oficio": oficio, "luz": luz,
 		"alta": casa["alta"], "baja": casa["baja"], "chimenea": null,
 		"centro": centro, "piso": g.global_position.y, "alto": float(casa["alto"]),
+		# HASTA DÓNDE ESTORBA ESTA CASA, medido desde su propio piso. Y ojo con
+		# `alto`, que ya estaba y NO es esto: `alto` es la altura de UNA planta
+		# (~3,05 m) y la casa tiene dos más el techo. Se usó `alto` para la prueba
+		# de oclusión y salió que no tapaba ninguna casa nunca, porque la visual
+		# pasa por encima de los tres metros casi siempre. Del techo se cuenta
+		# poco más de la mitad: la cumbrera es una línea y no tapa a nadie.
+		"cumbre": float(casa["alero"]) + Detalles.TECHO_ALTO * 0.55,
 		"giro": g.global_rotation.y, "espejo": espejo,
 		"quemada": quemada, "quien": "", "gente": 0, "recortada": false,
 		"hoja": hoja, "hoja_base": (hoja.transform if hoja != null else Transform3D()),
@@ -486,6 +493,12 @@ func actualizar(jugador: Vector3, camara: Vector3, dt := -1.0) -> void:
 			_recortar(_casas[_adentro], false, camara)
 		_adentro = ahora
 		_muros_fuera.clear()
+	# ORDEN. `_tapando` va ANTES que `_recortar`, y no es indistinto: las dos
+	# escriben `transparency` sobre las mismas mallas. En el cuadro en que entrás
+	# a una casa que te venía tapando, `_tapando` le devuelve el cero a la casa
+	# entera y recién después `_recortar` vuelve fantasmas los muros de adelante.
+	# Al revés, el fantasma duraría un cuadro y lo borraría el otro.
+	_tapando(jugador, camara)
 	if _casas.has(_adentro):
 		_recortar(_casas[_adentro], true, camara)
 		_empujar(_casas[_adentro], jugador)
@@ -946,6 +959,82 @@ func _recortar(c: Dictionary, si: bool, camara: Vector3) -> void:
 		# ves que hay algo entre vos y eso.
 		gi.transparency = 0.86 if tapa else 0.0
 		gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+
+
+## Radio con el que una casa cuenta como estorbo. La planta mide 5,4 × 5,4, o
+## sea 3,82 de centro a esquina; 3,4 es un poco menos a propósito, porque rozar
+## una esquina no tapa a nadie y desvanecer una casa entera por eso se lee como
+## un parpadeo.
+const TAPON_RADIO := 3.4
+## Cuánto se desvanece la casa que se te pone delante. Menos que el 0,86 de un
+## muro suelto: acá se atraviesan techo, dos muros y los muebles del medio, y
+## multiplicado eso se vuelve opaco igual. Con 0,72 por capa se ve el jugador y
+## se sigue viendo que hay una casa.
+const TAPON_ALFA := 0.72
+
+
+## LA CASA QUE SE TE PONE DELANTE.
+##
+## Dicho jugando: *"en el medio la cámara hace cosas raras"*. No era la cámara.
+## **No había ninguna prueba de oclusión en todo el cliente**: `_recortar` abre
+## la casa que estás pisando y nada más, así que una casa AJENA parada entre la
+## cámara y vos quedaba maciza y te tapaba entero. Con siete casas en un anillo
+## de doce metros y la cámara a veintisiete, eso pasa cada pocos pasos —
+## caminás, desaparecés detrás de un techo, salís del otro lado. Se siente como
+## que la cámara se volvió loca porque lo único que se mueve raro en pantalla es
+## el encuadre; la causa está quieta.
+##
+## La alternativa clásica es un `SpringArm3D` que acerca la cámara hasta el
+## obstáculo. **Acá sería peor**: en un caserío la cámara saltaría de 27 m a 5 m
+## y volvería varias veces por travesía, y eso sí es la cámara haciendo cosas
+## raras. La cámara lejana es una decisión cerrada (`DISENO.md` §6). Así que la
+## cámara no se mueve: se corre la casa.
+##
+## La cuenta es una distancia de punto a segmento por casa, doce por cuadro, y
+## sólo ESCRIBE cuando una casa entra o sale de estorbar. La prueba de altura no
+## es un lujo: la cámara está casi doce metros por encima del jugador y las
+## casas miden siete, así que la mitad de las que caen sobre la línea en planta
+## quedan por debajo de ella y no tapan nada. Sin esa prueba se desvanecería
+## medio pueblo a la vez.
+func _tapando(jugador: Vector3, camara: Vector3) -> void:
+	var ojo := Vector2(camara.x, camara.z)
+	var yo := Vector2(jugador.x, jugador.z)
+	var tramo := ojo - yo
+	var largo2 := tramo.length_squared()
+
+	for clave: String in _casas:
+		var c: Dictionary = _casas[clave]
+		# La que estás pisando ya la maneja `_recortar`, y las dos escriben la
+		# misma propiedad: si pisaran juntas, la de afuera le devolvería el 0 a
+		# los muros que la de adentro acaba de volver fantasma.
+		var tapa := clave != _adentro and largo2 > 0.01
+		if tapa:
+			var centro: Vector2 = c["centro"]
+			var t := clampf((centro - yo).dot(tramo) / largo2, 0.0, 1.0)
+			tapa = yo.lerp(ojo, t).distance_to(centro) < TAPON_RADIO
+			if tapa:
+				# Dónde pasa la visual a la altura de esta casa. El techo se mide
+				# desde el piso de la casa, que no es el del jugador: el caserío
+				# está en una loma.
+				var vista := lerpf(jugador.y + 1.1, camara.y, t)
+				tapa = vista < float(c["piso"]) + float(c["cumbre"])
+
+		if bool(c.get("tapando", false)) == tapa:
+			continue
+		c["tapando"] = tapa
+		_desvanecer(c["nodo"] as Node3D, TAPON_ALFA if tapa else 0.0)
+
+
+## Le pone la misma transparencia a todo lo que cuelga de un nodo. Recursivo
+## porque una casa son el techo, los tabiques, la chimenea y los muebles del
+## cuarto, cada cosa en su rama. Corre sólo cuando una casa cambia de estado, no
+## por cuadro.
+func _desvanecer(n: Node3D, alfa: float) -> void:
+	for h in n.get_children():
+		if h is GeometryInstance3D:
+			(h as GeometryInstance3D).transparency = alfa
+		if h is Node3D:
+			_desvanecer(h as Node3D, alfa)
 
 
 ## Corre lo liviano que tengas encima. Ver el bloque `LO QUE SE CORRE CUANDO LO
