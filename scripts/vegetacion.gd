@@ -238,6 +238,10 @@ var _macro := FastNoiseLite.new()
 ## Los bichos. Cuelga de este nodo; ver el final de `poblar()`.
 var fauna: Fauna
 
+## Dónde está cada tronco con el que se puede chocar. Ver `_troncos_cerca()`.
+var _troncos: PackedVector3Array = PackedVector3Array()
+var _cuerpos: Array[StaticBody3D] = []
+var _ultimo_barrido := Vector3(1e9, 0, 0)
 var _nodos_copa: Array[MultiMeshInstance3D] = []
 var _nodos_tronco: Array[MultiMeshInstance3D] = []
 var _nivel_aplicado := -1
@@ -344,6 +348,7 @@ func poblar(alturas: Callable, lugares: Dictionary = {}) -> void:
 			_lugares[slug] = def
 
 	var t0 := Time.get_ticks_usec()
+	_armar_cuerpos()
 
 	_grumos.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_grumos.seed = semilla
@@ -821,6 +826,8 @@ func _construir(celdas: Dictionary) -> void:
 		if not coniferas.is_empty():
 			_nodos_copa.append(_multi(coniferas, 0, conifera,
 				centro, celda, "coniferas"))
+			for e in coniferas:
+				_troncos.append((e[0] as Transform3D).origin)
 
 		# Antes las frondas y los arbustos iban en el MISMO buffer, con los
 		# arbustos atrás, para que `visible_instance_count` raleara el
@@ -832,6 +839,8 @@ func _construir(celdas: Dictionary) -> void:
 		if not frondas.is_empty():
 			_nodos_copa.append(_multi(frondas, 0, fronda,
 				centro, celda, "frondas"))
+			for e in frondas:
+				_troncos.append((e[0] as Transform3D).origin)
 
 		var arbustos: Array = bolsa[ARBUSTO]
 		arbustos.sort_custom(orden)
@@ -854,6 +863,90 @@ func _construir(celdas: Dictionary) -> void:
 		if not secos.is_empty():
 			_nodos_tronco.append(_multi(secos, 0, seco,
 				centro, celda, "secos"))
+			for e in secos:
+				_troncos.append((e[0] as Transform3D).origin)
+
+
+# ---------------------------------------------------------------------------
+# Que los árboles frenen. Un puñado de cuerpos que siguen al jugador.
+# ---------------------------------------------------------------------------
+#
+# **Este archivo no tenía UNA sola colisión, y el valle tiene 2.500 árboles.**
+# Quien lo jugó lo dijo en dos palabras: *"traspasás cosas"*. Y tenía razón —
+# es lo primero que le dice a alguien que esto no es un lugar, que es un fondo.
+#
+# No estaba puesto por descuido: todo acá se dibuja en `MultiMesh`, que es una
+# sola caja para el motor y por eso el bosque es barato. Un `MultiMesh` no
+# genera colisión, y ponerle un cuerpo a cada árbol serían 2.500 cuerpos en la
+# fase ancha de la física, todos vivos aunque estén a trescientos metros.
+#
+# La salida es la de siempre en este oficio: **un pool que sigue al jugador.**
+# Treinta y dos cilindros que se mudan a los troncos más cercanos, y se rehace
+# sólo cuando caminaste seis metros. A cuarenta de distancia un árbol no te
+# frena porque nunca lo ibas a tocar, y cuando llegás ya hay un cuerpo puesto.
+#
+# El radio del cilindro es el del tronco, no el de la copa: hay que poder
+# caminar por debajo de las ramas. Y los arbustos y los tocones NO frenan —
+# quedan afuera a propósito, porque un mundo donde te traba un yuyo se siente
+# peor que uno donde lo atravesás.
+
+## Cuántos cuerpos hay puestos a la vez. Treinta y dos cubre el círculo que se
+## puede tocar caminando entre dos barridos.
+const CUERPOS := 32
+## Cuánto hay que caminar para rehacer el reparto.
+const REHACER_A := 6.0
+## Hasta dónde se ponen. Más allá no se puede tocar nada antes del próximo
+## barrido, y poner de más es pagar física por nada.
+const ALCANCE := 22.0
+const RADIO_TRONCO := 0.42
+const ALTO_TRONCO := 4.0
+
+
+func _armar_cuerpos() -> void:
+	for i in CUERPOS:
+		var c := StaticBody3D.new()
+		var f := CollisionShape3D.new()
+		var cil := CylinderShape3D.new()
+		cil.radius = RADIO_TRONCO
+		cil.height = ALTO_TRONCO
+		f.shape = cil
+		# Se sube medio alto para que el cilindro nazca en el suelo y no
+		# enterrado hasta la mitad.
+		f.position.y = ALTO_TRONCO * 0.5
+		c.add_child(f)
+		# Lejos de todo hasta que haga falta: un cuerpo en el origen es un
+		# poste invisible en el medio del vado.
+		c.position = Vector3(0.0, -500.0, 0.0)
+		add_child(c)
+		_cuerpos.append(c)
+
+
+## Mudar los cuerpos a los troncos que el jugador tiene cerca.
+func troncos_cerca(quien: Vector3) -> void:
+	if _cuerpos.is_empty() or _troncos.is_empty():
+		return
+	if quien.distance_to(_ultimo_barrido) < REHACER_A:
+		return
+	_ultimo_barrido = quien
+
+	# Se compara al cuadrado y sin la altura: el valle es un cuenco y un árbol
+	# tres metros más abajo sigue siendo un árbol al que le podés caminar
+	# encima.
+	var cerca: Array = []
+	var tope := ALCANCE * ALCANCE
+	for t in _troncos:
+		var dx := t.x - quien.x
+		var dz := t.z - quien.z
+		var d := dx * dx + dz * dz
+		if d < tope:
+			cerca.append([d, t])
+	cerca.sort_custom(func(a, b) -> bool: return a[0] < b[0])
+
+	for i in _cuerpos.size():
+		if i < cerca.size():
+			_cuerpos[i].position = cerca[i][1]
+		else:
+			_cuerpos[i].position = Vector3(0.0, -500.0, 0.0)
 
 
 ## La malla de una categoría, más el transform que la normaliza, más sus

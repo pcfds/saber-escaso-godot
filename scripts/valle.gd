@@ -2260,6 +2260,13 @@ func _process(dt: float) -> void:
 			nodo_bicho = m
 	interfaz.mostrar_amenaza(bicho, nodo_bicho)
 
+	# Que los árboles frenen. Es un puñado de cilindros que se mudan a los
+	# troncos que tenés cerca — ver `vegetacion.gd`, donde está el porqué: el
+	# bosque se dibuja en MultiMesh, que no genera colisión, así que **el valle
+	# tenía 2.500 árboles y ni una sola colisión** y se atravesaban todos.
+	if vegetacion != null:
+		vegetacion.troncos_cerca(jugador.global_position)
+
 	# Y el puesto de trabajo, si estás adentro de una casa y parado al lado.
 	# El oficio ya tenía DÓNDE pasar —el yunque, la olla, la piedra, puestos
 	# desde el `trade` del que vive ahí— y seguía sin poder invocarse: hasta
