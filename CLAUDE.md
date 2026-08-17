@@ -126,6 +126,17 @@ de treinta líneas en el scratchpad de la sesión; si no está, se reescribe con
 `zlib` + `struct`.
 
 **Y borrá `captura.png` al terminar**: no va al repo.
+
+**`--hora=noche|madrugada|alba|mediodia|tarde|ocaso|<0..1>` clava el reloj**, y
+sin eso no se puede medir nada de luz: el sol da una vuelta cada seis horas
+reales, así que dos capturas seguidas no son comparables. Existe porque la
+alternativa era parchear `_fraccion` a mano, y **una de esas sondas se coló en
+un commit y congeló el reloj del mundo en producción** — el reloj compartido de
+todos los jugadores. Una bandera no se puede commitear por accidente.
+
+**Y `--captura` no muestra el panel de bienvenida**, por el mismo motivo por el
+que ya fuerza calidad alta: existe para juzgar el valle, y la bienvenida tapa
+dos tercios del cuadro.
 - **`Object._get()` ya existe.** No le pongas `_get` a un método propio.
 - **Un `LineEdit` visible se come el WASD.** Todo campo de texto avisa con
   `Interfaz.escribiendo()`.
@@ -184,21 +195,33 @@ agosto y están en `DISENO.md` §6.
 > Este bloque estuvo desactualizado varios días y mandó a más de un agente a
 > rehacer algo que ya existía. **Si arreglás algo de acá, borralo de acá.**
 
-- **Interiores.** Las casas tienen una puerta dibujada y no se abre ninguna:
-  *"no hay puertas para entrar"*.
-- **La paleta existe y todavía no la usa nadie.** `paleta.gd` está escrito con
-  los 95 literales mapeados, y los nueve scripts siguen con sus colores a mano.
-  Hasta que se migren, de a un archivo por vez, el valle se ve igual.
+- **La paleta existe y casi nadie la usa.** `paleta.gd` está escrito con los 95
+  literales mapeados y varios scripts siguen con sus colores a mano. Hasta que
+  se migren, de a un archivo por vez, el valle se ve igual.
 - **Nadie camina de un lugar a otro.** La gente se mueve dentro de su lugar,
   pero cuando el servidor dice que alguien se mudó, se planta en el lugar
   nuevo. Que el viaje se vea es de la tarea del servidor, no de acá.
-- **No hay lugares para frenar:** el valle es todo tránsito, no hay dónde
-  sentarse ni esperar a alguien.
-- **El bicho no dice quién es.** En la base hay amenazas con nombre propio y
-  pueblo —"Kerrak el que quedó", de "Los del Sotobosque"— y en pantalla son
-  bichos genéricos. El dato ya viaja en `/mundo`.
+- **Los gestos sociales no los llama nadie.** `figura.gd` tiene `dar()`,
+  `recibir_regalo()`, `ensenar()` y `conversar()` escritas y verificadas, y
+  siguen sin cablearse. Ojo con la trampa: **animarlos desde los eventos del
+  tick sería mentir**, porque un tick es un día del valle y el regalo que
+  narra pasó hasta seis horas antes. Lo que hay que animar es lo que pasa
+  AHORA, o sea lo que el propio cliente acaba de mandar.
+- **`detalles.gd:piedras()` siembra 320 piedras que no son piedras.** El
+  comentario dice que son *"la puntuación clara del cuadro, lo más claro del
+  paisaje"*, y el `.glb` de Kenney no tiene ninguna superficie de piedra: tiene
+  `grass` y `dirt`. La aduana las manda al mismo peldaño de valor que el suelo,
+  así que no puntúan nada.
+- **La ruina no se ve vieja.** El valle tiene un pasado escrito en la base —un
+  incendio de hace sesenta inviernos con dos versiones irreconciliables— y La
+  Casa Quemada no lo muestra. Es la oportunidad de edad más grande que hay.
 
-**Ya está hecho, no lo rehagas:** los ojos y la ropa por oficio en las figuras;
+**Ya está hecho, no lo rehagas:** **se entra a las doce casas** (verificado
+caminando hasta cada puerta, no mirando capturas) y adentro está la persona que
+el servidor dice que está; **el bicho dice su nombre propio** sobre la cabeza;
+**el cielo se ve** (la niebla se lo comía entero: `fog_sky_affect` valía 1,0) y
+las estrellas ya no son subpíxel; **la Puerta del Norte** y los otros hitos;
+**el amago del monstruo** antes de pegarte; los ojos y la ropa por oficio en las figuras;
 el inventario en pantalla con quién hizo cada cosa; las amenazas dibujadas
 desde la tabla `threats`; los otros jugadores visibles; la vida del jugador
 mandada por el servidor; **la gente moviéndose en su lugar** (rondas de 3 a 5
