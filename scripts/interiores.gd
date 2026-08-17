@@ -260,6 +260,10 @@ func habitar(clave: String, nombre: String, oficio: String) -> Vector3:
 		c["quien"] = nombre
 		if not bool(c["quemada"]):
 			_puesto(c, oficio)
+			# De quién es el puesto que quedó armado. Lo usa `puesto_cerca()`
+			# para poder decir "el yunque de Ilde" y no "un puesto de trabajo":
+			# un objeto sin dueño no significa nada en este juego.
+			c["oficio_de"] = nombre
 
 	var g: Node3D = c["nodo"]
 	var p: Vector3 = ADENTRO_SITIOS[sitio % ADENTRO_SITIOS.size()]
@@ -321,6 +325,33 @@ func actualizar(jugador: Vector3, camara: Vector3) -> void:
 ## trabajo al lado.
 func adentro() -> String:
 	return _adentro
+
+
+## Si estás parado junto al puesto de trabajo de la casa en la que estás, de
+## quién es. Cadena vacía si no.
+##
+## Existe porque el oficio ya tenía DÓNDE pasar —el yunque, la piedra, la olla,
+## puestos desde `trade`— y seguía sin poder invocarse: `trabajar` sólo aparecía
+## como opción de una charla. O sea que había un yunque, sabías forjar, estabas
+## parado al lado, y la única forma de trabajar era buscar a alguien y hablarle.
+##
+## El radio es corto a propósito. Un puesto que se ofrece desde la puerta hace
+## que el cuarto entero sea un botón; a 2,2 m hay que ir hasta él, y esa
+## caminata de dos metros es lo que hace que el yunque sea un lugar.
+func puesto_cerca(p: Vector3, radio := 2.2) -> Dictionary:
+	if _adentro == "":
+		return {}
+	var c: Dictionary = _casas.get(_adentro, {})
+	if c.is_empty():
+		return {}
+	var nodo: Node3D = c.get("oficio")
+	# Sin hijos no hay puesto: la casa no la reclamó nadie con oficio, o está
+	# quemada. No se ofrece trabajar en un cuarto vacío.
+	if nodo == null or not is_instance_valid(nodo) or nodo.get_child_count() == 0:
+		return {}
+	if p.distance_to(nodo.global_position) > radio:
+		return {}
+	return {"nodo": nodo, "de": str(c.get("oficio_de", ""))}
 
 
 ## Abre TODAS las casas y les prende el fuego.

@@ -174,9 +174,15 @@ var _camara: Camera3D
 var _npc_nodo: Node3D
 var _amenaza_nodo: Node3D
 var _amenaza_nombre := ""
+## El puesto de trabajo que tenés al lado, si estás adentro de una casa.
+## `puesto_de` es de quién es; vacío significa que no hay ninguno cerca, y lo
+## lee `valle.gd` para decidir qué hace la E.
+var _puesto_nodo: Node3D
+var puesto_de := ""
 var _marca_npc: Label
 var _marca_piso: Label
 var _marca_bicho: Label
+var _marca_puesto: Label
 var _vida_ultima := -1
 
 
@@ -242,6 +248,7 @@ func _ready() -> void:
 	# texto.
 	_marca_bicho = _marca()
 	_marca_bicho.add_theme_color_override("font_color", HOSTIL)
+	_marca_puesto = _marca()
 
 	# La línea de teclas, en dos renglones y ordenada por para qué sirve cada
 	# una: primero lo que hacés con el cuerpo, después lo que abre algo, y al
@@ -381,6 +388,9 @@ func _process(_dt: float) -> void:
 	# carteles salen a la misma altura se solapan justo cuando hay alguien
 	# peleando al lado de una persona, que es el momento en que más importan.
 	_colocar(_marca_bicho, _amenaza_nodo, 3.4, tapado, false)
+	# Bajo: el yunque está a la altura de la cintura y el cartel tiene que
+	# quedar sobre la cosa, no flotando sobre el techo del cuarto.
+	_colocar(_marca_puesto, _puesto_nodo, 1.2, tapado, false)
 
 
 ## Poner un cartel encima de un punto del mundo. `alto` son los metros por
@@ -418,6 +428,12 @@ func _poner_lugar_da(que: String) -> void:
 func _refrescar_marcas() -> void:
 	if _marca_npc != null:
 		_marca_npc.text = "[E] hablar con %s" % npc_cercano if npc_cercano != "" else ""
+	if _marca_puesto != null:
+		# «el yunque de Ilde» y no «un puesto de trabajo»: en este juego un
+		# objeto sin dueño no significa nada, y ese yunque es de alguien que
+		# puede estar muerto.
+		_marca_puesto.text = ("[E] trabajar en el puesto de %s" % puesto_de) \
+			if puesto_de != "" else ""
 	if _marca_bicho != null:
 		# «pegarle a Kerrak el que quedó», con el nombre propio que la base ya
 		# tiene y que hasta hoy no salía de ahí. Un bicho con nombre no es un
@@ -836,6 +852,96 @@ func mostrar_cercano(nombre: String, nodo: Node3D) -> void:
 ## Con esto el tercer verbo deja de vivir en una esquina. Los otros dos ya se
 ## anuncian sobre la cosa —hablar sobre la persona, juntar a tus pies— y pegar
 ## era el único que seguía siendo una tecla que había que saberse.
+# ---------------------------------------------------------------------------
+# Los gestos. Lo que hacés se ve en el cuerpo, no sólo en el texto.
+# ---------------------------------------------------------------------------
+#
+# `figura.gd` tiene `dar()`, `recibir_regalo()`, `ensenar()` y `conversar()`
+# escritas y verificadas desde hace días, **y no las llamaba nadie**. Es el
+# mismo cable suelto que `juntar()`: la animación existía y el reclamo era
+# *"si le doy algo que haya gestos, detalles, movimientos, falta todo"*.
+#
+# **Se disparan desde acá y no desde los eventos del servidor, y es una
+# decisión.** Un tick es un día del valle y el cron corre uno cada seis horas,
+# así que un evento `regalo` que llega en `/mundo` puede haber pasado hace
+# cinco horas de reloj: animarlo ahora sería mostrar como presente algo que ya
+# es historia. Lo que se anima es lo que el jugador ACABA de hacer, que es lo
+# único que está pasando de verdad en este segundo.
+
+## El cuerpo del jugador, si ya lo tenemos.
+func _mi_figura() -> Figura:
+	if _jugador == null or not is_instance_valid(_jugador):
+		return null
+	return (_jugador as Jugador).figura as Figura
+
+
+## El cuerpo del que tengo al lado. El nodo del vecino es un `Node3D` con la
+## figura colgada como "Cuerpo" (ver `valle.gd::_armar_vecino`).
+func _figura_cercana() -> Figura:
+	if _npc_nodo == null or not is_instance_valid(_npc_nodo):
+		return null
+	return _npc_nodo.get_node_or_null("Cuerpo") as Figura
+
+
+## Cuánto tiene que girar la cabeza para mirar al otro, en el marco de la
+## figura. Se acota a ±1,2 rad: más que eso no es mirar, es torcerse el cuello.
+func _hacia(quien: Node3D, otro: Node3D) -> float:
+	if quien == null or otro == null:
+		return 0.0
+	var d := otro.global_position - quien.global_position
+	if d.length_squared() < 0.01:
+		return 0.0
+	return clampf(wrapf(atan2(d.x, d.z) - quien.global_rotation.y, -PI, PI), -1.2, 1.2)
+
+
+## Se abre una charla: los dos se orientan y se quedan hablando. Se corta con
+## `_dejar_de_conversar()`, que llama `cerrar_caja()`.
+func _ponerse_a_conversar() -> void:
+	var mia := _mi_figura()
+	var suya := _figura_cercana()
+	if mia != null and _npc_nodo != null:
+		mia.conversar(true, _hacia(mia, _npc_nodo))
+	if suya != null and _jugador != null:
+		suya.conversar(true, _hacia(suya, _jugador))
+
+
+func _dejar_de_conversar() -> void:
+	var mia := _mi_figura()
+	var suya := _figura_cercana()
+	if mia != null:
+		mia.conversar(false)
+	if suya != null:
+		suya.conversar(false)
+
+
+## Le diste algo: vos extendés el brazo y el otro lo acusa. Los dos, porque un
+## regalo con una sola mano moviéndose se lee como que tiraste algo al piso.
+func _gesto_de_dar() -> void:
+	var mia := _mi_figura()
+	var suya := _figura_cercana()
+	if mia != null:
+		mia.dar()
+	if suya != null:
+		suya.recibir_regalo()
+
+
+## Le enseñaste algo tuyo. Es la operación más importante del juego —al
+## terminar saben dos— y hasta hoy no se movía un dedo.
+func _gesto_de_ensenar() -> void:
+	var mia := _mi_figura()
+	if mia != null:
+		mia.ensenar()
+
+
+## El puesto de trabajo de la casa en la que estás, si lo tenés al lado. Lo
+## calcula `valle.gd` con `Interiores.puesto_cerca()`: la interfaz no sabe
+## dónde hay casas ni quién vive en ellas.
+func mostrar_puesto(de: String, nodo: Node3D) -> void:
+	puesto_de = de
+	_puesto_nodo = nodo
+	_refrescar_marcas()
+
+
 func mostrar_amenaza(nombre: String, nodo: Node3D) -> void:
 	_amenaza_nombre = nombre
 	_amenaza_nodo = nodo
@@ -983,6 +1089,11 @@ func _fila_posible(o: Dictionary) -> Control:
 		b.text = "› " + str(o.get("texto", ""))
 		b.pressed.connect(func() -> void:
 			cerrar_caja()
+			# El gesto sale del verbo, así que un verbo nuevo con gesto sólo
+			# necesita un renglón acá y no un camino aparte.
+			match verbo:
+				"dar": _gesto_de_dar()
+				"ensenar": _gesto_de_ensenar()
 			_api.actuar(verbo, a_quien))
 	return fila
 
@@ -1026,6 +1137,7 @@ func _lista_saberes(saberes: Array, a_quien: String) -> Control:
 			cerrar_caja()
 			# Mismo formato que `dar`: "<qué> a <quién>", que es el que el
 			# resolvedor ya sabe partir por el último " a ".
+			_gesto_de_ensenar()
 			_api.actuar("ensenar", "%s a %s" % [nombre, a_quien]))
 		caja.add_child(b)
 	return caja
@@ -1053,6 +1165,10 @@ func _fila_imposible(o: Dictionary) -> Control:
 func _abrir_caja() -> void:
 	_recolocar_caja()
 	_caja.visible = true
+	# Dos personas conversando tienen que leerse como dos personas conversando
+	# y no como dos maniquíes en el mismo metro cuadrado. Se orientan y se
+	# quedan hablando mientras la caja esté abierta.
+	_ponerse_a_conversar()
 	_decir.editable = true
 	_decir.text = ""
 	# **No se roba el foco.** Antes sí, y era la mitad del enredo: abrías una
@@ -1068,6 +1184,7 @@ func cerrar_caja() -> void:
 	if _caja == null:
 		return
 	_caja.visible = false
+	_dejar_de_conversar()
 	if _decir != null:
 		_decir.release_focus()
 	# Y el cartel vuelve. **`mostrar_cercano(npc_cercano, null)` no**: eso
@@ -1288,6 +1405,7 @@ func _pintar_dar() -> void:
 		var a_quien := npc_cercano
 		b.pressed.connect(func() -> void:
 			b.disabled = true
+			_gesto_de_dar()
 			_api.actuar("dar", "%s a %s" % [cosa, a_quien]))
 		_bolsa_dar.add_child(b)
 

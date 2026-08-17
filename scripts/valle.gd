@@ -1936,6 +1936,16 @@ func _process(dt: float) -> void:
 			nodo_bicho = m
 	interfaz.mostrar_amenaza(bicho, nodo_bicho)
 
+	# Y el puesto de trabajo, si estás adentro de una casa y parado al lado.
+	# El oficio ya tenía DÓNDE pasar —el yunque, la olla, la piedra, puestos
+	# desde el `trade` del que vive ahí— y seguía sin poder invocarse: hasta
+	# hoy `trabajar` sólo existía como opción de una charla, así que podías
+	# saber forjar, estar pegado al yunque, y tener que ir a buscar a alguien
+	# para hablarle.
+	if interiores != null:
+		var puesto := interiores.puesto_cerca(jugador.global_position)
+		interfaz.mostrar_puesto(str(puesto.get("de", "")), puesto.get("nodo"))
+
 	# Que te reconozcan al pasar. Una sola vez por acercamiento: si se
 	# disparara cada cuadro sería un cartel, y si no se reseteara al alejarte
 	# nunca te volverían a saludar. Por eso se limpia cuando te vas.
@@ -2001,6 +2011,19 @@ func _al_interactuar() -> void:
 		return          # desde el piso no se conversa
 	var quien: String = interfaz.npc_cercano
 	if quien == "":
+		# Sin nadie al lado, la E trabaja si estás junto a un puesto. Una sola
+		# tecla y el contexto decide, que es lo mismo que ya hacen los carteles:
+		# lo que podés hacer vive en la cosa que tenés delante. Sumar una tecla
+		# nueva por cada verbo es cómo se llega a un teclado entero de atajos
+		# que nadie se acuerda.
+		if interfaz.puesto_de != "":
+			api.actuar("trabajar")
+			# **Sin gesto, a propósito.** `figura.gd` no tiene una pose de
+			# trabajar y las que hay no sirven: `ensenar()` es brazos abiertos
+			# y `juntar()` es agacharse a recoger. Poner una que casi encaja es
+			# peor que no poner ninguna — el cuerpo diría una cosa y el texto
+			# otra, y después nadie se acuerda de que era un parche. Queda
+			# anotado en CLAUDE.md.
 		return
 	var a: Dictionary = _actitudes.get(quien, {})
 	interfaz.abrir_charla(quien, str(a.get("saludo", "")), str(a.get("animo", "neutral")))
@@ -2158,10 +2181,21 @@ func _al_resultado_de_pelea(d: Dictionary) -> void:
 
 
 ## El mundo se refresca solo cada tanto: es multijugador, pasan cosas que no
-## hiciste vos. Cada 12 segundos alcanza y no castiga al servidor.
+## hiciste vos.
+##
+## **Cinco segundos y no doce.** Los doce se eligieron cuando `/mundo` tardaba
+## de 1,1 a 1,7 segundos: pedirlo seguido era encadenar esperas. Resultó que la
+## función de Vercel se ejecutaba en Washington con la base en São Paulo, o sea
+## que cada consulta cruzaba el continente; con la región puesta la ruta bajó a
+## **0,25–0,41 s** y el número viejo pasó a ser una herencia de un problema que
+## ya no existe.
+##
+## Lo que se compra con esto es que el otro jugador y los bichos se muevan
+## cuando se mueven, y no hasta doce segundos después. Sigue sin castigar al
+## servidor: son doce pedidos por minuto de una ruta de un cuarto de segundo.
 func _refrescar_cada_tanto() -> void:
 	while true:
-		await get_tree().create_timer(12.0).timeout
+		await get_tree().create_timer(5.0).timeout
 		if api != null and api.token != "":
 			api.pedir_mundo()
 
