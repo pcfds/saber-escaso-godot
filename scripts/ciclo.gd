@@ -2,22 +2,30 @@
 ##
 ## En el servidor un tick es un día y el cron corre uno por hora. Así que:
 ##
-##   una hora real  =  un día del valle  =  una vuelta entera del sol
+##   seis horas reales  =  un día del valle  =  una vuelta entera del sol
 ##
 ## Eso hace que el cielo signifique algo en vez de decorar. Dos personas
 ## conectadas al mismo tiempo ven el MISMO atardecer, porque los dos leen el
 ## reloj del servidor y no el de su máquina. Y la fase de la luna es el día del
 ## valle: mirás para arriba y sabés cuánto hace que no entrás.
 ##
-## También es la razón por la que una sesión de una hora tiene forma. Entrás de
-## mañana, la fragua abre, se hace de noche mientras estás adentro de una
-## conversación. El arco no lo escribe nadie: es el reloj.
+## Y el sol es lo que te dice qué hora es del valle sin abrir ningún menú: si
+## entrás y está anocheciendo, eso es información, y es la misma para todos.
 class_name Ciclo
 extends Node
 
-## Cuánto dura un día del valle en segundos reales. Es el período del cron del
-## servidor: si allá cambia, acá también.
-const DIA_REAL := 3600.0
+## Cuánto dura un día del valle en segundos reales. **Es el período del cron
+## del servidor**: si allá cambia, acá también, o el sol y el mundo se separan.
+##
+## Arrancó en una hora y se subió a seis a pedido: el mundo pasaba demasiado
+## rápido — la gente se moría, las agendas se cumplían y volvías al otro día a
+## un valle irreconocible.
+##
+## El costo de esta decisión, que conviene tener presente: en una sesión de una
+## hora ya NO ves un ciclo entero. Ves un sexto de día. Entrás de mañana y te
+## vas de mañana. A cambio, el día del valle se siente largo y un atardecer
+## pasa a ser algo con lo que te cruzás, no algo que pasa siempre.
+const DIA_REAL := 21600.0
 
 var sol: DirectionalLight3D
 var relleno: DirectionalLight3D

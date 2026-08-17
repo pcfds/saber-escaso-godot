@@ -38,8 +38,8 @@ desplegar.sh            probar → exportar → cerrar el juego → instalar. UN
 
 `ciclo.gd` **no** simula un día bonito: muestra la hora real del servidor.
 
-- Un tick del mundo es un día y el cron corre uno por hora, así que **una hora
-  real es un día del valle y una vuelta entera del sol**.
+- Un tick del mundo es un día y el cron corre uno cada seis horas, así que **seis
+  horas reales son un día del valle y una vuelta entera del sol**.
 - La hora **la manda el servidor**, no la máquina de cada uno. Por eso dos
   personas conectadas ven el mismo atardecer, y por eso una sesión de una hora
   tiene forma sola: entrás de mañana y se hace de noche mientras charlás.

@@ -25,7 +25,7 @@ o es una demo.
   dos lunas y un gigante gaseoso. El `ProceduralSkyMaterial` de Godot no tiene
   noche — da un degradé y el mundo queda adentro de una caja azul.
 - **Día y noche atados al reloj del servidor.** Un tick es un día del valle y
-  el cron corre uno por hora, así que **una hora real es una vuelta entera del
+  el cron corre uno cada seis horas, así que **seis horas reales son una vuelta entera del
   sol**, y dos personas conectadas ven el mismo atardecer. La fase de la luna
   es el día del valle.
 - **Cuerpos animados con senos**, sin un solo archivo de animación: brazos y

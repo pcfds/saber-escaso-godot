@@ -66,7 +66,9 @@ func _ready() -> void:
 
 
 var _vida_barra: ColorRect
+var _vida_numero: Label
 var _aviso: Label
+var _caida: PanelContainer
 
 func _armar_vida() -> void:
 	var fondo := ColorRect.new()
@@ -85,6 +87,19 @@ func _armar_vida() -> void:
 	_vida_barra.offset_top = -43; _vida_barra.offset_bottom = -33
 	add_child(_vida_barra)
 
+	# El número, además de la barra. Una barra dice "poco"; un número dice
+	# cuántos golpes te quedan, y con bichos que pegan de a ocho o dieciséis
+	# eso es la diferencia entre volver a la aldea o quedarse un rato más.
+	_vida_numero = Label.new()
+	_vida_numero.anchor_left = 0.5; _vida_numero.anchor_right = 0.5
+	_vida_numero.anchor_top = 1.0; _vida_numero.anchor_bottom = 1.0
+	_vida_numero.offset_left = -140; _vida_numero.offset_right = 140
+	_vida_numero.offset_top = -62
+	_vida_numero.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_vida_numero.add_theme_font_size_override('font_size', 13)
+	_vida_numero.add_theme_color_override('font_color', Color(0.62, 0.68, 0.65))
+	add_child(_vida_numero)
+
 	_aviso = Label.new()
 	_aviso.anchor_left = 0.5; _aviso.anchor_right = 0.5
 	_aviso.anchor_top = 0.5; _aviso.anchor_bottom = 0.5
@@ -96,10 +111,16 @@ func _armar_vida() -> void:
 	add_child(_aviso)
 
 
-func mostrar_vida(v: int) -> void:
+## La barra NO es un contador de esta máquina: dibuja el último número que dijo
+## el servidor. Por eso viene el máximo también — el día que alguien tenga otra
+## vida máxima, la barra ya lo sabe leer en vez de asumir cien.
+func mostrar_vida(v: int, maximo: int = 100) -> void:
+	var parte := clampf(float(v) / maxf(float(maximo), 1.0), 0.0, 1.0)
 	var t := create_tween()
-	t.tween_property(_vida_barra, 'offset_right', -139.0 + 278.0 * (v / 100.0), 0.18)
-	_vida_barra.color = Color(0.44, 0.73, 0.62) if v > 50 else (Color(0.79, 0.64, 0.31) if v > 20 else Color(0.81, 0.55, 0.52))
+	t.tween_property(_vida_barra, 'offset_right', -139.0 + 278.0 * parte, 0.18)
+	_vida_barra.color = Color(0.44, 0.73, 0.62) if parte > 0.5 else (Color(0.79, 0.64, 0.31) if parte > 0.2 else Color(0.81, 0.55, 0.52))
+	if _vida_numero != null:
+		_vida_numero.text = "%d / %d" % [v, maximo]
 
 
 func avisar(texto: String) -> void:
@@ -108,6 +129,70 @@ func avisar(texto: String) -> void:
 	var t := create_tween()
 	t.tween_interval(2.2)
 	t.tween_property(_aviso, 'modulate:a', 0.0, 0.8)
+
+
+## Estás en el piso. Este panel es lo único que hay entre caer y volver a
+## jugar, y es a propósito que sea un botón y no un temporizador: el juego
+## espera que vos decidas, no te hace mirar una barra llenarse. Nada de acá
+## cobra tiempo — lo que cuesta caer es la caminata de vuelta y la cara.
+##
+## Botón sin grab_focus() a propósito: un control con foco empieza a comerse
+## teclas, y la última vez que pasó eso fue el LineEdit tragándose el WASD.
+func mostrar_caida(al_levantarse: Callable) -> void:
+	if _caida != null:
+		return
+
+	_caida = PanelContainer.new()
+	_caida.anchor_left = 0.5; _caida.anchor_right = 0.5
+	_caida.anchor_top = 0.5; _caida.anchor_bottom = 0.5
+	_caida.offset_left = -300; _caida.offset_right = 300
+	_caida.offset_top = -110; _caida.offset_bottom = 110
+
+	var estilo := StyleBoxFlat.new()
+	estilo.bg_color = Color(0.06, 0.05, 0.05, 0.95)
+	estilo.border_color = Color(0.81, 0.55, 0.52)
+	estilo.border_width_top = 2
+	estilo.content_margin_left = 28
+	estilo.content_margin_right = 28
+	estilo.content_margin_top = 24
+	estilo.content_margin_bottom = 24
+	_caida.add_theme_stylebox_override("panel", estilo)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 16)
+	_caida.add_child(col)
+
+	var t := RichTextLabel.new()
+	t.bbcode_enabled = true
+	t.fit_content = true
+	t.custom_minimum_size = Vector2(540, 110)
+	t.text = "\n".join([
+		"[b][color=#ce8b84]Estás en el piso.[/color][/b]",
+		"",
+		"No perdiste lo que sabés — eso vive en tu cabeza, y ninguna caída te lo saca.",
+		"[color=#7d867f]Vas a levantarte en la aldea. Volver hasta acá es caminarlo.[/color]",
+	])
+	col.add_child(t)
+
+	var b := Button.new()
+	b.text = "levantarse"
+	b.pressed.connect(func() -> void:
+		# Se apaga apenas lo apretás y recién se cierra cuando contesta el
+		# servidor: mover al personaje antes de que el mundo lo escriba es
+		# caminar por la aldea mientras la base te tiene tirado en la ruina.
+		b.disabled = true
+		b.text = "levantándote…"
+		al_levantarse.call())
+	col.add_child(b)
+
+	add_child(_caida)
+
+
+func ocultar_caida() -> void:
+	if _caida == null:
+		return
+	_caida.queue_free()
+	_caida = null
 
 
 func _armar_caja() -> void:

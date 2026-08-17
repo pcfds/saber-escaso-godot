@@ -128,3 +128,24 @@ func amagar_golpe() -> void:
 func doler() -> void:
 	if figura != null:
 		figura.doler()
+
+
+## F2 saca una captura al Escritorio.
+##
+## No es una comodidad: nadie del equipo puede ver el juego —Godot corre por
+## software y sin GPU en la máquina donde se desarrolla— así que la única
+## manera de saber cómo se ve de verdad es que la saque quien lo está jugando.
+func _input(evento: InputEvent) -> void:
+	if not (evento is InputEventKey and evento.pressed and not evento.echo):
+		return
+	if (evento as InputEventKey).keycode != KEY_F2:
+		return
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	var dir := OS.get_executable_path().get_base_dir().path_join("capturas")
+	DirAccess.make_dir_recursive_absolute(dir)
+	var t := Time.get_datetime_dict_from_system()
+	var nombre := "%02d%02d%02d-%02d%02d%02d.png" % [
+		t.year % 100, t.month, t.day, t.hour, t.minute, t.second]
+	img.save_png(dir.path_join(nombre))
+	print("captura: ", dir.path_join(nombre))

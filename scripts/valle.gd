@@ -26,6 +26,11 @@ const LUGARES := {
 
 const RADIO_VALLE := 165.0
 
+## Distancias para decidir en qué lugar estás. SALIR es más grande que ENTRAR
+## a propósito — ver la histéresis en _avisar_donde_estoy().
+const ENTRAR := 30.0
+const SALIR := 44.0
+
 var api: Api
 var jugador: Jugador
 var interfaz: CanvasLayer
@@ -38,7 +43,23 @@ var _lugar_actual := ""
 var _monstruos_por_id: Dictionary = {}
 var mapa: Mapa
 var _ya_pedimos_cronica := false
-var vida_jugador := 100
+
+## La vida del jugador NO se decide acá. Esto es el espejo de lo último que
+## dijo el servidor, nada más.
+##
+## Antes había una `vida_jugador` local que los monstruos bajaban en tiempo
+## real y que un temporizador de 2,4 segundos reseteaba sola. O sea: vos les
+## pegabas en el mundo compartido y ellos te pegaban en tu máquina. Nadie se
+## enteraba de que te habían tumbado, no quedaba registrado, y volvías a estar
+## entero como si nada. Era el invariante roto justo en el tramo que existe
+## para sostenerlo.
+var _vida := 100
+var _vida_maxima := 100
+var _caido := false
+## Cuándo volvió la última levantada. Un /mundo pedido ANTES de levantarte
+## puede llegar DESPUÉS y todavía verte tirado; sin esta ventana el panel de
+## caída reaparece solo dos segundos después de haberte parado.
+var _levantado_en := 0
 
 
 func _ready() -> void:
@@ -66,6 +87,8 @@ func _ready() -> void:
 	add_child(api)
 	api.mundo_recibido.connect(_al_recibir_mundo)
 	api.peleado.connect(_al_resultado_de_pelea)
+	api.danio_recibido.connect(_al_resultado_de_danio)
+	api.levantado.connect(_al_levantarse)
 
 	jugador = _armar_jugador()
 	add_child(jugador)
@@ -77,7 +100,7 @@ func _ready() -> void:
 	add_child(interfaz)
 	interfaz.conectar_api(api)
 	# Va acá y no arriba: la interfaz recién existe en esta línea.
-	jugador.tecleando = interfaz.escribiendo
+	jugador.tecleando = _jugador_sin_control
 
 	mapa = Mapa.new()
 	mapa.lugares = LUGARES
@@ -485,7 +508,10 @@ func _sincronizar_amenazas(amenazas: Array) -> void:
 		m.nombre_servidor = str(d.get("nombre", "")) if d.get("nombre") != null else str(d.get("kind", ""))
 		m.vida = int(d.get("health", 40))
 		m.objetivo = jugador
-		m.pego.connect(_al_recibir_danio)
+		# El id va atado en el connect porque la señal no lo trae, y el servidor
+		# necesita saber QUIÉN te pegó: sin eso agarra la primera amenaza viva
+		# del lugar y el evento sale con el bicho equivocado.
+		m.pego.connect(_al_recibir_danio.bind(id))
 		m.murio.connect(_al_morir_monstruo)
 		_monstruos.append(m)
 		_monstruos_por_id[id] = m
@@ -500,11 +526,45 @@ func _sincronizar_amenazas(amenazas: Array) -> void:
 			viejo_m.recibir(9999)   # que caiga en pantalla, no que desaparezca
 
 
-func _al_recibir_danio(danio: int) -> void:
-	vida_jugador = maxi(0, vida_jugador - danio)
+## Mientras devuelva true, el teclado no es del personaje. Dos motivos, y los
+## dos son estados en los que caminar sería raro: le estás escribiendo a
+## alguien, o estás tirado en el piso. Pegar se corta aparte (en _al_golpear)
+## porque es un clic, y el clic no pasa por este filtro.
+func _jugador_sin_control() -> bool:
+	return _caido or interfaz.escribiendo()
+
+
+## Un bicho te pegó.
+##
+## Mismo patrón que cuando pegás vos (_al_golpear): el efecto se pinta YA y el
+## aviso al servidor sale en paralelo. Esperar la respuesta para reaccionar
+## mete 200 ms entre el impacto y el tirón, y eso alcanza para que se sienta
+## roto.
+##
+## Lo que no se adivina es el NÚMERO: cuánto duele lo decide el mundo, igual
+## que el daño que hacés vos. La barra se corrige cuando vuelve la respuesta.
+## El daño que manda `pego` queda sin usar a propósito — es la constante local
+## del monstruo y ya no manda nada.
+func _al_recibir_danio(_danio_local: int, id_amenaza: String) -> void:
+	# Al caído no se le pega: el servidor tampoco lo permite, y sin esto cada
+	# mordida de un bicho que sigue encima manda un POST que ya sabemos que va
+	# a volver con ok=false.
+	if _caido:
+		return
 	jugador.doler()
-	interfaz.mostrar_vida(vida_jugador)
-	if vida_jugador == 0:
+	api.danio(id_amenaza)
+
+
+## Lo que dijo el servidor del golpe que te dieron. La vida que vale es la de él.
+func _al_resultado_de_danio(d: Dictionary) -> void:
+	if not d.has("health"):
+		return          # "no existe": no hay nada que sincronizar
+	# Sólo baja. Hay varios golpes en vuelo a la vez —dos bichos encima pegan
+	# cada 1,25 s— y las respuestas no vuelven en orden: sin este mini la barra
+	# sube y baja sola. Curarse nunca llega por acá, llega por /mundo o por
+	# levantarse.
+	_mostrar_vida(mini(_vida, int(d.get("health", _vida))))
+	if bool(d.get("caido", false)):
 		_caer_jugador()
 
 
@@ -513,17 +573,76 @@ func _al_morir_monstruo(_quien: Monstruo) -> void:
 	interfaz.avisar('Cayó uno.')
 
 
+## La barra dibuja el último número del servidor, y nada más.
+func _mostrar_vida(v: int) -> void:
+	_vida = clampi(v, 0, _vida_maxima)
+	interfaz.mostrar_vida(_vida, _vida_maxima)
+
+
+## Te tumbaron.
+##
+## No hay temporizador. Antes te levantabas solo a los 2,4 segundos, que es lo
+## mismo que no haber caído nunca; y la salida fácil —un reloj más largo— está
+## prohibida por las bases: nada puede cobrarte tiempo de juego. Caer termina
+## cuando el jugador decide levantarse y el servidor lo escribe.
+##
+## Lo que cuesta caer son las dos cosas que se pueden cobrar sin romper nada:
+## la posición (te levantás en la aldea) y la cara (los que te vieron caer te
+## temen un poco menos, y eso lo cobra el servidor). No cuesta saber.
 func _caer_jugador() -> void:
-	interfaz.avisar('Te tumbaron. No perdiste lo que sabés — eso vive en tu cabeza.')
-	await get_tree().create_timer(2.4).timeout
-	vida_jugador = 100
-	interfaz.mostrar_vida(vida_jugador)
-	jugador.position = Vector3(0, altura_en(0, 8) + 2.0, 8)
+	if _caido:
+		return          # se cae una sola vez; de ahí se sale levantándose
+	_caido = true
+	_tumbar(true)
+	interfaz.mostrar_caida(api.levantarse)
+
+
+## Que se vea desde afuera que estás en el piso.
+##
+## Se inclina la malla entera y no se usa `figura.caer()`: ese apaga la
+## animación para siempre y no hay cómo revivirla, y de esta caída se vuelve.
+func _tumbar(si: bool) -> void:
+	var malla := jugador.get_node_or_null("Malla") as Node3D
+	if malla == null:
+		return
+	var giro := (-PI / 2.0 + 0.15) if si else 0.0
+	var hundir := -0.3 if si else 0.0
+	var t := create_tween().set_parallel(true)
+	t.tween_property(malla, "rotation:x", giro, 0.45) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN if si else Tween.EASE_OUT)
+	t.tween_property(malla, "position:y", hundir, 0.45)
+
+
+## Volvió la respuesta de levantarse. Recién ACÁ se mueve el personaje: si lo
+## moviéramos al apretar el botón y el servidor fallara, estarías caminando por
+## la aldea mientras la base te tiene tirado en la ruina.
+func _al_levantarse(d: Dictionary) -> void:
+	var slug: String = str(d.get("lugar", ""))
+	if bool(d.get("ok", false)) and LUGARES.has(slug):
+		var p: Vector3 = LUGARES[slug]['pos']
+		jugador.position = Vector3(p.x, altura_en(p.x, p.z) + 2.0, p.z)
+		jugador.velocity = Vector3.ZERO
+		# El servidor ya te tiene ahí. Sin anotarlo, _avisar_donde_estoy le
+		# mandaría una llegada que no pasó y el director leería un viaje.
+		_lugar_actual = slug
+		# La caminata de vuelta es el costo y es a propósito: mientras volvés
+		# seguís adentro del juego. No se compensa ni se disimula.
+		interfaz.avisar("Te levantaste en %s. Hasta donde caíste hay que caminar."
+			% LUGARES[slug].get("nombre", slug))
+	_levantado_en = Time.get_ticks_msec()
+	_caido = false
+	_tumbar(false)
+	interfaz.ocultar_caida()
+	_mostrar_vida(int(d.get("health", _vida)))
+	# El mundo pudo haber cambiado mientras estabas en el piso.
+	api.pedir_mundo()
 
 
 func _al_recibir_mundo(datos: Dictionary) -> void:
 	var region: Dictionary = datos.get("region", {})
-	interfaz.mostrar_region(region, datos.get("player", {}))
+	var yo: Dictionary = datos.get("player", {})
+	interfaz.mostrar_region(region, yo)
+	_sincronizar_mi_estado(yo)
 
 	# El reloj del valle. Viene del servidor, no de esta máquina: es lo que
 	# hace que el atardecer sea el mismo para todos los que estén conectados.
@@ -582,6 +701,27 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 			_npcs[persona.get("name", "?")] = nodo
 
 
+## Cómo estás, según el mundo. Esta es la fuente de verdad de la vida: si te
+## bajaron desde otra sesión tuya, o si un golpe se perdió en el camino, acá te
+## enterás y la barra se acomoda sola.
+func _sincronizar_mi_estado(yo: Dictionary) -> void:
+	if yo.is_empty():
+		return
+	# Un /mundo pedido antes de levantarte puede llegar después y todavía verte
+	# tirado. Sin esta ventana el panel de caída reaparece solo, ya de pie.
+	if Time.get_ticks_msec() - _levantado_en < 4000:
+		return
+	_vida_maxima = maxi(1, int(yo.get("max_health", _vida_maxima)))
+	_mostrar_vida(int(yo.get("health", _vida)))
+	if bool(yo.get("caido", false)):
+		_caer_jugador()
+	elif _caido:
+		# Estabas caído y el mundo dice que no: te levantaron por otro lado.
+		_caido = false
+		_tumbar(false)
+		interfaz.ocultar_caida()
+
+
 func _cartel(texto: String) -> Node3D:
 	var l := Label3D.new()
 	l.text = texto
@@ -619,14 +759,27 @@ func _process(_dt: float) -> void:
 ## bichos muerden a quien está ahí, y los testigos de lo que hacés son los que
 ## están ahí. Caminar sin reportar es caminar en una postal.
 func _avisar_donde_estoy() -> void:
+	var yo := Vector2(jugador.global_position.x, jugador.global_position.z)
 	var cerca := ""
-	var d_min := 34.0
+	var d_min := ENTRAR
 	for slug: String in LUGARES:
-		var d: float = Vector2(jugador.global_position.x, jugador.global_position.z).distance_to(
+		var d: float = yo.distance_to(
 			Vector2(LUGARES[slug]['pos'].x, LUGARES[slug]['pos'].z))
 		if d < d_min:
 			d_min = d
 			cerca = slug
+
+	# Histéresis: para ENTRAR hay que acercarse, para SALIR hay que alejarse
+	# bastante más. Sin esto, parado en el borde entre dos lugares el juego
+	# oscila y le manda una llegada al servidor por cuadro. Ya pasó: siete
+	# eventos "llegó a" en un solo tick, y esos eventos los lee el director,
+	# que es lo único que este proyecto está midiendo.
+	if _lugar_actual != "":
+		var d_viejo: float = yo.distance_to(Vector2(
+			LUGARES[_lugar_actual]['pos'].x, LUGARES[_lugar_actual]['pos'].z))
+		if d_viejo < SALIR:
+			return          # seguís donde estabas hasta salir de verdad
+
 	if cerca != "" and cerca != _lugar_actual:
 		_lugar_actual = cerca
 		api.estoy_en(cerca)
@@ -634,6 +787,8 @@ func _avisar_donde_estoy() -> void:
 
 
 func _al_interactuar() -> void:
+	if _caido:
+		return          # desde el piso no se conversa
 	var quien: String = interfaz.npc_cercano
 	if quien != "":
 		api.hablar(quien)
@@ -643,6 +798,10 @@ const ALCANCE_JUGADOR := 3.2
 const DANIO_JUGADOR := 14
 
 func _al_golpear() -> void:
+	# Caído no se pega. El clic no pasa por el filtro de _jugador_sin_control
+	# —ese sólo corta el teclado—, así que el corte va acá.
+	if _caido:
+		return
 	jugador.amagar_golpe()
 	for m in _monstruos:
 		if not is_instance_valid(m):

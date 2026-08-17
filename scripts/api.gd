@@ -9,6 +9,8 @@ extends Node
 signal mundo_recibido(datos: Dictionary)
 signal dialogo_recibido(datos: Dictionary)
 signal peleado(datos: Dictionary)
+signal danio_recibido(datos: Dictionary)
+signal levantado(datos: Dictionary)
 signal cronica_recibida(texto: String)
 
 ## Se sobreescriben desde la línea de comandos o el archivo de config.
@@ -79,6 +81,34 @@ func estoy_en(slug: String) -> void:
 func pelear(id: String) -> void:
 	_hacer_post("/j/%s/pelear" % token, "id=" + id.uri_encode(),
 		func(d: Dictionary) -> void: peleado.emit(d))
+
+
+## El golpe al revés: te pegaron a vos. El cliente avisa el impacto, el mundo
+## decide cuánto duele.
+##
+## Fijate lo que NO viaja: cuánta vida te queda. Si el cliente mandara el
+## número, cada máquina tendría su propia verdad y estaríamos donde estábamos
+## —una vida local que bajaba en tiempo real y se curaba sola—. Acá sólo se
+## dice quién pegó; la vida vuelve en la respuesta y esa es la que vale.
+##
+## Sin `id` el servidor agarra la primera amenaza viva del lugar donde estás
+## parado, que es lo correcto cuando no sabemos a qué fila de `threats`
+## corresponde el bicho de la escena.
+func danio(id: String = "") -> void:
+	var cuerpo := ""
+	if id != "":
+		cuerpo = "de=" + id.uri_encode()
+	_hacer_post("/j/%s/danio" % token, cuerpo,
+		func(d: Dictionary) -> void: danio_recibido.emit(d))
+
+
+## Levantarse del piso. Devuelve el **slug** del lugar donde quedaste —el mismo
+## vocabulario que viaja en /estoy—, que es la aldea y no donde caíste: el
+## costo de caer es la caminata de vuelta. Si estabas entero contesta ok=false,
+## porque si no levantarse sería una cura gratis y un viaje instantáneo.
+func levantarse() -> void:
+	_hacer_post("/j/%s/levantarse" % token, "",
+		func(d: Dictionary) -> void: levantado.emit(d))
 
 
 func actuar(verbo: String, objetivo: String = "") -> void:
