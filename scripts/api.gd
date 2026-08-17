@@ -12,6 +12,9 @@ signal peleado(datos: Dictionary)
 signal danio_recibido(datos: Dictionary)
 signal levantado(datos: Dictionary)
 signal cronica_recibida(texto: String)
+## Lo que pasó cuando mandaste una acción. Ver `actuar()`: el servidor lo
+## contesta y el cliente lo venía tirando a la basura.
+signal aviso_recibido(texto: String)
 
 ## Se sobreescriben desde la línea de comandos o el archivo de config.
 var base_url := "https://saber-escaso.vercel.app"
@@ -111,11 +114,80 @@ func levantarse() -> void:
 		func(d: Dictionary) -> void: levantado.emit(d))
 
 
+## Mandar una acción del mundo: `buscar`, `aprender`, `trabajar`, `encargarse`,
+## `dar`, `ensenar`, `ir`.
+##
+## MEDIDO CONTRA PRODUCCIÓN EL 17 DE AGOSTO, y da vuelta lo que se creía:
+## **`/act` NO espera al tick.** El servidor llama a `resolverAcciones()` en el
+## acto (`lib/web.ts`) y contesta un **303** cuyo `Location` trae el resultado
+## en el parámetro `aviso`:
+##
+##   POST /j/<token>/act   verb=buscar
+##   → 303  location: /j/<token>?aviso=encontr%C3%B3%20rama%20de%20roble%20en%20El%20Sotobosque
+##
+## Es la respuesta pensada para el formulario de la web, y el cliente la venía
+## perdiendo entera: `HTTPRequest` sigue los redirects solo, así que traía el
+## HTML de la página del jugador, `JSON.parse_string()` devolvía null, y el
+## callback —el que hacía `pedir_mundo()`— **no se llamaba nunca**. Por eso
+## apretar una opción del diálogo no decía nada ni refrescaba la bolsa: desde
+## adentro del juego se veía idéntico a un botón roto.
+##
+## Por eso acá el redirect no se sigue: el 303 **es** la respuesta.
+##
+## Un verbo que el servidor no conoce igual contesta 303, con el aviso "Lo
+## mandaste. Se resuelve cuando cierre el día del valle." Es la única forma de
+## distinguir "pasó" de "quedó encolado", y quedó encolado significa hasta seis
+## horas reales. No inventes verbos.
 func actuar(verbo: String, objetivo: String = "") -> void:
-	var cuerpo := "verb=" + verbo
+	var cuerpo := "verb=" + verbo.uri_encode()
 	if objetivo != "":
 		cuerpo += "&target=" + objetivo.uri_encode()
-	_hacer_post("/j/%s/act" % token, cuerpo, func(_d: Dictionary) -> void: pedir_mundo())
+	var r := HTTPRequest.new()
+	# El 303 es el dato, no un desvío.
+	r.max_redirects = 0
+	add_child(r)
+	r.request_completed.connect(_accion_completada.bind(r))
+	var err := r.request(
+		base_url + "/j/%s/act" % token,
+		["Content-Type: application/x-www-form-urlencoded"],
+		HTTPClient.METHOD_POST,
+		cuerpo,
+	)
+	if err != OK:
+		push_error("no pude mandar la acción %s: %s" % [verbo, err])
+		r.queue_free()
+		aviso_recibido.emit("No salió el pedido.")
+
+
+func _accion_completada(
+	_res: int, codigo: int, headers: PackedStringArray, _cuerpo: PackedByteArray,
+	nodo: HTTPRequest
+) -> void:
+	nodo.queue_free()
+	var texto := _aviso_de(headers)
+	if texto == "" and (codigo < 200 or codigo >= 400):
+		# Se vio un 504 real: la acción tardó más que el límite de la función.
+		# Decirlo es mejor que quedarse mudo, que es lo que se leía como "el
+		# juego no hace nada".
+		texto = "El valle tardó demasiado en contestar. Probá de nuevo."
+	if texto != "":
+		aviso_recibido.emit(texto)
+	# El mundo YA cambió: la bolsa, los vínculos, el lugar. Sin este pedido el
+	# objeto que acabás de encontrar no aparece hasta vaya a saber cuándo.
+	pedir_mundo()
+
+
+## El resultado viaja en el `Location` del 303, no en el cuerpo.
+static func _aviso_de(headers: PackedStringArray) -> String:
+	for h in headers:
+		if not h.to_lower().begins_with("location:"):
+			continue
+		var loc := h.substr(9).strip_edges()
+		var i := loc.find("aviso=")
+		if i < 0:
+			return ""
+		return loc.substr(i + 6).split("&")[0].uri_decode()
+	return ""
 
 
 func pedir_cronica() -> void:

@@ -24,6 +24,12 @@
 ## comentario (`v0.30` = peldaño V3). Si mañana agregás un color, elegí primero
 ## el escalón y recién después el matiz.
 ##
+## **Y el peldaño del comentario es el peldaño de la pantalla.** No es una
+## aspiración: está medido con un control renderizado, y hubo que arreglar el
+## motor para que fuera cierto — ver "LOS DOS CAMINOS DEL COLOR" abajo, arriba
+## de las fábricas. Si algún día un color de acá no rinde su número, empezá por
+## ahí antes de tocar el número.
+##
 ## **La escalera** (V de HSV, que es lo que se lee en blanco y negro):
 ##
 ## | # | nombre  | V    | quién vive ahí                                     |
@@ -341,19 +347,99 @@ const MAPA_LUGAR := Color(0.598, 0.660, 0.568)
 # pusieran roughness a ojo y todo tuviera el mismo reflejo.
 # ===========================================================================
 
+# ---------------------------------------------------------------------------
+# LOS DOS CAMINOS DEL COLOR
+# (o por qué cinco fábricas de acá abajo llevan `vertex_color_is_srgb`)
+#
+# Un `Color` de este archivo puede llegar a la pantalla por dos caminos, y
+# hasta el 17 de agosto NO DABAN LO MISMO:
+#
+#   · Por `albedo_color`. Godot sabe que eso es sRGB y lo pasa a lineal él.
+#   · Por **color de vértice** (`SurfaceTool.set_color`) o por **color de
+#     instancia** (`MultiMesh.set_instance_color`) — y por la rampa de una
+#     partícula, que viaja por el mismo COLOR. Ahí Godot no convertía nada:
+#     se comía el número como si ya fuera lineal.
+#
+# Medido con un control renderizado en Godot 4.7.1 —tres quads, el mismo
+# `Color(0.5, 0.5, 0.5)`, unshaded, tonemap lineal, sin luces:
+#
+#   A por albedo_color .......... 0.498   ← el número que dice el código
+#   B por color de vértice ...... 0.733   ← 0,24 más claro
+#   C por color de instancia .... 0.737   ← 0,24 más claro
+#
+# **La consecuencia era de composición, no de tecnicismo.** El suelo del valle
+# va por vértice y los muros van por albedo, así que el suelo entero rendía dos
+# peldaños y medio arriba de la escalera (PASTO v0.30 salía 0.57, ROCA v0.66
+# salía 0.83) mientras `MURO_ALDEA` rendía su v0.66 honesto. O sea que la
+# aldea, que por diseño de esta escalera es LA MANCHA CLARA DEL CUADRO, salía
+# al mismo valor que el suelo que la rodea. Un pueblo se ve porque es más claro
+# que el prado; éste no lo era.
+#
+# Ojo con el matiz, que es el que confunde: la amplitud INTERNA del suelo
+# estaba bien. Los cuatro colores del terreno viajan por el mismo camino y
+# estaban corridos igual, así que pasto/tierra/pasto seco/roca se separaban
+# entre sí como corresponde. Lo roto era la relación entre lo que va por
+# vértice y lo que va por albedo.
+#
+# `vertex_color_is_srgb = true` le dice al shader que ese color también es
+# sRGB. **Medido: con el flag, B y C dan 0.498, clavado en A.** Se eligió esto
+# y no las otras dos salidas posibles:
+#
+#   · **Convertir los colores antes de mandarlos** (`srgb_to_linear()` en el
+#     que llama): hay que hacerlo en cinco lugares de tres scripts, y el día
+#     que alguien mande un color nuevo sin acordarse vuelve el bug. Peor
+#     todavía: el mismo `Color` de este archivo tendría que salir convertido
+#     para un consumidor y crudo para otro, y ahí se termina la idea de que un
+#     color signifique una sola cosa.
+#   · **Recalibrar los nominales** para el camino por el que viajan: mata el
+#     archivo. Todo el valor de la paleta es que `v0.30` en el comentario sea
+#     v0.30 en la pantalla. Una escalera con dos juegos de números según por
+#     dónde salga el color es exactamente la papilla de la que se venía.
+#
+# **Y el flag va fábrica por fábrica, NO en `_base()`.** No es prolijidad, es
+# obligatorio: `vegetacion.gd` prende `vertex_color_use_as_albedo` sobre sus
+# propias copias de `follaje()` y `madera()`, y por ese camino no manda colores
+# sino **multiplicadores** (`_tinte()` divide por el color medio y acota a
+# 0,45–1,55). Un multiplicador no es un color y no se convierte: pasarlo por
+# sRGB lo mandaría a 0,17–2,20 y le reventaría el rango a la arboleda entera.
+# Ése es el único camino de color de vértice del juego que tiene que quedarse
+# lineal, y se queda lineal solo porque el flag no está en la fábrica base.
+#
+# Y lo de siempre: **`vertex_color_use_as_albedo` no se apaga nunca** en estas
+# cinco. Sin ese flag el color por instancia se calcula y se tira, y es un bug
+# que ya se arregló dos veces acá.
+# ---------------------------------------------------------------------------
+
 ## El terreno. Sin especular: el pasto y la tierra no reflejan nada, y un
 ## reflejo parejo en 360 metros de suelo es exactamente el brillo del plástico.
+##
+## `vertex_color_is_srgb` es la razón de ser del arreglo del 17 de agosto: acá
+## viven los cuatro colores del suelo y es el 40% de la pantalla. Sin el flag
+## el valle entero flotaba dos peldaños y medio arriba de la escalera y la
+## aldea perdía su contraste contra él. Medido, con el flag: PASTO 0.294,
+## TIERRA 0.408, PASTO_SECO 0.529, ROCA 0.659 — la escalera V3·V4·V5·V6 tal
+## cual la dice el comentario, apenas atenuada por `TERRENO_TINTE`.
 static func terreno() -> StandardMaterial3D:
 	var m := _base(TERRENO_TINTE, 0.97)
 	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
 	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	return m
 
 
 ## La cordillera: todo el color viene de los vértices, el albedo no tiñe.
+##
+## Va con el flag por la misma razón que el terreno, y NO es opcional que vayan
+## juntos: el monte es el fondo contra el que se recorta el valle. Si se
+## corrigiera el suelo y no la cordillera, el anillo de montañas quedaría medio
+## peldaño más claro que la roca del propio valle y el cuenco se daría vuelta.
+## Además el lerp 0.45 hacia `MONTE_AIRE` —la distancia que lava el color— está
+## pensado en números de la escalera; sólo significa lo que dice si el camino
+## respeta la escalera.
 static func monte() -> StandardMaterial3D:
 	var m := _base(Color.WHITE, 1.0)
 	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
 	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	return m
 
@@ -371,9 +457,20 @@ static func follaje(c: Color = COPA) -> StandardMaterial3D:
 ## color por instancia que calcula detalles.gd se descarta en el shader y las
 ## 26.000 matas salen todas del mismo color. O sea, el estampado que se quería
 ## evitar. Y por eso el albedo va en blanco: el color lo pone la instancia.
+##
+## `vertex_color_is_srgb` va acá **obligatoriamente junto con el de
+## `terreno()`**, y es la trampa de este arreglo. Las matas son V2–V4 CONTRA UN
+## SUELO V4 a propósito: van por debajo del suelo para leerse como textura y
+## sombra del prado y no como una pelusa clara apoyada encima. Suelo y matas
+## viajaban por el mismo camino torcido, así que la relación se salvaba de
+## casualidad — corregir una sola de las dos la rompe en cualquiera de los dos
+## sentidos: sólo las matas y quedan casi negras sobre un suelo 0,24 más claro;
+## sólo el suelo y las 26.000 matas se vuelven justo la pelusa brillante que la
+## paleta eligió no tener.
 static func pasto_hoja() -> StandardMaterial3D:
 	var m := _base(Color.WHITE, 1.0)
 	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
 	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	m.cull_mode = BaseMaterial3D.CULL_BACK
 	return m
@@ -490,6 +587,21 @@ static func ojo_de_bicho() -> StandardMaterial3D:
 ## El cartel de humo. Recibe color de la partícula, no proyecta ni recibe
 ## sombra: está sobre el techo, nunca hay nada que se la tire, y recibirla
 ## cuesta una búsqueda en el atlas por píxel de humo.
+##
+## `vertex_color_is_srgb`: la rampa de la partícula viaja por COLOR, o sea por
+## el mismo camino que un color de vértice. **Acá el flag ATENÚA en vez de
+## aclarar**, y por eso hay que decidirlo y no copiarlo: el error del camino
+## venía compensado a medias por el tinte `HUMO_TELA`, así que la columna
+## rendía 0.698 al nacer contra un nominal de 0.780 y no había un salto
+## escandaloso que arreglar. Se le pone igual, por dos razones. Una: 0.604 es
+## lo que pide la aritmética de la propia paleta —V7 de la rampa multiplicado
+## por V7 del tinte— y el sentido de este archivo es que sus cuentas den. Dos:
+## dejar una sola fábrica con otro camino de color reinstala la enfermedad que
+## la paleta existe para curar, ahora como dos pipelines en vez de ocho tachos.
+## Medido, con el flag: nace 0.604 y muere 0.698. Sigue
+## siendo V6–V7 contra un techo V2 —o sea sigue siendo la mancha clara sobre la
+## casa— y se conserva lo único que la columna tiene que contar, que es que se
+## ACLARA al disolverse.
 static func humo() -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = HUMO_TELA
@@ -497,18 +609,39 @@ static func humo() -> StandardMaterial3D:
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
 	m.disable_receive_shadows = true
 	return m
 
 
 ## Una chispa: luciérnagas y cualquier partícula que sea luz y no materia.
 ## Sin sombreado — una luciérnaga sombreada es un punto gris.
+##
+## `vertex_color_is_srgb`: **acá no es cosmético y no es un caso menor por ser
+## chiquito.** El corrimiento del camino de color, en algo que ya vive contra
+## el techo de la escalera, no se puede leer como valor porque no le queda para
+## dónde aclararse: se lee como PÉRDIDA DE COLOR. Medido sin el flag, la
+## luciérnaga salía (1.000, 0.918, 0.616) —saturación 0,38— en vez de la
+## (1.000, 0.824, 0.340) que dice `LUCIERNAGA`, saturación 0,66. O sea que el
+## camino se comía casi la mitad de la excepción 1. Y la excepción 1 es la que
+## hace el tono entero del juego: un valle apagado con seis puntos ÁMBAR es
+## melancólico; con seis puntos casi blancos es una guirnalda.
+##
+## TRAMPA MEDIDA Y TODAVÍA SIN ARREGLAR, no la redescubras: **con
+## `SHADING_MODE_UNSHADED` Godot 4.7 descarta la emisión.** Control: un quad de
+## albedo negro con emisión y energía 6.0 sale blanco sombreado (1.000) y negro
+## unshaded (0.000). O sea que en esta fábrica `emision` y `energia` no hacen
+## nada hoy y la luciérnaga es puro albedo, sin HDR y por lo tanto sin glow.
+## No se toca en el mismo cambio que el camino de color porque prenderla sube
+## la chispa unas seis veces de golpe y eso es una decisión de tono que se mira
+## en pantalla, no un arreglo de tubería.
 static func chispa(emision: Color = LUCIERNAGA_EMISION, energia: float = 6.0) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
 	m.emission_enabled = true
 	m.emission = emision
 	m.emission_energy_multiplier = energia

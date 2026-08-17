@@ -196,25 +196,31 @@ static func _vidrio(muro: MeshInstance3D, luz: StandardMaterial3D) -> MeshInstan
 ## El material de las ventanas encendidas. Uno por casa: `ciclo.gd` le mueve
 ## `emission_energy_multiplier` a cada ventana del grupo, y si todas
 ## compartieran un material global le escribiría el mismo número cien veces.
+##
+## Sale de `Paleta.ventana()`, que es la excepción 1 de la paleta —el fuego, el
+## único lugar donde se gasta saturación— y **la entrega apagada, en 0.15**. Eso
+## no es un descuido y no hay que "arreglarlo" subiéndolo: la energía la manda
+## `ciclo.gd` según la hora del SERVIDOR, de 0.15 a 4.2, y su `_ultima_oscuridad`
+## arranca en −1.0, así que la primera pasada siempre escribe. El 3.4 fijo que
+## había acá era una ventana encendida a las tres de la tarde durante un cuadro.
 static func _luz_de_ventana() -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(1.0, 0.78, 0.42)
-	m.emission_enabled = true
-	m.emission = Color(1.0, 0.72, 0.34)
-	m.emission_energy_multiplier = 3.4
-	return m
+	return Paleta.ventana()
 
 
+## Ventanas y puerta de la casa-caja de antes.
+##
+## **Ya no la llama nadie**: las casas se arman con los módulos del kit en
+## `casa()`. Queda migrada igual y —esto es lo que importa— **pidiéndole la luz
+## a `_luz_de_ventana()` en vez de armar su propio material**: mientras existan
+## dos recetas de ventana encendida en el mismo archivo, la próxima que alguien
+## copie va a ser la equivocada. Si sigue sin llamarla nadie, se borra.
 static func ventanas_y_puerta(casa: MeshInstance3D, ancho: float, alto: float) -> void:
-	var luz_mat := StandardMaterial3D.new()
-	luz_mat.albedo_color = Color(1.0, 0.78, 0.42)
-	luz_mat.emission_enabled = true
-	luz_mat.emission = Color(1.0, 0.72, 0.34)
-	luz_mat.emission_energy_multiplier = 3.4
+	var luz_mat := _luz_de_ventana()
 
-	var madera := StandardMaterial3D.new()
-	madera.albedo_color = Color(0.16, 0.10, 0.07)
-	madera.roughness = 0.95
+	# La puerta es `Paleta.MADERA`, que está en V1 a propósito: contra un muro
+	# V6 una puerta tiene que leerse como un AGUJERO, no como una tabla marrón.
+	# Ese par claro/oscuro es la mitad de lo que hace que una caja sea una casa.
+	var madera := Paleta.madera()
 
 	# Dos ventanas al frente, apenas salidas de la pared para que capten luz.
 	for lado: float in [-0.26, 0.26]:
@@ -238,9 +244,12 @@ static func ventanas_y_puerta(casa: MeshInstance3D, ancho: float, alto: float) -
 
 
 static func chimenea(padre: Node3D, pos: Vector3, ancho: float) -> void:
-	var ladrillo := StandardMaterial3D.new()
-	ladrillo.albedo_color = Color(0.24, 0.16, 0.13)
-	ladrillo.roughness = 0.98
+	# La chimenea es lo único que sobresale del techo, así que su trabajo entero
+	# es silueta. `Paleta.LADRILLO` está en V3 y el techo en V2: un peldaño de
+	# separación, que es lo mínimo para que el bulto se vea contra la tapa
+	# oscura de la casa. Con el mismo valor que el techo, la chimenea no existe
+	# y el humo sale de la nada.
+	var ladrillo := Paleta.piedra(Paleta.LADRILLO)
 	var c := BoxMesh.new()
 	c.size = Vector3(ancho * 0.22, ancho * 0.55, ancho * 0.22)
 	c.material = ladrillo
@@ -290,9 +299,18 @@ static func _humo(pos: Vector3) -> GPUParticles3D:
 	ct.curve = curva
 	m.scale_curve = ct
 
+	# El humo nace en V7 y muere en V8: se ACLARA al disolverse, que es lo que
+	# hace de verdad una columna de humo cuando se adelgaza y le pasa el cielo
+	# por atrás. Y los dos son grises CÁLIDOS, no neutros: el (0.80, 0.80, 0.80)
+	# que había acá era gris de niebla, y niebla sobre un techo no dice que
+	# alguien está cocinando. Es la única señal de que la casa está habitada de
+	# día, cuando las ventanas están apagadas.
+	#
+	# Dos puntos, así que acá los índices 0 y 1 sí son los extremos de la rampa.
+	# En `luciernagas()` eso mismo estaba mal y costó el color de muerte entero.
 	var g := Gradient.new()
-	g.set_color(0, Color(0.72, 0.70, 0.66, 0.55))
-	g.set_color(1, Color(0.80, 0.80, 0.80, 0.0))
+	g.set_color(0, Paleta.HUMO_NACE)
+	g.set_color(1, Paleta.HUMO_MUERE)
 	var gt := GradientTexture1D.new()
 	gt.gradient = g
 	m.color_ramp = gt
@@ -300,17 +318,12 @@ static func _humo(pos: Vector3) -> GPUParticles3D:
 
 	var q := QuadMesh.new()
 	q.size = Vector2(1.5, 1.5)
-	var qm := StandardMaterial3D.new()
-	qm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	qm.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
-	qm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	qm.vertex_color_use_as_albedo = true
-	qm.albedo_color = Color(0.75, 0.73, 0.70, 0.5)
-	# El humo no recibe sombra. Está arriba del techo, nunca hay nada que se la
-	# proyecte, y recibirla cuesta una búsqueda en el atlas por cada píxel de
-	# humo — o sea justo donde más sobredibujado hay.
-	qm.disable_receive_shadows = true
-	q.material = qm
+	# `Paleta.humo()` trae la receta entera —alfa, billboard, color de vértice y
+	# el "no recibe sombra"—, porque el humo no recibe sombra por decisión y no
+	# por casualidad: está arriba del techo, nunca hay nada que se la proyecte, y
+	# recibirla cuesta una búsqueda en el atlas por cada píxel, o sea justo donde
+	# más sobredibujado hay. Su albedo `HUMO_TELA` MULTIPLICA la rampa de arriba.
+	q.material = Paleta.humo()
 	p.draw_pass_1 = q
 	return p
 
@@ -326,16 +339,29 @@ static func _humo(pos: Vector3) -> GPUParticles3D:
 static func pasto(padre: Node3D, alturas: Callable, cantidad: int, radio: float) -> void:
 	var hoja := PrismMesh.new()
 	hoja.size = Vector3(0.09, 0.42, 0.04)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.40, 0.55, 0.26)
-	mat.roughness = 1.0
-	# Sin descarte de caras traseras se rasterizaban las 208.000 caras del
-	# pasto DOS veces. Eso tiene sentido en un pasto de cartelitos planos, que
-	# no tienen "adentro"; acá cada mata es un prisma cerrado y las caras de
-	# atrás siempre las tapa la de adelante. Era el doble de trabajo por
-	# exactamente el mismo píxel.
-	mat.cull_mode = BaseMaterial3D.CULL_BACK
-	hoja.material = mat
+	# ===================================================================
+	# EL BUG QUE ARRASTRABA ESTE ARCHIVO, Y NO ERA UN COLOR MAL ELEGIDO.
+	#
+	# El MultiMesh de más abajo pone `use_colors = true` y calcula un tinte
+	# distinto por mata — ese código existe para una sola cosa, que 26.000
+	# matas no sean la misma mata. **El material que había acá no tenía
+	# `vertex_color_use_as_albedo`, así que el shader tiraba ese color a la
+	# basura** y pintaba las 26.000 con un único `Color(0.40, 0.55, 0.26)`.
+	# O sea: se pagaba el cálculo del antiestampado y se veía el estampado.
+	#
+	# `Paleta.pasto_hoja()` existe exactamente para esto y trae el flag
+	# prendido, el albedo en blanco —porque el color lo pone la instancia y
+	# el albedo lo MULTIPLICA, no lo reemplaza— y el especular apagado, que
+	# es lo que saca el brillo parejo de plástico de los 26.000 prismas.
+	#
+	# También trae `CULL_BACK`, y eso no se pierde al migrar: sin descarte
+	# de caras traseras se rasterizaban las 208.000 caras del pasto DOS
+	# veces. Tiene sentido en un pasto de cartelitos planos, que no tienen
+	# "adentro"; acá cada mata es un prisma cerrado y la cara de atrás
+	# siempre la tapa la de adelante. Era el doble de trabajo por el mismo
+	# píxel.
+	# ===================================================================
+	hoja.material = Paleta.pasto_hoja()
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20260816
@@ -357,9 +383,18 @@ static func pasto(padre: Node3D, alturas: Callable, cantidad: int, radio: float)
 			var t: Transform3D = lista[i]
 			t.origin -= centro
 			mm.set_instance_transform(i, t)
-			# Variar el color mata la sensación de estampado.
-			mm.set_instance_color(i,
-				Color(0.34, 0.48, 0.22).lerp(Color(0.62, 0.66, 0.32), rng.randf()))
+			# Variar el color mata la sensación de estampado — y desde el
+			# material de arriba, por fin se ve.
+			#
+			# Las dos puntas son V2 y V4 contra un suelo que promedia V4: el
+			# pasto va POR DEBAJO del terreno, no encima. Es la diferencia
+			# entre leerse como textura y sombra del prado y leerse como una
+			# pelusa clara apoyada arriba, que es lo que hacía el verde
+			# (0.40, 0.55, 0.26) —V5 y saturación 0.53— cuando pintaba las
+			# 26.000 matas iguales. Baja a s0.34, la misma saturación que la
+			# tierra que tiene abajo.
+			mm.set_instance_color(i, Paleta.PASTO_MATA_OSCURA.lerp(
+				Paleta.PASTO_MATA_CLARA, rng.randf()))
 
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
@@ -390,10 +425,19 @@ static func piedras(padre: Node3D, alturas: Callable, cantidad: int, radio: floa
 		esfera.height = 0.7
 		esfera.radial_segments = 6
 		esfera.rings = 3
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.35, 0.34, 0.32)
-		mat.roughness = 1.0
-		esfera.material = mat
+		# El respaldo de cuando falta el `.glb`. Va en `Paleta.PIEDRA_SUELTA`,
+		# que es V6: **la piedra es lo más claro del paisaje**, y estas 320
+		# piedras son la puntuación clara del cuadro contra un suelo V4. El gris
+		# (0.35, 0.34, 0.32) de antes estaba en V3 —por DEBAJO del suelo— así
+		# que no puntuaba nada: eran manchones oscuros del mismo valor que el
+		# pasto húmedo.
+		#
+		# A la roca del kit, en cambio, **no se le pisa el material**: viene con
+		# el suyo del atlas de Kenney y `Kit` lo dice explícito. La paleta manda
+		# sobre lo que generamos nosotros, no sobre las mallas del kit — mezclar
+		# las dos autoridades sobre el mismo objeto es el "indeciso" que la
+		# dirección de arte existe para terminar.
+		esfera.material = Paleta.piedra(Paleta.PIEDRA_SUELTA)
 		roca = esfera
 
 	# La malla del kit mide 0,36 × 0,19; la esfera de antes medía 1,0 × 0,7.
@@ -498,11 +542,29 @@ static func luciernagas(padre: Node3D, pos: Vector3, cantidad: int, radio: float
 	m.scale_min = 0.5
 	m.scale_max = 1.3
 
+	# La vida de una luciérnaga: nace apagada, se enciende, se pone más cálida y
+	# se apaga. Los dos colores son la excepción 1 de la paleta —el fuego—, y
+	# son los únicos de este archivo donde la saturación alta está permitida:
+	# ocupan cuatro píxeles y son la mitad de por qué la noche del valle no es
+	# sólo oscuridad.
+	#
+	# **LOS OFFSETS SE DECLARAN, NO SE NUMERAN.** Lo de antes era
+	# `set_color(1, ...)` DESPUÉS de dos `add_point()`, y para entonces el
+	# índice 1 ya no era el final de la rampa sino el punto de 0,3. Medido:
+	# el color cálido de muerte se escribía al principio con alfa 0 —o sea que
+	# la luciérnaga era invisible su primer tercio de vida— y el final de la
+	# rampa se quedaba con el `Color(1,1,1,1)` que `Gradient` trae de fábrica.
+	# Cada bicho terminaba volviéndose BLANCO OPACO y desapareciendo de golpe:
+	# blanco puro, que no está en la paleta y no está en ningún lado del valle,
+	# y un salto justo donde tenía que haber un desvanecido.
 	var g := Gradient.new()
-	g.set_color(0, Color(1.0, 0.85, 0.35, 0.0))
-	g.add_point(0.3, Color(1.0, 0.88, 0.45, 1.0))
-	g.add_point(0.7, Color(1.0, 0.80, 0.35, 1.0))
-	g.set_color(1, Color(1.0, 0.75, 0.30, 0.0))
+	g.offsets = PackedFloat32Array([0.0, 0.3, 0.7, 1.0])
+	g.colors = PackedColorArray([
+		Color(Paleta.LUCIERNAGA, 0.0),
+		Paleta.LUCIERNAGA,
+		Paleta.LUCIERNAGA_CALIDA,
+		Color(Paleta.LUCIERNAGA_CALIDA, 0.0),
+	])
 	var gt := GradientTexture1D.new()
 	gt.gradient = g
 	m.color_ramp = gt
@@ -510,15 +572,9 @@ static func luciernagas(padre: Node3D, pos: Vector3, cantidad: int, radio: float
 
 	var q := QuadMesh.new()
 	q.size = Vector2(0.11, 0.11)
-	var qm := StandardMaterial3D.new()
-	qm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	qm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	qm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	qm.vertex_color_use_as_albedo = true
-	qm.emission_enabled = true
-	qm.emission = Color(1.0, 0.82, 0.38)
-	qm.emission_energy_multiplier = 6.0
-	q.material = qm
+	# `Paleta.chispa()`: sin sombreado, billboard, y la emisión de la paleta.
+	# Una luciérnaga sombreada es un punto gris.
+	q.material = Paleta.chispa()
 	p.draw_pass_1 = q
 	padre.add_child(p)
 	return p
