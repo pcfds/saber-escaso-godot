@@ -270,8 +270,20 @@ func _esquivar() -> void:
 	# cualquier juego con esta cámara.
 	_esquive_gira = dir.length_squared() >= 0.01
 	if not _esquive_gira:
-		var frente := Vector3(sin(_malla.rotation.y), 0.0, cos(_malla.rotation.y))
-		dir = frente.cross(Vector3.UP) * (1.0 if randf() < 0.5 else -1.0)
+		# **Siempre al mismo lado, y esto es el arreglo de un bug de verdad.**
+		#
+		# Acá había un `randf() < 0.5` que sorteaba izquierda o derecha, y quien
+		# lo jugó lo dijo con esas palabras: *"apretás la Q y se mueve para
+		# cualquier lado"*. Tenía razón — con el sorteo, la misma tecla en la
+		# misma situación hace dos cosas distintas, así que **no se puede
+		# aprender a esquivar**: no podés apuntar a dónde te sacás, no podés
+		# encadenar esquive y contragolpe, y cuando te sale mal no sabés si
+		# fue tu culpa o del dado.
+		#
+		# Un esquive es una decisión, y una decisión con un dado adentro no es
+		# una decisión. Sale siempre hacia la derecha del cuerpo; el que quiera
+		# el otro lado tiene el WASD, que es la forma de apuntarlo.
+		dir = frente().cross(Vector3.UP)
 	_dir_esquive = dir.normalized()
 	_esquive = ESQUIVE_DURA
 	_espera_esquive = ESQUIVE_ESPERA

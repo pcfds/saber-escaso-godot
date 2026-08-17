@@ -223,7 +223,36 @@ static func _caja_de(borde: Color) -> StyleBoxFlat:
 	return e
 
 
+## Con `--panel=ficha|bolsa` el panel se abre solo a los seis segundos.
+##
+## Es SÓLO para verificar, y existe porque una captura no puede apretar una
+## tecla: hoy tres personas distintas tuvieron que armarse un andamio temporal
+## para poder mirar un panel, y uno de esos andamios es exactamente la clase de
+## cosa que se cuela en un commit. `--hora=` entró por lo mismo.
+##
+## Dos segundos y medio, y el número no es libre: **`--captura` dispara a los
+## 3,5 s** (ver `valle.gd::_captura_si_corresponde`). El primer intento usó seis
+## y la captura salió sin panel — el andamio funcionaba y la foto se sacaba
+## antes. Si alguien mueve ese 3,5, hay que mover éste.
+##
+## Y no cero, porque el panel se pinta con lo que contestó `/mundo`: abrirlo
+## antes de la primera respuesta muestra una ficha vacía y hace pensar que está
+## rota.
+func _abrir_lo_pedido() -> void:
+	var cual := ""
+	for arg in OS.get_cmdline_user_args() + OS.get_cmdline_args():
+		if arg.begins_with("--panel="):
+			cual = arg.substr(8).strip_edges().to_lower()
+	if cual == "":
+		return
+	await get_tree().create_timer(2.5).timeout
+	match cual:
+		"ficha": alternar_ficha()
+		"bolsa": _alternar_bolsa()
+
+
 func _ready() -> void:
+	_abrir_lo_pedido()
 	var fuente_color := TINTA
 
 	_titulo = Label.new()
@@ -1343,20 +1372,62 @@ func _pintar_bolsa() -> void:
 			"Sin materia prima no puedes cumplirle nada a nadie.[/color]",
 		])
 	else:
+		# ── Cómo se lee una bolsa ────────────────────────────────
+		#
+		# La versión anterior escribía **"nadie la hizo — creció sola" debajo de
+		# cada renglón**, y con seis cosas juntadas del suelo eso son seis veces
+		# la misma frase, ocupando la mitad del panel. Quien lo jugó lo vio en
+		# un segundo: *"es como que está todo desconectado"*.
+		#
+		# El error de fondo es el que `DISENO.md` §8.2b nombra: **la pantalla
+		# estaba narrando el mecanismo en vez del mundo.** "Nadie la hizo" es la
+		# regla de la escasez —lo único que entra al mundo sin autor es lo que
+		# se junta del suelo— y es una regla preciosa, pero decirla seis veces
+		# la convierte en ruido y encima tapa el caso que SÍ importa.
+		#
+		# Ahora se dicen las dos cosas al revés: lo juntado no lleva nota
+		# ninguna, y **lo que alguien hizo lleva su nombre**. Así el renglón
+		# raro se ve, que es todo el punto: un cuchillo que dice "lo hizo Ilde"
+		# veinte días después de que Ilde no está es el juego entero en una
+		# línea.
+		#
+		# Y se agrupan los repetidos: dos linos son "lino en rama ×2" y no dos
+		# renglones idénticos.
 		var lineas: Array[String] = ["[color=#98a29c]LO QUE LLEVAS[/color]", ""]
+		var orden: Array[String] = []
+		var junta: Dictionary = {}
 		for o in _objetos:
 			var d: Dictionary = o
-			var cal := int(d.get("quality", 0))
 			# OJO con `str()`: el servidor manda `made_by: null` para todo lo
 			# que se junta del suelo, y `str(null)` en Godot es la cadena
-			# "<null>". El panel viejo mostraba, literal, "la hizo <null>".
+			# "<null>". Un panel viejo mostraba, literal, "la hizo <null>".
 			var crudo: Variant = d.get("made_by")
 			var quien := "" if crudo == null else str(crudo).strip_edges()
-			var autor := "[color=#d9c78c]la hizo %s[/color]" % quien if quien != "" \
-				else "[color=#5f6864]nadie la hizo — creció sola[/color]"
-			lineas.append("[b]%s[/b]" % d.get("kind", "algo"))
-			lineas.append("   [color=#7d867f]%s[/color] · %s" % [
-				_que_tan_buena(cal), autor])
+			var clave := "%s|%s" % [d.get("kind", "algo"), quien]
+			if not junta.has(clave):
+				orden.append(clave)
+				junta[clave] = {"kind": d.get("kind", "algo"), "quien": quien,
+					"cuantos": 0, "mejor": -1}
+			var g: Dictionary = junta[clave]
+			g["cuantos"] = int(g["cuantos"]) + 1
+			g["mejor"] = maxi(int(g["mejor"]), int(d.get("quality", 0)))
+		var juntados := 0
+		for clave in orden:
+			var g: Dictionary = junta[clave]
+			var n := int(g["cuantos"])
+			var quien := str(g["quien"])
+			if quien == "":
+				juntados += n
+			lineas.append("[b]%s[/b]%s   [color=#7d867f]%s[/color]" % [
+				g["kind"], ("  ×%d" % n) if n > 1 else "",
+				_que_tan_buena(int(g["mejor"]))])
+			if quien != "":
+				lineas.append("   [color=#d9c78c]la hizo %s[/color]" % quien)
+		# La regla de la escasez se dice UNA vez, al pie, y sólo si hay algo a
+		# lo que aplique.
+		if juntados > 0:
+			lineas.append("")
+			lineas.append("[color=#5f6864]Lo que no lleva nombre creció solo y lo junta cualquiera.[/color]")
 		_bolsa.text = "\n".join(lineas)
 
 	_pintar_dar()
@@ -1816,15 +1887,48 @@ func mostrar_ficha(vos: Dictionary) -> void:
 	if llaman != "" and llaman != "<null>":
 		l.append("[color=#d9c78c]%s[/color]" % llaman)
 
+	# ── TU OFICIO, y por qué ya no se llama "lo que sabes hacer" ──
+	#
+	# `DISENO.md` §8.2b, después de que la dirección del proyecto lo jugara:
+	#
+	#   > "El saber es la base del juego pero no puede decir en todo lado 'lo
+	#   > que sabes', 'lo que sé'. Parece un juego de 'lo que sé'."
+	#
+	# Tenía razón y el error era de esta pantalla. La regla que salió de ahí:
+	# **la interfaz nombra la COSA, no el mecanismo que la sostiene.** El
+	# jugador tiene que poder jugar meses sin aprender la palabra con la que
+	# nosotros lo llamamos por dentro.
+	#
+	# Y el otro arreglo es más grande que el rótulo: **acá no se decía qué hace
+	# ninguno.** Salían seis renglones que decían "recién empiezas" seis veces
+	# —o sea la misma información seis veces, que es ninguna— y ni uno decía
+	# para qué sirve. El dato existía y esta función lo tiraba: el servidor
+	# manda `paraQue` en cada saber desde hace días, escrito a mano y bueno:
+	# *"Sola quema. Detrás de otra runa, aviva lo que venía. Es el eje del
+	# CUÁNTO."*
+	#
+	# La mano sólo se muestra cuando dice algo. "Recién empiezas" en las seis
+	# no distingue nada; cuando una despegue, ESA va a saltar sola.
 	var saberes: Array = vos.get("saberes", [])
 	l.append("")
-	l.append("[color=#98a29c]LO QUE SABES HACER[/color]")
+	l.append("[color=#98a29c]TU OFICIO[/color]")
 	if saberes.is_empty():
-		l.append("[color=#7d867f]Nada todavía. Nadie nace sabiendo: alguien te lo tiene que enseñar.[/color]")
+		l.append("[color=#7d867f]Todavía nada. Nadie nace sabiendo: alguien te lo tiene que enseñar,")
+		l.append("y para eso tiene que confiar en ti.[/color]")
+	var manos: Dictionary = {}
+	for x in saberes:
+		manos[str((x as Dictionary).get("mano", ""))] = true
+	var mano_distingue := manos.size() > 1
 	for x in saberes:
 		var d: Dictionary = x
 		var quien: String = str(d.get("maestro", ""))
-		l.append("· [b]%s[/b] — %s" % [d.get("nombre", ""), d.get("mano", "")])
+		var mano: String = str(d.get("mano", ""))
+		l.append("· [b]%s[/b]%s" % [
+			d.get("nombre", ""),
+			("  [color=#7d867f]— %s[/color]" % mano) if mano_distingue else ""])
+		var para: String = str(d.get("paraQue", "")).strip_edges()
+		if para != "" and para != "<null>":
+			l.append("   %s" % para)
 		if quien != "" and quien != "<null>":
 			l.append("   [color=#7d867f]te lo enseñó %s[/color]" % quien)
 
@@ -1862,5 +1966,15 @@ func alternar_ficha() -> void:
 		_ficha_texto.add_theme_constant_override("line_separation", 3)
 		_ficha.add_child(_ficha_texto)
 		add_child(_ficha)
+		# **Se crea OCULTA, y esto es un bug arreglado, no una prolijidad.**
+		# Un `Control` nace con `visible = true`, así que la primera C construía
+		# el panel visible y el `not` de abajo lo cerraba en el mismo cuadro:
+		# apretabas C y no pasaba nada, y había que apretar dos veces. La bolsa
+		# ya se creaba oculta —por eso ella nunca falló— y ésta no.
+		#
+		# Lo encontró el andamio de `--panel=`: el registro decía "abriendo
+		# ficha" y la captura salía sin ficha. Mirando el código a ojo se lee
+		# bien las dos veces.
+		_ficha.visible = false
 		mostrar_ficha(_ficha_datos)
 	_ficha.visible = not _ficha.visible
