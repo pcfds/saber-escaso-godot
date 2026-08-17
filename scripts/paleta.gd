@@ -617,6 +617,20 @@ static func _engranar(m: StandardMaterial3D, metros: float = GRANO_METROS) -> vo
 	m.uv1_triplanar_sharpness = 1.0
 
 
+## Le pone el grano a un material que ya existe. Es `_engranar()` abierto al
+## resto del juego, y existe por la regla 2 de la ficha (`DISENO.md` §6): *nada
+## es liso*. Cuando una pieza se genera por código —el gablete de una casa, una
+## losa— y convive con mallas que SÍ traen textura, el color plano al lado del
+## trim sheet se lee como el agujero que es.
+##
+## No sirve para cualquier cosa: pisa `albedo_texture`, así que sobre una malla
+## del kit que ya trae la suya no se usa (para eso está la aduana de abajo).
+static func gastar(m: StandardMaterial3D, metros: float = GRANO_METROS) -> StandardMaterial3D:
+	if m != null:
+		_engranar(m, metros)
+	return m
+
+
 ## El terreno. Sin especular: el pasto y la tierra no reflejan nada, y un
 ## reflejo parejo en 360 metros de suelo es exactamente el brillo del plástico.
 ##
@@ -782,11 +796,29 @@ static func brasa() -> StandardMaterial3D:
 	return emisivo(BRASA, BRASA_EMISION, 7.0)
 
 
+## Cuánto emite una ventana de DÍA, o sea el piso de la rampa que mueve
+## `ciclo.gd`. **Estaba en 0,15 y eso no era "apagada": era la ventana más clara
+## del cuadro a las tres de la tarde.** Medido en el banco de las casas, luma
+## 0–255 al alba: el panel de la ventana daba **117** contra 106 del muro de
+## revoque y 34 del techo. La emisión de `VENTANA_EMISION` a 0,15 pesa cuatro
+## veces más que el albedo V2 iluminado, así que el vidrio se comía su propio
+## color y volvía a ser el cuadradito amarillo que este archivo ya sacó una vez.
+##
+## En 0,03 el mismo panel cae a la banda del techo y de día se lee como lo que
+## es: un agujero. De noche no cambia nada — la rampa llega igual a 4,2.
+##
+## **OJO: `ciclo.gd` línea 248 tiene el 0,15 copiado** (`lerp(0.15, 4.2, ...)`) y
+## lo pisa en cada cuadro, así que hasta que esa línea diga `PISO_VENTANA` este
+## número sólo vale para el primer cuadro y para los bancos de prueba. Está
+## pedido en el informe; ese archivo no es de la rama de arte.
+const PISO_VENTANA := 0.03
+
+
 ## Una ventana encendida. Dice "adentro hay alguien" más fuerte que todo el
-## cielo junto. La energía la mueve `ciclo.gd` de noche (0.15 → 4.2), así que
-## acá se entrega apagada: de día una ventana encendida se ve a error.
+## cielo junto. La energía la mueve `ciclo.gd` de noche (`PISO_VENTANA` → 4.2),
+## así que acá se entrega apagada: de día una ventana encendida se ve a error.
 static func ventana() -> StandardMaterial3D:
-	return emisivo(VENTANA_VIDRIO, VENTANA_EMISION, 0.15)
+	return emisivo(VENTANA_VIDRIO, VENTANA_EMISION, PISO_VENTANA)
 
 
 ## Los ojos del bicho. Es lo único que emite en él y es lo que lo hace visible
@@ -1058,6 +1090,98 @@ const KIT_CONTEXTO := {
 }
 
 
+# ---------------------------------------------------------------------------
+# LOS SIETE TRIM SHEETS DE QUATERNIUS — Y POR QUÉ "YA VIENEN DOMADOS" ERA MEDIA
+# VERDAD (18 de agosto)
+#
+# `domar_material()` saltea `atlas_domado()` para todo lo que cuelgue de
+# `/quaternius/` y le deja `albedo_color = WHITE`. El salteo está bien —esas
+# texturas son fotográficas y el clavado al peldaño las posteriza, ver
+# `PROCEDENCIA.md`—. **Lo que estaba mal es el `WHITE`**, y se ve apenas se
+# miden los siete PNG del repo (media de los 512², sRGB, sobre el archivo):
+#
+#   | textura        | V medio | S medio | a qué peldaño cae |
+#   |----------------|---------|---------|-------------------|
+#   | T_Plaster      |  0.574  |  0.274  | entre V5 y V6     |
+#   | T_UnevenBrick  |  0.475  |  0.237  | entre V4 y V5     |
+#   | T_Brick        |  0.504  |  0.200  | entre V4 y V5     |
+#   | T_RockTrim     |  0.501  |  0.146  | entre V4 y V5     |
+#   | **T_RoundTiles**| **0.585**| 0.350  | **V5** ← el techo |
+#   | T_WoodTrim     |  0.490  |  0.235  | entre V4 y V5     |
+#   | T_VineLeaf     |  0.479  |  0.000  | gris, sin color   |
+#
+# O sea: **el horneado comprimió el valor de las siete al mismo medio tono.**
+# Coherente consigo mismo, y ajeno a esta escalera — que es exactamente el
+# diagnóstico que trajo la aduana de Kenney, otra vez y en otro idioma.
+#
+# Lo grave es el techo. `T_RoundTiles` sale en **V5, el mismo peldaño que un
+# muro**, cuando la composición de este archivo pone los techos en **V2**. Con
+# eso una casa deja de ser *caja clara con tapa oscura* y pasa a ser una sola
+# mancha del color del suelo. Medido en el banco `prueba_casas.tscn` (luma
+# 0–255, misma luz para las dos casas):
+#
+#   |                    | Kenney | Quaternius sin tinte |
+#   |--------------------|--------|----------------------|
+#   | muro al sol        |  131   |         117          |
+#   | techo al sol       |   48   |          75          |
+#   | techo / muro       |  0.37  |        **0.64**      |
+#
+# El tinte de acá abajo cierra esa brecha SIN tocar la textura: `albedo_color`
+# MULTIPLICA al trim sheet, así que el grano —que es justamente lo que se vino a
+# buscar, la regla 2 de la ficha— se conserva entero y lo único que se mueve es
+# el peldaño.
+#
+# **Cómo se calculó cada número, para que se pueda rehacer:** se promedió el PNG
+# en espacio LINEAL, se dividió el color de esta paleta (también en lineal) por
+# esa media, y el cociente se devolvió a sRGB — que es el espacio en el que
+# Godot recibe `albedo_color`. Con eso el resultado cae en el peldaño exacto:
+# verificado en el mismo cálculo, `MI_RoundTiles` da h18 s0.30 v0.21, que es
+# `TECHO` clavado, y `MI_WoodTrim` da h26 s0.35 v0.30, que es `TRONCO_CLARO`.
+#
+# **TRES DE LOS SIETE TIENEN COMPONENTES ARRIBA DE 1,0 Y ES A PROPÓSITO.** El
+# horneado dejó el revoque, el ladrillo desparejo y la piedra POR DEBAJO del
+# peldaño que les toca, así que para subirlos hay que aclarar. Un `Color` con
+# componentes mayores que uno no es un color: es un **multiplicador**, la misma
+# distinción que ya hace este archivo con los colores de vértice de
+# `vegetacion.gd`. La conversión sRGB→lineal de Godot es una potencia y sigue
+# valiendo arriba de 1, y el cálculo de arriba la tiene en cuenta — por eso los
+# números son 1,144 y no 1,15 redondo.
+#
+# **Y que Godot NO lo recorta está medido, no supuesto**, con el método de la
+# casa: tres capturas del mismo banco con el sol clavado y una sola variable, el
+# tinte del revoque, comparadas píxel a píxel.
+#
+#   | tinte de `MI_Plaster` | píxeles que cambian | luma del revoque |
+#   |-----------------------|---------------------|------------------|
+#   | 1,000 (control)       |          0          |       86,4       |
+#   | 0,600                 |       70.662        |       48,6       |
+#   | **1,144 / 1,161 / 1,248** |    69.721       |     **101,3**    |
+#
+# Sube 14,9 puntos, o sea +17%, que es justo el peldaño que pide la aritmética
+# (V 0,574 → V 0,66 son +15%). El multiplicador llega entero al shader.
+#
+# Y si algún día se rehornean los PNG a su peldaño, esta tabla se va a WHITE
+# sola: los cocientes dan 1. Mientras tanto vive acá, que es donde se decide un
+# color y no en un archivo binario.
+# ---------------------------------------------------------------------------
+
+## Nombre del material del Medieval Village MegaKit → multiplicador de albedo.
+## Ver el bloque de arriba. La clave es el nombre que trae el `.gltf`.
+const KIT_QUATERNIUS := {
+	"MI_Plaster": Color(1.144, 1.161, 1.248),        # → MURO_ALDEA   h36 s0.20 V6
+	"MI_UnevenBrick": Color(1.367, 1.397, 1.417),    # → MURO_ALDEA   h36 s0.20 V6
+	"MI_Brick": Color(0.615, 0.553, 0.569),          # → LADRILLO     h18 s0.28 V3
+	"MI_RockTrim": Color(1.056, 1.086, 1.120),       # → LOSA_CAMINO  h34 s0.09 V5
+	"MI_RoundTiles": Color(0.382, 0.419, 0.435),     # → TECHO        h18 s0.30 V2
+	"MI_WoodTrim": Color(0.632, 0.594, 0.558),       # → TRONCO_CLARO h26 s0.35 V3
+	"MI_WoodTrim_Wear": Color(0.632, 0.594, 0.558),  # el carro: misma madera, más gastada
+	# La hoja de la enredadera viene en GRIS (S 0,000: el verde estaba en el
+	# `baseColorFactor` del `.gltf`, que el `WHITE` de antes borraba). Acá vuelve,
+	# y vuelve en el verde de la paleta y no en el del autor.
+	"MI_Vine": Color(0.694, 0.864, 0.581),           # → COPA_CLARA   h96 s0.35 V4
+}
+
+
 ## Los nueve peldaños, como lista, para poder buscar el más cercano.
 const ESCALERA: Array[float] = [V0_TINTA, V1_CARBON, V2_TURBA, V3_CORTEZA,
 	V4_ARCILLA, V5_LINO, V6_TRIGO, V7_CENIZA, V8_CAL]
@@ -1226,8 +1350,15 @@ static func domar_material(m: BaseMaterial3D, techo: float = SATURACION_MUNDO,
 		# de 512, así que la aduana se apagó para el pueblo entero y las casas
 		# volvieron al menta y coral de fábrica. En una captura se ve al toque;
 		# en el código no se ve nada.
-		if not m.albedo_texture.resource_path.contains("/quaternius/"):
-			m.albedo_texture = atlas_domado(m.albedo_texture)
+		if m.albedo_texture.resource_path.contains("/quaternius/"):
+			# **Y acá el albedo NO va en blanco.** El horneado dejó los siete trim
+			# sheets en el mismo medio tono —el techo de teja en V5, o sea el
+			# peldaño de un muro— y `albedo_color` es el único lugar donde eso se
+			# puede corregir sin volver a tocar el PNG. Ver `KIT_QUATERNIUS`.
+			m.albedo_color = KIT_QUATERNIUS.get(m.resource_name, Color.WHITE)
+			m.roughness = maxf(m.roughness, 0.95)
+			return
+		m.albedo_texture = atlas_domado(m.albedo_texture)
 		# Con atlas, el albedo es un multiplicador (Kenney lo deja en blanco):
 		# domarlo lo bajaría dos veces.
 		m.albedo_color = Color.WHITE

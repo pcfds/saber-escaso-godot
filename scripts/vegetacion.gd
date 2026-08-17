@@ -360,6 +360,20 @@ func poblar(alturas: Callable, lugares: Dictionary = {}) -> void:
 	var celdas := _sembrar()
 	_construir(celdas)
 
+	# LO QUE NO CRECE SOLO: las huertas cercadas y el pilón de la plaza.
+	#
+	# Cuelga de acá por lo mismo que la fauna de más abajo, y no es una excusa de
+	# cableado: **lo que se siembra es vegetación**, sólo que la sembró alguien.
+	# Necesita exactamente las dos cosas que este módulo ya recibió —la función
+	# de terreno y el diccionario de lugares— y las necesita DESPUÉS del bosque,
+	# porque si algún día las huertas tienen que abrirle un claro a los árboles,
+	# el que tiene que ceder es el árbol.
+	#
+	# Si `valle.gd` prefiere llamarlo él, el cambio es sacar esta línea — pero
+	# **hay que sacarla**, o el valle termina con dos juegos de huertas encimados,
+	# que es literalmente lo que pasó con los dos bosques del Sotobosque.
+	Detalles.labranza(self, _alturas, lugares)
+
 	_ms_construir = (Time.get_ticks_usec() - t0) / 1000.0
 	_aplicar_nivel()
 	set_process(true)

@@ -31,24 +31,66 @@ const BALDOSA := 34.0
 # primero que se veía al entrar al valle y era lo que más se leía como
 # provisorio: nada dice "sin terminar" como una caja con sombrero.
 #
-# Ahora se arma con los módulos del Fantasy Town Kit de Kenney (CC0, ver
-# `assets/PROCEDENCIA.md`). El kit no trae casas enteras: trae muros y techos
-# de una celda, que es mejor, porque significa que las casas del valle no son
-# siete copias del mismo `.glb` —eso se lee tan rápido como la caja— sino
-# combinaciones distintas de las mismas piezas.
+# Después fueron los módulos del Fantasy Town Kit de Kenney, y **la dirección
+# del proyecto las rechazó con una frase que es el reclamo más viejo que tiene
+# este juego**: *"parece un mundo de Disney para mujeres"*. No era la paleta —la
+# aduana de `paleta.gd` ya les había bajado los techos de luma 145 a 33— era la
+# GEOMETRÍA: el muro de Kenney es una cara plana con la ventana **pintada**
+# encima. No hay hueco, no hay jamba, no hay espesor. Ninguna cantidad de color
+# arregla una ventana dibujada.
 #
-# LA MEDIDA. Una celda del kit es 1 unidad. La casa es de 2×2 celdas y la
-# celda vale `CASA_CELDA` metros, así que la planta es 2,6 × 2,6 m. La caja de
-# antes era 2,7 × 2,5, y eso **no es casualidad**: `valle.gd` empuja a la gente
-# fuera de las casas con `CASA_MEDIA`, media planta, y si la casa cambia de
-# tamaño la gente empieza a caminar por adentro de las paredes. La planta se
-# mantiene; lo que cambia es de qué está hecha.
+# ===========================================================================
+# LA MUDANZA AL MEDIEVAL VILLAGE MEGAKIT  (18 de agosto de 2026)
+# ===========================================================================
 #
-# POR QUÉ NO HACEN FALTA PIEZAS DE ESQUINA. Un muro del kit ocupa la cara +X
-# de su celda y abarca la celda entera en Z. Dos muros perpendiculares de
-# celdas vecinas se superponen en el cuadradito de la esquina, así que cierran
-# solos. Las piezas `wall-corner` son para otra cosa (muros de una celda de
-# espesor visible) y acá sobran.
+# Las doce casas se arman ahora con los módulos de Quaternius (CC0, ver
+# `assets/PROCEDENCIA.md`), que estaban en el repo y no los usaba nadie más que
+# el banco `escenas/prueba_casas.tscn`. Lo que traen y el otro no puede tener:
+#
+#   · **Huecos de verdad.** La puerta y la ventana están CALADAS en el panel,
+#     con 27 cm de jamba que se ven. Es la diferencia entera.
+#   · **Materia.** Siete trim sheets —revoque, ladrillo desparejo, ladrillo,
+#     piedra, teja curva, madera y hoja de enredadera— contra un atlas de 24
+#     colores planos. Es la regla 2 de la ficha de identidad (`DISENO.md` §6):
+#     *nada es liso, todo está usado*.
+#   · **Entramado de madera** (`Wall_Plaster_WoodGrid`). Vigas oscuras sobre
+#     revoque claro es LA silueta de fachada medieval, y se lee a 27 metros
+#     porque es un par de valores (V3 sobre V6), no un detalle.
+#
+# ===========================================================================
+# LA MEDIDA, Y POR QUÉ NADA DE AFUERA SE ENTERA
+# ===========================================================================
+#
+# Éste era el bloqueo anotado —*"la planta cambia de tamaño y eso toca
+# `CASA_MEDIA` en `valle.gd`"*— y **se desarmó midiendo la malla en vez de
+# estimarla**. El panel de Quaternius mide 2,000 de ancho y su revoque tiene
+# 0,200 de espesor (leído del `.gltf`: la primitiva `MI_Plaster` va de z = −0,20
+# a z = 0). Escalado **1,35×**:
+#
+#   · dos paneles por lado = 5,40 m de planta → `CASA_LADO` NO se mueve.
+#   · 0,200 × 1,35 = **0,270 m de muro** → que es EXACTAMENTE el `CASA_MURO`
+#     que tenía la casa de Kenney (0,10 de celda × 2,7).
+#   · o sea que la cara de adentro sigue cayendo en **2,43 m** del centro:
+#     `CASA_ADENTRO` no se mueve y el cuarto sigue siendo de **4,86 × 4,86**.
+#
+# Así que `interiores.gd` —que está terminado y verificado caminando hasta las
+# doce puertas— no se entera de nada: mismo `CASA_ADENTRO`, mismo `CASA_PISO`,
+# mismo `puerta.x` en ±1,35, mismos nodos `baja` y `alta` con la meta `afuera`
+# en cada panel. Y `valle.gd` tampoco: mismo `CASA_LADO`, mismas `CASA_CARAS`.
+#
+# **El precio es 35% de estiramiento horizontal de la textura** (el panel se
+# escala 1,35 en X y Z y entre 0,92 y 1,05 en Y). Sobre un revoque es invisible;
+# sobre el ladrillo desparejo las hiladas quedan una vez y media más anchas que
+# altas, y a 27 metros una hilada mide tres píxeles. Es el precio correcto: la
+# alternativa era mover `CASA_LADO` a 6,10 m y con eso `CASA_MEDIA` se queda sin
+# holgura y la gente camina rozando la pared.
+#
+# POR QUÉ NO HACEN FALTA PIEZAS DE ESQUINA PARA CERRAR. Un panel abarca su medio
+# lado entero, así que dos paneles perpendiculares se superponen en el
+# cuadradito de 0,27 × 0,27 de la esquina y cierran solos — igual que con
+# Kenney. Lo que SÍ va en la esquina es `Corner_Exterior_Wood`, doce triángulos,
+# y no es para tapar un agujero: es el poste de la estructura, y sin él las
+# vigas de dos fachadas se cruzan en el aire.
 #
 # LA PUERTA SE ABRE. Hasta el 17 de agosto la casa tenía UN colisionador: una
 # caja maciza de la planta entera. O sea que la puerta estaba dibujada y la
@@ -131,12 +173,71 @@ const CASA_ADENTRO := CASA_CELDA * 0.9
 ## El espesor del muro, en metros. Es el 0,10 de celda que mide la pieza.
 const CASA_MURO := CASA_CELDA * 0.10
 
-## El hueco de la puerta, medido sobre la malla `wall-door`: los montantes
-## están en ±0,20 de celda y el arco cierra a 0,75 de la altura del panel.
-## Con la celda en 2,7 son 1,08 m de ancho, y de alto entre 1,92 y 2,33 según
-## cuánto le haya tocado de altura de planta a esa casa.
-const PUERTA_ANCHO := CASA_CELDA * 0.40
-const PUERTA_ALTO := 0.75
+## El hueco de la puerta, **medido rasterizando la malla `Wall_Plaster_Door_Round`
+## y no leído de un comentario**: los montantes están en x = ±0,65 del panel y el
+## arco cierra a y = 2,48 de sus 3,123. En metros, con el panel a 1,35 × ~1,0:
+## **1,76 m de ancho por 2,28 a 2,60 de alto**. El jugador es una cápsula de 0,90
+## de diámetro y 1,85 de alto: pasa con aire, que es más de lo que tenía con
+## Kenney (1,08 de ancho, entraba justo).
+const PUERTA_ANCHO := CASA_CELDA * 0.65
+## Qué fracción de la altura del panel ocupa el arco. 2,48 / 3,123.
+const PUERTA_ALTO := 0.794
+
+## El hueco de la ventana, del mismo rasterizado sobre
+## `Wall_Plaster_Window_Wide_Round`: x = ±0,61, y de 1,02 a 2,72. Es un hueco
+## grande —1,65 × 1,72 m puesto en el valle— y eso tiene dos consecuencias que
+## conviene decir en voz alta: de día es una mancha V2 mucho más grande en la
+## fachada (que es lo que la paleta quiere, *de día una ventana es un agujero
+## oscuro*) y de noche la casa da bastante más luz que antes.
+const VENTANA_HUECO := Vector2(1.22, 1.70)
+const VENTANA_CENTRO := 1.87
+
+## El panel del Medieval Village MegaKit, tal cual sale del `.gltf`.
+##
+##   · ancho 2,000 (x de −1 a 1)
+##   · alto  3,123 (y de 0 arriba)
+##   · el revoque de 0,200 de espesor, con la cara de AFUERA en z = 0 y la de
+##     adentro en z = −0,20. Las vigas asoman a +0,092 para afuera y a −0,314
+##     para adentro; por eso el panel se coloca con su origen sobre la línea de
+##     fachada y no en el centro de la celda, que es lo que hacía Kenney.
+##   · y su normal de afuera es **+Z local**, no +X: por eso al giro de
+##     `CASA_CARAS` hay que sumarle un cuarto de vuelta.
+const PANEL_ANCHO := 2.0
+const PANEL_ALTO := 3.123
+const PANEL_ESPESOR := 0.20
+
+## El factor horizontal. 2,000 × 1,35 = 2,70 = `CASA_CELDA`, o sea dos paneles
+## por lado y la planta de siempre. Ver el encabezado.
+const PANEL_ESCALA := CASA_CELDA / PANEL_ANCHO
+
+## El poste de esquina `Corner_Exterior_Wood` mide 3,000 de alto contra los
+## 3,123 del panel, así que lleva este factor de más o queda un escalón de once
+## centímetros bajo el alero.
+const POSTE_ALTO := PANEL_ALTO / 3.0
+
+## Cuánto sube el techo sobre el alero, en metros, y cuánto se escala en planta.
+##
+## `Roof_RoundTiles_4x4` mide 5,513 de planta por 3,734 de alto (y baja otros
+## 0,516 por debajo de su origen, que es el faldón que monta sobre el muro).
+## A 1,20 de planta cubre 6,62 m sobre una casa de 5,40 — **0,61 m de alero
+## volado por lado**, que es lo que le tira sombra a la fachada y lo que hace
+## que una casa se lea como techada y no como tapada. El alto se ajusta para que
+## la cumbrera quede en 3,2 m: 44° de pendiente, que es la familia de cuatro
+## aguas empinadas que el valle ya habla.
+const TECHO_ESCALA := 1.20
+const TECHO_ALTO := 3.2
+
+## Cuánto sobresale la chimenea POR ENCIMA del alero. El techo llega a 3,2 m en
+## la cumbrera y la chimenea sale a 1,07 m del centro, donde el faldón anda por
+## los 2,3: con 3,65 el caño asoma medio metro largo sobre la teja. **Su trabajo
+## entero es silueta**; una chimenea que no pasa el techo no existe.
+const CHIMENEA_ALTO := 3.65
+
+## A qué altura sobre el alero llama `valle.gd` a `chimenea()`. **No es una
+## constante de este archivo**: es el `alero + 1.25` que ese archivo ya usaba, y
+## hay que saberla para poder anclar el caño al alero sin pedirle que cambie la
+## llamada. Si algún día cambia allá, cambia acá.
+const CHIMENEA_OFRECIDA := 1.25
 
 ## Cuánto sobresale el zócalo de la línea del muro, por lado. Un basamento al
 ## ras del muro no se lee como basamento: se lee como que la casa se hundió.
@@ -177,9 +278,10 @@ const CASA_PISO := 0.07
 ## `_armar_lugar()` y el sorteo tiene que seguir saliendo de la misma corriente
 ## de azar.
 ##
-## `piedra` elige la familia de muro —revoque o tabla—. Es la única variación
-## de material: **una sola familia por casa.** Mezclar piedra y madera en la
-## misma pared es lo que hace que un kit modular se vea a kit modular.
+## `piedra` elige la familia de muro —revoque o ladrillo desparejo—. Es la única
+## variación de material: **una sola familia por casa.** Mezclar dos revoques en
+## la misma pared es lo que hace que un kit modular se vea a kit modular. En el
+## valle la familia es del LUGAR: Vado Bajo es de revoque, la Fragua de ladrillo.
 static func casa(padre: Node3D, sitio: Dictionary,
 		rng: RandomNumberGenerator, piedra: bool, quemada: bool) -> Dictionary:
 	var giro: float = sitio.get("giro", 0.0)
@@ -197,11 +299,15 @@ static func casa(padre: Node3D, sitio: Dictionary,
 	alta.name = "Alta"
 	g.add_child(alta)
 
-	var fam := "pueblo/wall" if piedra else "pueblo/wall-wood"
-	# Las plantas no son todas iguales de altas: entre 0,95 y 1,15 de celda hay
-	# la misma variedad que daba el `randf_range(2.4, 3.6)` de la caja, pero
-	# sin que se despegue del kit.
-	var alto_nivel := CASA_CELDA * rng.randf_range(0.95, 1.15)
+	var fam := "quaternius/pueblo/Wall_UnevenBrick" if piedra else "quaternius/pueblo/Wall_Plaster"
+	# Las plantas no son todas iguales de altas, y acá la variedad es MENOS que
+	# antes a propósito: el panel mide 3,123 y estirarlo en Y es el único
+	# estiramiento que se suma al 35% horizontal. Entre 0,92 y 1,05 la planta va
+	# de 2,87 a 3,28 m —la misma franja que daba el `randf_range(0.95, 1.15)` de
+	# celda de la casa de Kenney— y la anisotropía de la textura se queda entre
+	# 1,29 y 1,47.
+	var estira := rng.randf_range(0.92, 1.05)
+	var alto_nivel := PANEL_ALTO * estira
 
 	# La puerta va en una de las dos celdas del frente; la otra lleva ventana.
 	# Cuál de las dos la decide el terreno: la que tenga el acceso más bajo.
@@ -216,38 +322,66 @@ static func casa(padre: Node3D, sitio: Dictionary,
 		for i in CASA_CARAS.size():
 			var celda: Vector2 = CASA_CARAS[i][0]
 			var rot: float = CASA_CARAS[i][1]
-			var pieza := fam
+			# Hacia dónde da este muro, en el marco de la casa y en el del mundo.
+			# El segundo lo usa el recorte de `interiores.gd`: se apaga el muro
+			# que la cámara tiene delante. Se anota ahora porque acá el dato es
+			# una suma de dos ángulos y después habría que sacarlo de una matriz.
+			var normal := Vector3.RIGHT.rotated(Vector3.UP, rot)
+			var afuera := Vector3.RIGHT.rotated(Vector3.UP, giro + rot)
+			# El panel se apoya sobre la línea de fachada, no en el centro de la
+			# celda: su revoque va de z = 0 (afuera) a z = −0,20 (adentro).
+			var pos := Vector3(celda.x * CASA_CELDA, nivel * alto_nivel,
+				celda.y * CASA_CELDA) + normal * (CASA_CELDA * 0.5)
+
+			var pieza := fam + "_Straight"
 			var ventana := false
 			var es_puerta := false
 
 			if quemada:
-				# La Casa Quemada: muros rotos, sin puerta y sin luz. Un
-				# tercio de las caras directamente no está — un muro faltante
-				# dice "esto se cayó" mucho mejor que un muro entero gris.
-				if rng.randf() < 0.34:
+				# LA CASA QUEMADA. El MegaKit \[Standard] no trae piezas rotas
+				# —el que las tiene es Ultimate Modular Ruins, que no publica
+				# glTF; queda pedido en `PROCEDENCIA.md`—, así que la ruina se
+				# cuenta con lo que sí hay, y son dos cosas:
+				#
+				#  · **LA PLANTA ALTA NO ESTÁ.** El fuego sube: se lleva el
+				#    techo y el entrepiso y deja la mampostería de abajo parada.
+				#    Una ruina de dos plantas con un tercio de los muros
+				#    faltando se leía —medido mirando el banco— como una caja
+				#    marrón entera, no como algo que se quemó. **El corte de
+				#    silueta a media altura es lo que lo cuenta**, y es la misma
+				#    regla de siempre: la silueta hace el trabajo.
+				#  · y de la que queda faltan cuatro de cada diez paneles.
+				if nivel == 1 or rng.randf() < 0.40:
 					continue
-				pieza = fam + "-broken"
 			elif nivel == 0 and i == i_puerta:
-				pieza = fam + "-door"
+				pieza = fam + "_Door_Round"
 				es_puerta = true
-			elif i in CASA_FRENTE or rng.randf() < 0.34:
-				# Ventanas: siempre al frente, y a veces en los costados. Con
-				# ventana en las ocho caras la casa se vuelve un farol.
-				pieza = fam + "-window-shutters"
+			elif i in CASA_FRENTE or rng.randf() < (0.30 if nivel == 1 else 0.0):
+				# Ventanas: siempre al frente, y a veces en los costados de
+				# arriba. El hueco de Quaternius es casi el doble de ancho que el
+				# de Kenney, así que con la misma cantidad de ventanas la casa se
+				# volvía un farol: abajo van sólo al frente.
+				pieza = fam + "_Window_Wide_Round"
 				ventana = true
+			elif nivel == 1 and not piedra and rng.randf() < 0.55:
+				# EL ENTRAMADO, y va sólo arriba porque ahí va en una casa de
+				# verdad: abajo la mampostería aguanta el peso y arriba se
+				# ahorra en piedra. Es la pieza que más hace por la lectura
+				# medieval y es un par de valores, V3 sobre V6.
+				pieza = "quaternius/pueblo/Wall_Plaster_WoodGrid"
+			elif nivel == 0 and not piedra and rng.randf() < 0.5:
+				# El zócalo de ladrillo bajo el revoque: la misma casa, con el
+				# pie mojado. V3 abajo de V6, otro par de valores gratis.
+				pieza = "quaternius/pueblo/Wall_Plaster_Straight_Base"
 
 			var mi := Kit.nodo(pieza)
 			if mi == null:
 				continue
-			mi.position = Vector3(celda.x * CASA_CELDA, nivel * alto_nivel,
-				celda.y * CASA_CELDA)
-			mi.rotation.y = rot
-			mi.scale = Vector3(CASA_CELDA, alto_nivel, CASA_CELDA)
-			# Hacia dónde da este muro, ya en coordenadas del mundo. Lo usa el
-			# recorte: se apaga el muro que la cámara tiene delante. Se anota
-			# ahora porque acá el dato es una suma de dos ángulos y después
-			# habría que sacarlo de una matriz.
-			var afuera := Vector3.RIGHT.rotated(Vector3.UP, giro + rot)
+			mi.position = pos
+			# La normal de afuera del panel es +Z local y la de `CASA_CARAS` es
+			# +X: de ahí el cuarto de vuelta.
+			mi.rotation.y = rot + PI / 2.0
+			mi.scale = Vector3(PANEL_ESCALA, estira, PANEL_ESCALA)
 			mi.set_meta("afuera", afuera)
 			capa.add_child(mi)
 
@@ -258,13 +392,26 @@ static func casa(padre: Node3D, sitio: Dictionary,
 
 			# La colisión SIGUE A LO CONSTRUIDO. Un tabique por panel de planta
 			# baja, y en el de la puerta, dos jambas con el hueco en el medio.
-			# Los muros rotos de la ruina no llevan: por ahí se entra.
+			# Los muros de la ruina no llevan: por ahí se entra.
 			if nivel == 0 and not quemada:
-				_tabique(g, mi.position, rot, alto_nivel, es_puerta)
+				_tabique(g, pos, rot, alto_nivel, es_puerta)
+
+		# Los cuatro postes de esquina de esta planta. Doce triángulos cada uno y
+		# son lo que hace que las vigas de dos fachadas se junten en algo en vez
+		# de cruzarse en el aire. Llevan la meta `afuera` en diagonal para que el
+		# recorte los trate como a los muros: dos de los cuatro le quedan
+		# adelante a la cámara cuando entrás.
+		if not quemada:
+			_postes(capa, nivel * alto_nivel, estira, giro)
 
 	var alero := CASA_NIVELES * alto_nivel
 	if not quemada:
-		_techo(alta, alero, rng)
+		# La cumbrera. Es la variación que le queda al techo —el kit trae una
+		# sola cubierta de 4×4— y va en la PENDIENTE, que es lo que se lee contra
+		# el cielo: de 2,9 a 3,5 m sobre un alero de 5,7 a 6,6.
+		var alto_techo := TECHO_ALTO * rng.randf_range(0.92, 1.09)
+		_gablete(alta, alero, alto_techo)
+		_techo(alta, alero, alto_techo)
 	else:
 		_quemar(g, baja, alta, alto_nivel, rng)
 
@@ -284,17 +431,32 @@ static func casa(padre: Node3D, sitio: Dictionary,
 	}
 
 
+## Los cuatro postes de esquina de una planta. Ver `POSTE_ALTO`.
+static func _postes(capa: Node3D, y: float, estira: float, giro: float) -> void:
+	var r := CASA_LADO / 2.0 - 0.08
+	for s: Vector2 in [Vector2(1, 1), Vector2(1, -1), Vector2(-1, 1), Vector2(-1, -1)]:
+		var mi := Kit.nodo("quaternius/pueblo/Corner_Exterior_Wood")
+		if mi == null:
+			return
+		mi.position = Vector3(s.x * r, y, s.y * r)
+		mi.scale = Vector3(PANEL_ESCALA, estira * POSTE_ALTO, PANEL_ESCALA)
+		mi.set_meta("afuera",
+			Vector3(s.x, 0, s.y).normalized().rotated(Vector3.UP, giro))
+		capa.add_child(mi)
+
+
 ## Un tabique de la planta baja, del tamaño del panel que se acaba de poner.
 ##
-## `pos` es la posición del panel en el marco de la casa y `rot` su giro. El
-## muro del kit ocupa de 0,40 a 0,50 de celda hacia afuera, así que su eje cae
-## en 0,45 — y ahí va la caja, con el espesor real y no con la planta entera.
+## `pos` es la posición del panel en el marco de la casa —o sea, sobre la línea
+## de fachada— y `rot` el giro de `CASA_CARAS`, el que lleva la normal de afuera
+## a +X local. El revoque va de la fachada hacia ADENTRO, así que su eje cae
+## medio espesor por detrás: de ahí el signo menos.
 ##
-## Con `puerta`, en vez de una caja van dos jambas: el hueco de `wall-door`
-## mide 0,4 de celda, o sea 1,08 m, y lo que queda a cada lado son 0,81.
+## Con `puerta`, en vez de una caja van dos jambas: el hueco de
+## `Wall_Plaster_Door_Round` mide 1,76 m y lo que queda a cada lado son 0,47.
 static func _tabique(g: Node3D, pos: Vector3, rot: float, alto: float,
 		puerta: bool) -> void:
-	var eje := CASA_CELDA * 0.45
+	var eje := -CASA_MURO * 0.5
 	var tramos: Array = [[0.0, CASA_CELDA]]
 	if puerta:
 		var jamba := (CASA_CELDA - PUERTA_ANCHO) / 2.0
@@ -370,6 +532,10 @@ const HOLLIN_ALTO := Color(0.46, 0.40, 0.35)
 ## Le pone al esqueleto de la casa las marcas del fuego. Ver el bloque de arriba.
 static func _quemar(g: Node3D, baja: Node3D, alta: Node3D, alto_nivel: float,
 		rng: RandomNumberGenerator) -> void:
+	# El gradiente vertical, ahora DENTRO de la única planta que queda: la parte
+	# de arriba del muro tiznada casi al carbón y el pie apenas ahumado. `alta`
+	# viene vacía —el fuego se llevó el piso de arriba entero— pero se recorre
+	# igual, que es lo barato y lo que aguanta que mañana quede algo ahí.
 	for capa: Array in [[baja, HOLLIN_BAJO], [alta, HOLLIN_ALTO]]:
 		var nodo: Node3D = capa[0]
 		var tinte: Color = capa[1]
@@ -380,19 +546,21 @@ static func _quemar(g: Node3D, baja: Node3D, alta: Node3D, alto_nivel: float,
 				var v := rng.randf_range(0.82, 1.18)
 				Kit.tinte(h as MeshInstance3D, Color(tinte.r * v, tinte.g * v, tinte.b * v))
 
-	# (2) Las vigas. Salen del entrepiso y se cruzan arriba, como queda un techo
-	# cuando se le va el machimbre y aguantan los pares.
+	# (2) Las vigas. Salen del borde de arriba del muro que quedó parado y se
+	# cruzan en el aire, como queda un techo cuando se le va el machimbre y
+	# aguantan los pares. **Ahora asoman por encima de una sola planta**, o sea
+	# que el corte de silueta a media altura de la casa vecina es lo primero que
+	# se lee de la ruina — que es de lo que se trata.
 	var viga_mat := Paleta.madera(Paleta.MADERA)
-	var alero := CASA_NIVELES * alto_nivel
-	for k in 4:
+	for k in 5:
 		var caja := BoxMesh.new()
-		caja.size = Vector3(0.16, rng.randf_range(1.4, 2.6), 0.16)
+		caja.size = Vector3(0.16, rng.randf_range(1.6, 3.0), 0.16)
 		caja.material = viga_mat
 		var mi := MeshInstance3D.new()
 		mi.mesh = caja
-		var a := TAU * (float(k) + rng.randf_range(-0.18, 0.18)) / 4.0
-		var r := CASA_CELDA * rng.randf_range(0.45, 0.85)
-		mi.position = Vector3(cos(a) * r, alero - alto_nivel * 0.25, sin(a) * r)
+		var a := TAU * (float(k) + rng.randf_range(-0.18, 0.18)) / 5.0
+		var r := CASA_CELDA * rng.randf_range(0.45, 0.88)
+		mi.position = Vector3(cos(a) * r, alto_nivel * 0.82, sin(a) * r)
 		mi.rotation = Vector3(rng.randf_range(-0.5, 0.5), a, rng.randf_range(-0.5, 0.5))
 		g.add_child(mi)
 
@@ -400,11 +568,11 @@ static func _quemar(g: Node3D, baja: Node3D, alta: Node3D, alto_nivel: float,
 	# carbón que la planta alta. **Van pegados al zócalo y no repartidos por el
 	# prado**: acá no se sabe la altura del terreno —eso lo sabe `valle.gd`— y un
 	# tronco apoyado en la nada flota. Sobre el basamento no hay ese riesgo.
-	for k in 3:
+	for k in 4:
 		var mi := Kit.nodo("naturaleza/log_large")
 		if mi == null:
 			break
-		var a := TAU * (float(k) + rng.randf_range(-0.3, 0.3)) / 3.0
+		var a := TAU * (float(k) + rng.randf_range(-0.3, 0.3)) / 4.0
 		mi.position = Vector3(cos(a) * CASA_ADENTRO * 0.8, CASA_PISO,
 			sin(a) * CASA_ADENTRO * 0.8)
 		mi.rotation = Vector3(0.0, rng.randf() * TAU, PI / 2.0 + rng.randf_range(-0.3, 0.3))
@@ -484,7 +652,10 @@ static func _umbral(g: Node3D, puerta_x: float, alto: float) -> void:
 	var n := clampi(int(ceil(subida / ESCALON)), 1, 4)
 	var largo := ESCALON_HUELLA * n
 	var z0 := CASA_LADO / 2.0 + ZOCALO_VUELO
-	var ancho := PUERTA_ANCHO + 0.7
+	# El sobreancho bajó de 0,70 a 0,35 cuando la puerta pasó de 1,08 a 1,76 m:
+	# con el de antes, el escalón medía 2,46 sobre un panel de 2,70 y la casa se
+	# leía apoyada en una tarima. La proporción es lo que importa, no el número.
+	var ancho := PUERTA_ANCHO + 0.35
 	var mat := Paleta.piedra(Paleta.LOSA_CAMINO)
 
 	for k in n:
@@ -532,57 +703,130 @@ static func _umbral(g: Node3D, puerta_x: float, alto: float) -> void:
 	g.add_child(rampa)
 
 
-## El techo: una pirámide de cuatro caras del kit, estirada a la planta entera.
+## EL GABLETE — el triángulo que cierra los dos hastiales.
 ##
-## Es la misma silueta que tenía el cono de cuatro caras de antes, y eso es
-## deliberado — la familia de techos de cuatro aguas ya es parte del lenguaje
-## del valle, tanto que `vegetacion.gd` la nombra al explicar por qué las copas
-## tienen facetas duras. Lo que cambia no es la forma: son los aleros, el
-## borde y la textura de teja, o sea las tres cosas que un cono no tiene.
-static func _techo(g: Node3D, alero: float, rng: RandomNumberGenerator) -> void:
-	# Dos alturas de techo. El empinado es el que hace que un caserío se lea
-	# como pueblo de montaña y no como galpones.
-	var empinado := rng.randf() < 0.45
-	var mi := Kit.nodo("pueblo/roof-high-point" if empinado else "pueblo/roof-point")
+## **Y sin esto la casa tiene dos agujeros.** `Roof_RoundTiles_4x4` es un techo a
+## DOS aguas, no a cuatro: rasterizado, su silueta contra el eje X es un
+## triángulo y contra el eje Z es un rectángulo, o sea que la cumbrera corre
+## paralela a Z y las dos caras Z quedan abiertas de par en par. En el banco se
+## veía como un hueco negro bajo la cumbrera — se veía el interior de la casa
+## desde la calle.
+##
+## El kit trae `Roof_Front_Brick4` para eso y **no encaja**: su pendiente es de
+## 48,7° contra los 57,6° del techo, así que al ponerlos juntos o queda medio
+## metro de ranura o la fachada asoma por encima de la teja. Se probó con
+## números antes de descartarlo.
+##
+## Así que el gablete se genera acá, y por construcción sigue EXACTAMENTE la
+## línea de abajo del techo: cinco vértices, tres triángulos, doblados para que
+## se vea de los dos lados. Doce triángulos por casa.
+##
+## **Va en madera (`MURO_FRAGUA`, V5) y no en revoque**, y es una decisión de
+## valor y no de carpintería: entablar el hastial es lo que se hace de verdad
+## —arriba no hay quien sostenga mampostería— y deja un peldaño entre el muro
+## (V5,5 medido) y el techo (V2), que es lo que le da espesor a la tapa de la
+## casa. Con grano, porque nada es liso.
+##
+## **La primera versión lo puso en `TRONCO_CLARO` (V3) y midió luma 18 contra
+## 106 del muro**: a esa altura el hastial dejaba de ser una tabla y se leía
+## como el agujero que vino a tapar. Es el mismo límite que ya está anotado en
+## el hollín de la Casa Quemada — *una superficie grande por debajo de V2/V3 deja
+## de tener color propio y adopta el del cielo*, y la cara del gablete que ve la
+## cámara casi siempre está en sombra.
+##
+## `PENDIENTE_TECHO` sale de la malla: (3,734 + 0,516) de alto sobre 2,757 de
+## medio ancho, corregido por las dos escalas con que se pone el techo.
+const PENDIENTE_TECHO := (3.734 + 0.516) / (3.734 * 2.757 * TECHO_ESCALA)
+
+
+static func _gablete(g: Node3D, alero: float, cumbrera: float) -> void:
+	var half := CASA_LADO / 2.0
+	# A qué altura pasa la cara de abajo del techo justo sobre la pared. Con el
+	# alero volado 0,61 m, el techo todavía está subiendo cuando cruza el muro.
+	var ceja := maxf(cumbrera - PENDIENTE_TECHO * cumbrera * half, 0.0)
+	var perfil := PackedVector2Array([
+		Vector2(-half, 0.0), Vector2(half, 0.0), Vector2(half, ceja),
+		Vector2(0.0, cumbrera), Vector2(-half, ceja),
+	])
+	var mat := Paleta.gastar(Paleta.madera(Paleta.MURO_FRAGUA), 2.4)
+	# El gablete se planta en el medio del espesor del muro, para que su canto
+	# no asome ni por afuera ni adentro del cuarto.
+	var z := half - CASA_MURO * 0.5
+	for lado: float in [1.0, -1.0]:
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for k in 3:
+			# Las dos vueltas: una por cara. El hastial se ve desde la calle y
+			# desde adentro del desván, y una cara sola desaparece de un lado.
+			for tri: Array in [[0, k + 1, k + 2], [0, k + 2, k + 1]]:
+				for idx: int in tri:
+					var p: Vector2 = perfil[idx]
+					st.add_vertex(Vector3(p.x, alero + p.y, z * lado))
+		st.generate_normals()
+		var mi := MeshInstance3D.new()
+		mi.mesh = st.commit()
+		mi.material_override = mat
+		g.add_child(mi)
+
+
+## El techo: la tapa oscura de la casa, y a 27 metros es la mitad de lo que hace
+## que una caja se lea como casa.
+##
+## `Roof_RoundTiles_4x4` es una cubierta a cuatro aguas con teja curva, faldón
+## que monta sobre el muro y alero volado. Es la misma SILUETA que tenía la
+## pirámide de Kenney —y que el cono de cuatro caras antes que ella—, y eso es
+## deliberado: la familia de cuatro aguas ya es parte del lenguaje del valle,
+## tanto que `vegetacion.gd` la nombra al explicar por qué las copas tienen
+## facetas duras. Lo que cambia no es la forma: es que la tapa ahora tiene teja.
+##
+## **Cuesta 1.996 triángulos contra 44, y ése era el segundo bloqueo anotado.**
+## Se desarmó contando bien: el valle tiene DOCE casas, no cuarenta. Son +23,4
+## mil triángulos contra los ~135 mil que ya pone el bosque.
+##
+## **La cumbrera corre paralela a Z**, o sea perpendicular al frente de la casa,
+## y no se sortea: el gablete de `_gablete()` está calculado para esa
+## orientación, y girar el techo sin girar el gablete es dejar el hueco abierto
+## en el otro lado. La variedad ya está en la pendiente y en la altura de planta.
+static func _techo(g: Node3D, alero: float, cumbrera: float) -> void:
+	var mi := Kit.nodo("quaternius/pueblo/Roof_RoundTiles_4x4")
 	if mi == null:
 		return
-	# La pieza mide 1,1 de ancho por celda, o sea que a escala 2 cubre las dos
-	# celdas y sobra 0,1 de alero por lado. Ese sobrante es el punto.
-	var s := 2.0 * CASA_CELDA
-	# **El empinado se achica a la mitad y no es un capricho.** `roof-point`
-	# mide 0,5 de alto por 1,1 de ancho y `roof-high-point` mide 1,0: al mismo
-	# factor, el segundo son 5,4 m de techo sobre 5,6 m de pared, o sea un
-	# campanario. Medido mirando el banco de prueba: al lado de una casa normal
-	# no se leía como "más empinado", se leía como otro edificio. Con 0,55 queda
-	# en 3,0 m contra los 2,7 del otro — un peldaño, que es lo que se pedía.
-	var alto := s * (0.55 if empinado else 1.0) * rng.randf_range(0.85, 1.15)
 	mi.position = Vector3(0.0, alero, 0.0)
-	mi.scale = Vector3(s, alto, s)
+	mi.scale = Vector3(TECHO_ESCALA, cumbrera / 3.734, TECHO_ESCALA)
 	g.add_child(mi)
 
 
 ## El vidrio encendido de una ventana del kit.
 ##
-## La pieza `wall-window-shutters` trae el marco y los postigos, pero su color
-## sale del atlas y no se enciende. La luz de adentro sigue siendo una placa
-## emisiva nuestra, como en la caja: se cuelga del muro —así hereda su
-## posición, su giro y su escala sin tener que recalcular nada— y entra al
-## grupo "ventanas", que es lo que `ciclo.gd` recorre al caer el sol.
+## **Y ahora tapa un agujero de verdad**, que es la diferencia entera con la
+## casa anterior: en Kenney la ventana estaba PINTADA sobre una cara plana y
+## esta placa era un parche encima; en `Wall_Plaster_Window_Wide_Round` el hueco
+## está calado, así que sin la placa se ve el interior desde la calle. La placa
+## la cierra por el medio del espesor del revoque, con la jamba asomando a los
+## dos lados — que es de dónde sale que una ventana parezca hecha en un muro.
+##
+## El nodo se cuelga en el marco del PADRE con la transformación del muro
+## aplicada a mano, y no como hijo del muro, porque así hereda su escala sin
+## quedar sujeto a su visibilidad: el recorte de `interiores.gd` apaga muros y
+## vidrios por separado, cada uno con su meta `afuera`.
 ##
 ## **Esto no es un detalle que se pueda perder al migrar.** Una ventana
 ## encendida dice "adentro hay alguien" más fuerte que todo el cielo junto, y
-## está anotado como decisión del valle.
+## está anotado como decisión del valle. Lo que sí cambió es el TAMAÑO: el hueco
+## de Quaternius mide 1,22 × 1,70 del panel, o sea 1,65 × 1,70 m puestos, contra
+## los 0,92 × 0,99 de la placa de Kenney. De noche la aldea da más luz; de día
+## es más mancha V2 en la fachada, que es lo que la paleta quiere.
 static func _vidrio(muro: MeshInstance3D, luz: StandardMaterial3D) -> MeshInstance3D:
 	var v := BoxMesh.new()
-	v.size = Vector3(0.34, 0.34, 0.06)
+	# Un pelo más chico que el hueco, para que se vea el canto de la jamba.
+	v.size = Vector3(VENTANA_HUECO.x - 0.08, VENTANA_HUECO.y - 0.10, 0.05)
 	v.material = luz
 	var mi := MeshInstance3D.new()
 	mi.mesh = v
-	# En el marco local del muro: la cara de afuera está en x = 0,5 y el hueco
-	# de la ventana a media altura. El nodo se coloca en coordenadas del muro y
-	# después se le copia la transformación, porque el muro ya viene escalado.
+	# En el marco local del panel: el hueco está centrado en x, su centro de
+	# altura en `VENTANA_CENTRO` y el revoque va de z = 0 (afuera) a −0,20.
 	mi.transform = muro.transform * Transform3D(
-		Basis().rotated(Vector3.UP, PI / 2.0), Vector3(0.47, 0.52, 0.0))
+		Basis(), Vector3(0.0, VENTANA_CENTRO, -0.10))
 	mi.add_to_group("ventanas")
 	return mi
 
@@ -647,16 +891,29 @@ static func chimenea(padre: Node3D, pos: Vector3, ancho: float) -> MeshInstance3
 	# separación, que es lo mínimo para que el bulto se vea contra la tapa
 	# oscura de la casa. Con el mismo valor que el techo, la chimenea no existe
 	# y el humo sale de la nada.
+	#
+	# **Y con el techo nuevo hubo que hacerla más alta o dejaba de existir.** El
+	# de teja llega a 3,2 m sobre el alero contra los ~2,7 de la pirámide de
+	# Kenney, y la chimenea de antes —1,49 m centrada en alero + 1,25— terminaba
+	# ENTERA adentro del faldón. Ahora el caño arranca al ras del alero (de ahí
+	# `CHIMENEA_OFRECIDA`, que es dónde la llama `valle.gd`), se hunde 0,8 m en
+	# el entrepiso porque una chimenea baja hasta el hogar, y sale a
+	# `CHIMENEA_ALTO`. Queda un caño flaco y alto en vez de un bulto, que además
+	# es lo que es.
+	var base := pos.y - CHIMENEA_OFRECIDA - 0.8
+	var alto := CHIMENEA_ALTO + 0.8
 	var ladrillo := Paleta.piedra(Paleta.LADRILLO)
 	var c := BoxMesh.new()
-	c.size = Vector3(ancho * 0.22, ancho * 0.55, ancho * 0.22)
+	c.size = Vector3(ancho * 0.22, alto, ancho * 0.22)
 	c.material = ladrillo
 	var mi := MeshInstance3D.new()
 	mi.mesh = c
-	mi.position = pos
+	mi.position = Vector3(pos.x, base + alto / 2.0, pos.z)
 	padre.add_child(mi)
 
-	padre.add_child(_humo(pos + Vector3(0, ancho * 0.4, 0)))
+	# El humo sale de la boca del caño, no de la mitad. Con el techo viejo daba
+	# lo mismo; con éste, medio metro más abajo es humo saliendo de la teja.
+	padre.add_child(_humo(Vector3(pos.x, base + alto + 0.15, pos.z)))
 	return mi
 
 
@@ -1057,3 +1314,201 @@ static func luciernagas(padre: Node3D, pos: Vector3, cantidad: int, radio: float
 	p.draw_pass_1 = q
 	padre.add_child(p)
 	return p
+
+
+# ===========================================================================
+# LA LABRANZA — LO QUE DICE QUE ACÁ VIVE GENTE QUE TRABAJA
+#
+# `CLAUDE.md` manda, y es la regla que más caro sale ignorar: *todo tiene vida o
+# tiene algún sentido; antes de agregar algo a la escena, decí qué significa.*
+# Así que acá va, pieza por pieza, y lo que no pasó la prueba está anotado abajo
+# para que nadie lo vuelva a proponer.
+#
+#  · **LAS HUERTAS.** Tres paños cercados alrededor de Vado Bajo. Significan
+#    dos cosas y las dos ya son ciertas en el servidor: **la gente come** —hay
+#    una cocinera y una destiladora entre los oficios que manda `/mundo`, y el
+#    grano tiene que salir de algún lado— y **el valle tiene ciervos**
+#    (`fauna.gd` siembra cuatro ciervos y un venado). Un cerco de 0,7 m no
+#    detiene a nadie salvo a un animal que viene a comerse la siembra: **el
+#    cerco existe porque existe el ciervo**, y eso es lo que lo salva de ser
+#    decorado. Van AFUERA del anillo de casas, que es donde de verdad se siembra
+#    —adentro de un caserío está la calle— y a 18–23 m del centro, o sea a la
+#    vista desde la plaza.
+#
+#  · **EL PILÓN DE LA PLAZA.** Las siete casas de Vado Bajo están puestas en
+#    círculo mirando hacia adentro y **en el medio no hay nada**: un anillo de
+#    casas alrededor de un vacío no es una plaza, es una rotonda. El pilón es de
+#    dónde se saca el agua, que es la razón por la que un caserío se junta en
+#    círculo y no en fila. Y el pueblo se llama **Vado Bajo**: el agua es su
+#    nombre.
+#
+# LO QUE SE MIRÓ Y NO ENTRÓ, y no es por falta de malla — están las cuatro
+# descargadas y sin usar:
+#
+#  · **Los puestos de mercado** (`stall`, `stall-green`, `stall-red`). **No hay
+#    comercio en este juego.** No hay dinero, no hay precios y no hay
+#    intercambio entre jugadores; lo que hay es regalo y enseñanza. Un puesto de
+#    mercado es exactamente "hacer por hacer", y encima MIENTE sobre lo que el
+#    mundo tiene.
+#  · **Los estandartes** (`banner-green`, `banner-red`). No hay facciones, no
+#    hay casas nobles y no hay bandos. Un estandarte sin nadie detrás es un
+#    color colgado.
+#  · **El molino de agua y el de viento** (`watermill`, `windmill`). El
+#    significado SÍ está —hay siembra y hay río— pero las dos piezas de Kenney
+#    son la rueda y las aspas, no el edificio, y el edificio del valle ahora es
+#    de Quaternius. Pegarle una rueda de un autor a una pared del otro es
+#    justamente la costura que este proyecto decidió no tener. Queda como la
+#    primera cosa a hacer si algún día entra una pieza de molino del MegaKit.
+#  · **El carro y el cartel** (`cart`, `signpost`). El mojón de `hitos.gd` ya
+#    dice "hasta acá llega el valle" al borde del camino, y un cartel al lado
+#    repite. El carro se aguanta solo si va a alguna parte, y hoy nadie viaja.
+# ===========================================================================
+
+## El paño de una huerta, en metros. Seis por cuatro: tres piezas de cerco por
+## el lado largo y dos por el corto, que es como sale sin cortar nada.
+const HUERTA_LADO := Vector2(6.0, 4.0)
+
+## Dónde se prueba a ponerlas, medido del centro del lugar. El anillo de casas
+## de Vado Bajo cae en ~11,9 m, así que esto está afuera y con calle en el medio.
+const HUERTA_RADIOS: Array[float] = [17.0, 19.5, 22.0, 24.5]
+
+## Y en qué tres direcciones. No están repartidas parejo a propósito —dos juntas
+## y una del otro lado— porque tres cosas a 120° exactos se leen como un logo.
+const HUERTA_ANGULOS: Array[float] = [0.55, 1.45, 3.95]
+
+## La escala del Nature Kit en el valle. Es la misma que usa `valle.gd` en su
+## `ESCALA_KIT`, y está repetida porque los dos números tienen que moverse
+## juntos: un cerco de un tamaño y un barril de otro se nota.
+const ESCALA_NATURALEZA := 2.0
+
+## La del Fantasy Town Kit **no está acá y es a propósito**: la celda de ese kit
+## vale `CASA_CELDA` (2,7 m) porque era la del muro de una casa, y ahora la casa
+## no es de ese kit. Lo poco que queda de Kenney en el pueblo se escala por
+## pieza, con el número al lado y el motivo — ver `_pilon()`.
+
+
+## Sembrar y cercar. `alturas` es la función de terreno y `lugares` el
+## `LUGARES` de `valle.gd`. Ver el bloque de arriba: cada familia tiene un para
+## qué o no está.
+static func labranza(padre: Node3D, alturas: Callable, lugares: Dictionary) -> void:
+	var def: Variant = lugares.get("aldea")
+	if not (def is Dictionary) or not (def as Dictionary).has("pos"):
+		return
+	var base: Vector3 = (def as Dictionary)["pos"]
+
+	# Semilla fija: las huertas de Vado Bajo son las mismas en la pantalla de
+	# todos, igual que las casas. Es multijugador.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20260818
+
+	for i in HUERTA_ANGULOS.size():
+		var a: float = HUERTA_ANGULOS[i]
+		# El rellano más parejo de los cuatro radios. Es la misma idea que
+		# `_sitio_de_casa()` en `valle.gd` y por el mismo motivo: un paño de seis
+		# metros en una loma deja el cerco flotando de un lado.
+		var mejor := INF
+		var centro := Vector3.ZERO
+		for r: float in HUERTA_RADIOS:
+			var c := Vector3(base.x + cos(a) * r, 0.0, base.z + sin(a) * r)
+			var lo := INF
+			var hi := -INF
+			for dx: float in [-0.5, 0.0, 0.5]:
+				for dz: float in [-0.5, 0.0, 0.5]:
+					var p := c + Vector3(dx * HUERTA_LADO.x, 0.0, dz * HUERTA_LADO.y) \
+						.rotated(Vector3.UP, a)
+					var h: float = alturas.call(p.x, p.z)
+					lo = minf(lo, h)
+					hi = maxf(hi, h)
+			if hi - lo < mejor:
+				mejor = hi - lo
+				centro = c
+		# El frente del paño mira a la aldea: ahí va el portillo.
+		_huerta(padre, alturas, centro, a + PI, i, rng)
+
+	_pilon(padre, alturas, base)
+
+
+## Un paño: el cerco, el portillo, los surcos y lo que crece.
+##
+## `giro` lleva el frente (+Z local) hacia la aldea. `variedad` decide qué se
+## sembró en éste — trigo en dos, maíz en uno. Que las tres huertas tengan lo
+## mismo se nota tanto como que no haya ninguna.
+static func _huerta(padre: Node3D, alturas: Callable, centro: Vector3,
+		giro: float, variedad: int, rng: RandomNumberGenerator) -> void:
+	var g := Node3D.new()
+	g.name = "Huerta"
+	padre.add_child(g)
+
+	var mx := HUERTA_LADO.x / 2.0
+	var mz := HUERTA_LADO.y / 2.0
+	# Las piezas del cerco miden 1 unidad de ancho y van a escala del Nature
+	# Kit, o sea 2 m. Tres por el lado largo, dos por el corto.
+	var tramos: Array = []
+	for k in 3:
+		var u := (k - 1.0) * ESCALA_NATURALEZA
+		tramos.append([Vector3(u, 0.0, mz), 0.0, k == 1])     # el frente: acá va el portillo
+		tramos.append([Vector3(u, 0.0, -mz), 0.0, false])
+	for k in 2:
+		var v := (k - 0.5) * ESCALA_NATURALEZA
+		tramos.append([Vector3(mx, 0.0, v), PI / 2.0, false])
+		tramos.append([Vector3(-mx, 0.0, v), PI / 2.0, false])
+
+	for t: Array in tramos:
+		var local: Vector3 = t[0]
+		var p := centro + (local as Vector3).rotated(Vector3.UP, giro)
+		var y: float = alturas.call(p.x, p.z)
+		# Enterrado un poco: en pendiente, un cerco apoyado al ras deja ver el
+		# prado por debajo y se lee como una calcomanía.
+		Kit.poner(g, "naturaleza/fence_gate" if t[2] else "naturaleza/fence_simple",
+			Vector3(p.x, y - 0.12, p.z), giro + float(t[1]), ESCALA_NATURALEZA)
+
+	# Los surcos y lo que crece en ellos. Tres surcos a lo largo, con la tierra
+	# volteada abajo y la planta arriba: es la misma pieza de Kenney que ya usa
+	# `interiores.gd` para el trigo de la cazadora, o sea que no entra nada nuevo.
+	var planta := "naturaleza/crops_cornStageC" if variedad == 2 else "naturaleza/crops_wheatStageB"
+	var alto_planta := 1.0 if variedad == 2 else ESCALA_NATURALEZA
+	for fila in 3:
+		var z := (fila - 1.0) * 1.25
+		for k in 3:
+			var local := Vector3((k - 1.0) * ESCALA_NATURALEZA, 0.0, z)
+			var p := centro + local.rotated(Vector3.UP, giro)
+			var y: float = alturas.call(p.x, p.z)
+			Kit.poner(g, "naturaleza/crops_dirtRow", Vector3(p.x, y - 0.04, p.z),
+				giro, ESCALA_NATURALEZA)
+		# Dos matas por surco y no una hilera cerrada: **la mitad de la huerta
+		# está cosechada.** Es fin de verano —lo dice la ficha de identidad de
+		# `DISENO.md` §6— y un campo lleno y parejo se lee como estampado.
+		for k in 2:
+			var local := Vector3((k - 0.5) * 1.9 + rng.randf_range(-0.3, 0.3), 0.0,
+				z + rng.randf_range(-0.18, 0.18))
+			var p := centro + local.rotated(Vector3.UP, giro)
+			var y: float = alturas.call(p.x, p.z)
+			Kit.poner(g, planta, Vector3(p.x, y - 0.05, p.z),
+				rng.randf() * TAU, alto_planta * rng.randf_range(0.85, 1.15))
+
+
+## El pilón de la plaza. Ver el bloque de arriba: es de dónde se saca el agua, y
+## es lo que convierte el anillo de casas en una plaza.
+##
+## Va corrido del centro exacto y no en (0,0,0), porque ahí es donde aparece el
+## jugador al entrar y nadie tiene que nacer adentro de una pileta.
+static func _pilon(padre: Node3D, alturas: Callable, base: Vector3) -> void:
+	var p := base + Vector3(2.7, 0.0, 2.1)
+	var y: float = alturas.call(p.x, p.z)
+	# **A 1,6 y no a la celda de la casa.** La del Fantasy Town Kit vale 2,7 m
+	# —es la de la casa— y la pieza mide 2 celdas: a esa escala el pilón sale de
+	# 5,4 m de diámetro, o sea del ancho de una casa entera, y en la captura se
+	# comía la plaza. A 1,6 queda en 3,2 m, que es una pileta a la que se acercan
+	# tres personas con baldes.
+	var mi := Kit.poner(padre, "pueblo/fountain-round", Vector3(p.x, y - 0.05, p.z),
+		0.6, 1.6)
+	# **Y baja un peldaño.** La aduana manda las muestras `fde4c7` y `ffffff` del
+	# atlas a `ROCA`, que es V6 y es lo correcto para un peñón en la ladera:
+	# *la piedra es lo más claro del paisaje*. Pero acá son cinco metros
+	# cuadrados de anillo liso en el medio de la plaza, y medido a la tarde salía
+	# como **lo más claro del encuadre entero**, por encima de los muros que la
+	# escalera reserva para eso. En V5 (`LOSA_CAMINO`) queda al mismo peldaño que
+	# el camino y los escalones de las casas, que es lo que es: piedra trabajada,
+	# puesta por alguien.
+	if mi != null:
+		Kit.tinte(mi, Color(0.72, 0.71, 0.70))

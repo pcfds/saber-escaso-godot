@@ -245,7 +245,16 @@ func _aplicar_al_valle(oscuridad: float) -> void:
 			continue
 		var m := mi.mesh.surface_get_material(0) as StandardMaterial3D
 		if m != null:
-			m.emission_energy_multiplier = lerp(0.15, 4.2, oscuridad)
+			# El piso sale de la paleta y no de un 0,15 escrito acá, y no es
+			# prolijidad: **este renglón corre en cada cuadro y pisaba lo que
+			# decidiera el material**, así que la ventana era lo más claro del
+			# cuadro a plena luz. Medido en el banco: el panel daba 117 contra
+			# 106 del muro y 34 del techo — a mediodía, con el sol arriba, un
+			# vidrio brillando más que la pared que lo sostiene.
+			#
+			# De noche no cambia nada: la emisión sigue llegando a 4,2, que es
+			# lo que hace que una ventana encendida diga "adentro hay alguien".
+			m.emission_energy_multiplier = lerp(Paleta.PISO_VENTANA, 4.2, oscuridad)
 	for b in bichos_de_luz:
 		if is_instance_valid(b):
 			b.emitting = oscuridad > 0.45

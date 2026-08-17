@@ -1,37 +1,35 @@
 extends Node3D
 
 # ===========================================================================
-# EL A/B DE LAS CASAS. Ver `escenas/prueba_casas.tscn`.
+# EL BANCO DE LAS CASAS. Ver `escenas/prueba_casas.tscn`.
 #
-# A la izquierda, la casa que hay hoy: módulos del Fantasy Town Kit de Kenney,
-# armada por `Detalles.casa()`. A la derecha, la misma idea con los módulos del
-# Medieval Village MegaKit de Quaternius (CC0, ver `assets/PROCEDENCIA.md`).
+# **Esta escena existió para que una decisión de arte se tomara mirando, no
+# leyendo, y esa decisión ya se tomó.** La dirección del proyecto rechazó las
+# casas del Fantasy Town Kit de Kenney con estas palabras —*"parece un mundo de
+# Disney para mujeres"*— y el A/B contra el Medieval Village MegaKit de
+# Quaternius se corrió acá, con la misma luz, la misma paleta, el mismo suelo y
+# la misma distancia. Ganó Quaternius y por un motivo que no era el color: **el
+# muro de Kenney tiene la ventana PINTADA sobre una cara plana.** Ninguna
+# cantidad de paleta arregla un agujero dibujado.
 #
-# **Esta escena existe para que una decisión de arte se tome mirando, no
-# leyendo.** La dirección del proyecto rechazó el kit de Kenney con estas
-# palabras —*"parece un mundo de Disney para mujeres"*— y la pregunta que sigue
-# es si hay algo libre que no se lea así. Acá están las dos, con la misma luz,
-# la misma paleta, el mismo suelo y la misma distancia.
+# Los tres bloqueos que estaban anotados acá se desarmaron con números y están
+# contados en el encabezado de `detalles.gd`:
 #
-# LO QUE NO ESTÁ RESUELTO Y HAY QUE MIRAR AL DECIDIR:
+#   · la planta NO cambia de tamaño (el panel a 1,35 da 5,40 m de lado y 0,27 de
+#     muro, que son `CASA_LADO` y `CASA_MURO` clavados);
+#   · el techo cuesta +23,4 mil triángulos y no +78 mil, porque el valle tiene
+#     doce casas y no cuarenta;
+#   · y las texturas ya vienen horneadas en disco, con el tinte de peldaño en
+#     `Paleta.KIT_QUATERNIUS`.
 #
-#   · **La planta cambia de tamaño.** El muro de Kenney es una celda de 1 y el
-#     valle lo escala a 1,3 m; el de Quaternius mide 2 × 3,12 fijos. Una casa de
-#     dos paneles por lado son 4 × 4 m contra los 2,6 × 2,6 de hoy. Eso toca
-#     `CASA_MEDIA` en `valle.gd` —es lo que empuja a la gente fuera de las
-#     paredes— y por eso el cambio no es sólo de `detalles.gd`.
-#   · **El techo cuesta.** El de Kenney es una pirámide de ~50 triángulos; el
-#     `Roof_RoundTiles_4x4` son 1.996. Con cuarenta casas eso es +78 mil.
-#   · Las texturas ya vienen domadas EN DISCO, no en tiempo de ejecución.
+# Lo que el banco sigue haciendo, y por eso no se borra: mostrar las tres casas
+# del valle —revoque, ladrillo y quemada— juntas y a la distancia de juego, y
+# **probar que se entra** (`-- --interior`).
+#
+#   godot escenas/prueba_casas.tscn -- --captura
+#   godot escenas/prueba_casas.tscn -- --captura --lejos
+#   godot escenas/prueba_casas.tscn -- --captura --interior
 # ===========================================================================
-
-## Kenney: la celda del kit en metros. Es la de `Detalles.CASA_CELDA`.
-const CELDA_K := 1.3
-
-## Quaternius: el panel mide 2 de ancho por 3,12 de alto, y no se escala. La
-## casa es de DOS paneles por lado.
-const PANEL := 2.0
-const ALTO_PANEL := 3.12
 
 const CERCA := 26.0
 const LEJOS := 55.0
@@ -48,20 +46,40 @@ func _ready() -> void:
 		_interiores(rng)
 		return
 
-	# Kenney, tres casas: piedra, madera y quemada. Es la variedad que el valle
-	# tiene hoy.
-	Detalles.casa(self, {"pos": Vector3(-13.0, 0, 0), "giro": 0.0}, rng, true, false)
-	Detalles.casa(self, {"pos": Vector3(-8.0, 0, -4.0), "giro": 0.6}, rng, false, false)
-	Detalles.casa(self, {"pos": Vector3(-17.0, 0, -4.5), "giro": -0.4}, rng, true, true)
-	_cartel("KENNEY · hoy", Vector3(-13.0, 4.6, 0))
-
-	# Quaternius, las mismas tres.
-	_casa_q(Vector3(8.0, 0, 0), 0.0, rng, false)
-	_casa_q(Vector3(15.0, 0, -5.0), 0.7, rng, true)
-	_cartel("QUATERNIUS · propuesta", Vector3(11.0, 8.2, 0))
+	# Las tres casas del valle: revoque (Vado Bajo), ladrillo desparejo (la
+	# Fragua) y quemada (la ruina). Es la variedad que el valle tiene.
+	Detalles.casa(self, {"pos": Vector3(-9.0, 0, 0), "giro": 0.0}, rng, false, false)
+	_cartel("revoque · Vado Bajo", Vector3(-9.0, 10.4, 0))
+	Detalles.casa(self, {"pos": Vector3(0.0, 0, -3.0), "giro": 0.5}, rng, true, false)
+	_cartel("ladrillo · la Fragua", Vector3(0.0, 10.8, -3.0))
+	Detalles.casa(self, {"pos": Vector3(9.5, 0, 0.5), "giro": -0.35}, rng, false, true)
+	_cartel("quemada", Vector3(9.5, 8.4, 0.5))
 
 	_encuadrar()
+	_censo()
 	_captura()
+
+
+## El costo, en triángulos, dicho y no estimado. La regla de la casa: *el costo
+## del arte nuevo hay que poder decirlo*.
+func _censo() -> void:
+	var piezas := {
+		"Wall_Plaster_Straight": 0, "Wall_Plaster_Straight_Base": 0,
+		"Wall_Plaster_Door_Round": 0, "Wall_Plaster_Window_Wide_Round": 0,
+		"Wall_Plaster_WoodGrid": 0, "Corner_Exterior_Wood": 0,
+		"Roof_RoundTiles_4x4": 0,
+	}
+	var total := 0
+	for p: String in piezas:
+		var t := Kit.triangulos(Kit.malla("quaternius/pueblo/" + p))
+		piezas[p] = t
+		print("  %-34s %5d" % [p, t])
+		total += t
+	print("censo: una casa de revoque ronda los %d triángulos" % (
+		piezas["Wall_Plaster_Straight"] * 6 + piezas["Wall_Plaster_Door_Round"]
+		+ piezas["Wall_Plaster_Window_Wide_Round"] * 5
+		+ piezas["Wall_Plaster_WoodGrid"] * 2 + piezas["Wall_Plaster_Straight_Base"] * 2
+		+ piezas["Corner_Exterior_Wood"] * 8 + piezas["Roof_RoundTiles_4x4"]))
 
 
 # ===========================================================================
@@ -97,6 +115,7 @@ func _interiores(rng: RandomNumberGenerator) -> void:
 	add_child(casas)
 
 	var x := -14.0
+	var puertas: Array[Vector3] = []
 	for i in 3:
 		var sitio := {
 			"pos": Vector3(x, 0, 0), "giro": 0.0,
@@ -107,10 +126,14 @@ func _interiores(rng: RandomNumberGenerator) -> void:
 		var clave := "prueba/%d" % i
 		casas.amueblar(clave, casa, quemada, rng)
 		casas.habitar(clave, "Alguien", OFICIOS_MUESTRA[i])
-		_vara(Vector3(x + (1.35 if i % 2 == 1 else -1.35), 0, 4.2))
+		var pd: Vector3 = casa["puerta"]
+		puertas.append(Vector3(x + pd.x, pd.y, pd.z))
+		_vara(Vector3(x + pd.x, 0, Detalles.CASA_LADO / 2.0 + 1.6))
 		_cartel(OFICIOS_MUESTRA[i] if not quemada else "quemada",
 			Vector3(x, 7.4, 0))
 		x += 14.0
+
+	await _medir_puertas(puertas)
 
 	# El recorte, forzado en las tres: la cámara mira desde +Z, así que se
 	# apagan el techo, la planta alta y los muros del frente. En el valle se
@@ -132,6 +155,42 @@ func _interiores(rng: RandomNumberGenerator) -> void:
 	_captura()
 
 
+## ¿PASA EL JUGADOR? Y no medido con una regla: con SU CÁPSULA, contra la
+## colisión que la casa acaba de construir.
+##
+## Es la regla más cara que pagó este proyecto —*se verificó caminando hasta cada
+## puerta, no mirando capturas*— traída al banco, porque una captura de un
+## interior abierto no prueba absolutamente nada sobre si se puede entrar: los
+## muros del frente están apagados justamente en esa captura.
+##
+## Barre la cápsula de `jugador.gd` (0,45 de radio, 1,85 de alto) por el eje de
+## la puerta, de la calle al centro del cuarto, y avisa en qué paso choca. Si
+## los cinco pasos están libres, se entra.
+func _medir_puertas(puertas: Array[Vector3]) -> void:
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var forma := CapsuleShape3D.new()
+	forma.radius = 0.45
+	forma.height = 1.85
+	var espacio := get_world_3d().direct_space_state
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = forma
+	for k in puertas.size():
+		var p: Vector3 = puertas[k]
+		var libre := 0
+		var pasos := 5
+		for s in pasos:
+			# De 1,2 m afuera del zócalo hasta el centro del cuarto.
+			var z: float = lerp(Detalles.CASA_LADO / 2.0 + 1.2, 0.0, s / float(pasos - 1))
+			q.transform = Transform3D(Basis(), Vector3(p.x, Detalles.CASA_PISO + 0.95, z))
+			if espacio.intersect_shape(q, 1).is_empty():
+				libre += 1
+			else:
+				print("  casa %d: la cápsula choca en z = %.2f" % [k, z])
+		print("puerta %d: %d de %d pasos libres — hueco %.2f m de ancho" % [
+			k, libre, pasos, Detalles.PUERTA_ANCHO])
+
+
 ## Una vara de la altura del jugador, para que la escala se discuta mirando.
 func _vara(pos: Vector3) -> void:
 	var c := CapsuleMesh.new()
@@ -144,76 +203,6 @@ func _vara(pos: Vector3) -> void:
 	mi.mesh = c
 	mi.position = pos + Vector3(0, 0.93, 0)
 	add_child(mi)
-
-
-## Una casa con los módulos de Quaternius.
-##
-## Ocho paneles por planta —dos por lado de un cuadrado de 4 × 4— y dos plantas.
-## No hacen falta esquinas: igual que con Kenney, dos paneles perpendiculares se
-## superponen en el cuadradito de la esquina y cierran solos.
-##
-## Lo que esta casa tiene y la de hoy NO puede tener, que es de lo que se trata
-## la comparación: **entramado de madera** (`Wall_Plaster_WoodGrid`),
-## **puntales** (`Prop_Support`), **enredadera** (`Prop_Vine1`) y un techo con
-## teja de verdad en vez de una pirámide.
-func _casa_q(pos: Vector3, giro: float, rng: RandomNumberGenerator,
-		ladrillo: bool) -> void:
-	var g := Node3D.new()
-	g.position = pos
-	g.rotation.y = giro
-	add_child(g)
-
-	var fam := "quaternius/pueblo/Wall_UnevenBrick" if ladrillo else "quaternius/pueblo/Wall_Plaster"
-	# Los cuatro lados de un cuadrado de 4 × 4: centro del panel y giro que
-	# lleva su cara de afuera hacia afuera.
-	var caras: Array = [
-		[Vector2(-1.0,  2.0), 0.0],
-		[Vector2( 1.0,  2.0), 0.0],
-		[Vector2(-1.0, -2.0), PI],
-		[Vector2( 1.0, -2.0), PI],
-		[Vector2( 2.0, -1.0), PI / 2.0],
-		[Vector2( 2.0,  1.0), PI / 2.0],
-		[Vector2(-2.0, -1.0), -PI / 2.0],
-		[Vector2(-2.0,  1.0), -PI / 2.0],
-	]
-	var i_puerta := 0 if rng.randf() < 0.5 else 1
-
-	for nivel in 2:
-		for i in caras.size():
-			var celda: Vector2 = caras[i][0]
-			var pieza := fam + "_Straight"
-			if nivel == 0 and i == i_puerta:
-				pieza = fam + "_Door_Round"
-			elif rng.randf() < 0.45:
-				pieza = fam + "_Window_Wide_Round"
-			elif nivel == 1 and not ladrillo and rng.randf() < 0.5:
-				# El entramado sólo en la planta alta, que es donde va en una
-				# casa de verdad: abajo la piedra aguanta el peso.
-				pieza = "quaternius/pueblo/Wall_Plaster_WoodGrid"
-			var mi := Kit.nodo(pieza)
-			if mi == null:
-				continue
-			mi.position = Vector3(celda.x, nivel * ALTO_PANEL, celda.y)
-			mi.rotation.y = caras[i][1]
-			g.add_child(mi)
-
-	var alero := 2.0 * ALTO_PANEL
-
-	# El alero y el techo.
-	for celda: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
-		Kit.poner(g, "quaternius/pueblo/Overhang_Roof_Plaster",
-			Vector3(celda.x, alero, celda.y))
-	Kit.poner(g, "quaternius/pueblo/Roof_RoundTiles_4x4", Vector3(0, alero + 0.3, 0))
-
-	# Lo que hace que una casa se lea como casa vieja y no como pieza de kit:
-	# el puntal, la chimenea y la enredadera.
-	Kit.poner(g, "quaternius/pueblo/Prop_Support", Vector3(2.02, 0, 0.6), PI / 2.0)
-	Kit.poner(g, "quaternius/pueblo/Prop_Support", Vector3(-2.02, 0, -0.6), -PI / 2.0)
-	Kit.poner(g, "quaternius/pueblo/Prop_Chimney2", Vector3(1.3, alero + 0.6, -1.3))
-	Kit.poner(g, "quaternius/pueblo/Prop_Vine1", Vector3(-1.2, 0.2, 2.1), 0.0)
-	Kit.poner(g, "quaternius/pueblo/Prop_Vine4", Vector3(0.9, 3.2, 2.1), 0.0)
-	Kit.poner(g, "quaternius/pueblo/Prop_WoodenFence_Single", Vector3(0.0, 0, 4.4))
-	Kit.poner(g, "quaternius/pueblo/Prop_Wagon", Vector3(4.6, 0, 2.6), 1.1)
 
 
 func _cartel(texto: String, pos: Vector3) -> void:

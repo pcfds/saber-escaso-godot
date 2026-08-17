@@ -48,6 +48,21 @@ así que en pantalla no conviven dos paletas. Ver `Paleta.domar_material()` y
 cada autor, un solo kit por categoría — si falta una pieza se resuelve con
 geometría primitiva o no se hace.
 
+3. **Y desde el 18 de agosto, tampoco se puede en la ARQUITECTURA.** La
+   dirección del proyecto rechazó las casas del Fantasy Town Kit dos veces
+   —*"parece un mundo de Disney para mujeres"*— y el A/B de
+   `escenas/prueba_casas.tscn` mostró que el motivo no era el color sino la
+   malla: **el muro de Kenney tiene la ventana pintada sobre una cara plana.**
+   Sin hueco, sin jamba y sin espesor no hay paleta que lo arregle. Las doce
+   casas se arman ahora con el Medieval Village MegaKit.
+
+   La regla queda dicha bien en `DISENO.md` §6: **un solo autor por CATEGORÍA**
+   —arquitectura Quaternius, vegetación y enseres Kenney, bichos Quaternius— y
+   nunca dos autores en la misma pieza. Y el cambio de kit se hace **cuando la
+   geometría no puede hacer el trabajo, nunca por gusto**: por eso el bosque se
+   queda en Kenney (54 triángulos contra 1.576) y la casa se muda (un agujero
+   contra un dibujo). Es aritmética en los dos casos.
+
 ## Los packs
 
 ### Kenney
@@ -235,8 +250,20 @@ configurar nada.
 - `assets/quaternius/pueblo/` — Medieval Village MegaKit \[Standard]. **22
   piezas de las 176**: muros de revoque y de ladrillo (recto, puerta, ventana,
   entramado), techos, alero, puntal, chimenea, enredadera, carro, cerca y
-  escalera. Hoy las usa **sólo `escenas/prueba_casas.tscn`**, que es el A/B
-  contra las casas de Kenney; no están cableadas al valle.
+  escalera. **Desde el 18 de agosto son las doce casas del valle** — ver
+  `Detalles.casa()`. Las que se usan de verdad son ocho:
+  `Wall_Plaster_{Straight, Straight_Base, Door_Round, Window_Wide_Round,
+  WoodGrid}`, `Wall_UnevenBrick_{Straight, Door_Round, Window_Wide_Round}`,
+  `Corner_Exterior_Wood` y `Roof_RoundTiles_4x4`. El resto sigue en el repo sin
+  llamador y **es a propósito**: son los candidatos ya bajados y ya medidos para
+  la próxima ronda (balcón, escalera exterior, puntal, carro, enredadera).
+
+  **Lo que falta y no está acá, con nombre y licencia**: una pieza de muro ROTO.
+  El \[Standard] no la trae, así que la Casa Quemada se cuenta con paneles
+  faltantes y sin planta alta en vez de con mampostería partida. Lo que la
+  tiene es **Quaternius · Ultimate Modular Ruins** (CC0, Drive
+  `1ETp2ldaHaP0BkS4FBmkT-g9Yf88T_cIX`) y **no publica glTF**: FBX, OBJ y Blend.
+  Está en la tabla de "se miró y no entró" de más abajo y sigue pendiente.
 
 #### Los `.glb` de los animales están PODADOS, y hay que saberlo
 
@@ -274,6 +301,35 @@ Por eso `Paleta.domar_material()` saltea `atlas_domado()` para todo lo que
 cuelgue de `/quaternius/`. **El filtro es por ruta y no por tamaño**: se probó
 con `<= 128 px` y apagó la aduana del pueblo de Kenney entero —su atlas también
 es de 512— y las casas volvieron al menta y coral de fábrica.
+
+##### CORRECCIÓN (18 de agosto): "ya vienen domadas" era media verdad
+
+Este archivo daba por cerrado el asunto con el salteo, y el salteo está bien.
+Lo que estaba mal es lo que venía después: dejarles `albedo_color = WHITE`.
+Medidas las siete texturas del repo (media de los 512², sRGB):
+
+| textura | V medio | S medio | dónde cae |
+|---|---|---|---|
+| `T_Plaster` | 0,574 | 0,274 | entre V5 y V6 |
+| `T_UnevenBrick` | 0,475 | 0,237 | entre V4 y V5 |
+| `T_Brick` | 0,504 | 0,200 | entre V4 y V5 |
+| `T_RockTrim` | 0,501 | 0,146 | entre V4 y V5 |
+| **`T_RoundTiles`** | **0,585** | 0,350 | **V5 — y es la TEJA** |
+| `T_WoodTrim` | 0,490 | 0,235 | entre V4 y V5 |
+| `T_VineLeaf` | 0,479 | **0,000** | gris: el verde estaba en el `.gltf` |
+
+El horneado comprimió el valor de las siete al mismo medio tono. La saturación
+sí quedó bajo el techo; **el peldaño no lo eligió nadie.** Y el techo de teja
+entrando en V5 rompe lo único que hace legible una casa a 27 m.
+
+Se corrige en `Paleta.KIT_QUATERNIUS`: un multiplicador de `albedo_color` por
+material, calculado como (color de la paleta ÷ media de la textura) en espacio
+lineal y devuelto a sRGB. **No toca el PNG**, así que el grano —que es todo el
+motivo por el que este pack entró— se conserva entero. Tres de los siete tienen
+componentes mayores que 1,0 porque el horneado los dejó por debajo de su
+peldaño: eso no es un color, es un multiplicador, y está dicho ahí.
+
+Si algún día se rehornean los PNG a su peldaño, esa tabla se va a blanco sola.
 
 ## Lo que se miró y NO entró
 
