@@ -395,10 +395,28 @@ func _process(dt: float) -> void:
 ##   · `_gruñido()` — «¿me van a pegar?». Los 400 ms del amago del bicho.
 ##     Sirve sobre todo cuando el bicho te queda fuera de encuadre, que a esta
 ##     cámara pasa todo el tiempo.
+##
+## Y dos más, de `fauna.gd`, que contestan una quinta: **«¿qué se asustó?»**.
+## Viven acá y no en `fauna.gd` porque son la misma máquina —sintetizar,
+## normalizar con la convención de la casa, disparar posicionado y olvidarse— y
+## partirla en dos archivos forkea la normalización, que es exactamente el bug
+## que dejó al viento 20 dB por encima de todo en `sonido.gd`.
+##
+##   · `_bramido()` — la vaca, el burro y el caballo. Grave y largo.
+##   · `_bufido()`  — el ciervo, el lobo y el zorro. Corto y seco.
 const SON_HZ := 22050
 static var _wav_impacto: AudioStreamWAV
 static var _wav_zumbido: AudioStreamWAV
 static var _wav_grunido: AudioStreamWAV
+static var _wav_bramido: AudioStreamWAV
+static var _wav_bufido: AudioStreamWAV
+
+## Las dos voces de la fauna. **Un animal asustado es un sonido antes que una
+## imagen**, y a esta cámara eso no es una frase: el rebaño que se espanta está
+## fuera de encuadre la mitad de las veces. Es el mismo argumento que ganó el
+## gruñido del amago.
+const BRAMIDO_DURA := 0.62
+const BUFIDO_DURA := 0.20
 
 
 # ── Normalización ───────────────────────────────────────────────────────────
@@ -553,6 +571,75 @@ static func _grunido() -> AudioStreamWAV:
 	return _wav_grunido
 
 
+## El bramido de la vaca: 620 ms que abren, se sostienen y caen.
+##
+## Es el gruñido con la envolvente al revés y una octava más arriba, y eso no es
+## pereza: **un gruñido y un bramido son la misma garganta con otra intención.**
+## El gruñido CRECE hacia el final porque anuncia lo que viene; el bramido se
+## abre de golpe y se apaga porque no anuncia nada, es una queja. Que la forma
+## diga eso es lo único que hay que acertar.
+##
+## 118 → 96 Hz: grave, porque a 60 m lo agudo se pierde en el lecho y lo grave
+## llega, y porque grave lee como cuerpo grande.
+static func _bramido() -> AudioStreamWAV:
+	if _wav_bramido != null:
+		return _wav_bramido
+	var n := int(SON_HZ * BRAMIDO_DURA)
+	var m := PackedFloat32Array()
+	m.resize(n)
+	var r := RandomNumberGenerator.new()
+	r.seed = 20260823   # determinista: el mismo bramido en todas las máquinas
+	var fase := 0.0
+	var aire := 0.0
+	for i: int in n:
+		var t := float(i) / float(SON_HZ)
+		var u := t / BRAMIDO_DURA
+		var hz: float = lerpf(118.0, 96.0, u)
+		fase += TAU * hz / float(SON_HZ)
+		var s := sin(fase) + sin(fase * 2.0) * 0.5 + sin(fase * 3.0) * 0.28 \
+			+ sin(fase * 5.0) * 0.12
+		# El aire de los ollares, filtrado bajo. Sin esto es un fagot.
+		aire += (r.randf_range(-1.0, 1.0) - aire) * 0.10
+		# Ataque de 45 ms y caída larga: se abre y se apaga.
+		var env: float = minf(1.0, t / 0.045) * pow(1.0 - u, 0.85)
+		m[i] = (s * 0.62 + aire * 0.22) * env
+	_wav_bramido = _empacar(m, 0.90, RMS_GRUNIDO)
+	return _wav_bramido
+
+
+## El bufido del ciervo y del lobo: 200 ms y se acabó.
+##
+## **Lo corto es la información.** Un bicho que se va no tiene tiempo de decir
+## nada largo, y la diferencia entre esta muestra y el bramido tiene que oírse
+## sin pensar: el rebaño de la aldea suena a queja y el bosque suena a un ruido
+## seco que se fue. Es ruido filtrado con un poco de tono adentro, no un tono
+## con ruido encima — al revés que el bramido, a propósito.
+static func _bufido() -> AudioStreamWAV:
+	if _wav_bufido != null:
+		return _wav_bufido
+	var n := int(SON_HZ * BUFIDO_DURA)
+	var m := PackedFloat32Array()
+	m.resize(n)
+	var r := RandomNumberGenerator.new()
+	r.seed = 20260824
+	var fase := 0.0
+	var pasa := 0.0
+	for i: int in n:
+		var t := float(i) / float(SON_HZ)
+		var u := t / BUFIDO_DURA
+		# El cuerpo cae rápido, que es lo que hace que suene a exhalación y no
+		# a silbato.
+		var hz: float = lerpf(330.0, 190.0, sqrt(u))
+		fase += TAU * hz / float(SON_HZ)
+		pasa += (r.randf_range(-1.0, 1.0) - pasa) * 0.34
+		var env: float = minf(1.0, t / 0.008) * pow(1.0 - u, 1.6)
+		m[i] = (pasa * 0.80 + sin(fase) * 0.30) * env
+	# Transitorio: se normaliza por PICO, como el impacto y el zumbido. Pedirle
+	# nivel eficaz a algo que dura 200 ms y cae, lo dejaría recortando.
+	_wav_bufido = _empacar(m, 0.80)
+	return _wav_bufido
+
+
 # ── Reproducción ────────────────────────────────────────────────────────────
 #
 # Todo sale de la misma función que la pose que lo acompaña, nunca de un
@@ -594,6 +681,22 @@ static func grunir(quien: Node3D) -> void:
 	# Alcance largo y unidad grande: el punto es enterarte del bicho que NO
 	# estás mirando, y a esta cámara ése es casi siempre.
 	sonar(quien, _grunido(), -9.0, 20.0, 75.0, Vector2(0.86, 1.12))
+
+
+## Las dos voces de la fauna. Las dispara `fauna.gd` en el cuadro en que el
+## bicho arranca a huir, con dos frenos allá: que el jugador esté a menos de 62
+## m y que no haya sonado otro hace menos de 1,1 s. Sin el segundo, una
+## estampida de siete ciervos son siete gritos en el mismo cuadro.
+##
+## **Los dos entran por debajo del gruñido** (-13 y -11 contra -9). Un animal
+## asustándose es información del ambiente; un bicho por pegarte es información
+## que te salva la vida, y la mezcla tiene que decir cuál es cuál sola.
+static func bramar(quien: Node3D) -> void:
+	sonar(quien, _bramido(), -13.0, 22.0, 85.0, Vector2(0.84, 1.16))
+
+
+static func bufar(quien: Node3D) -> void:
+	sonar(quien, _bufido(), -11.0, 18.0, 70.0, Vector2(0.90, 1.18))
 
 
 func _sonar() -> void:
