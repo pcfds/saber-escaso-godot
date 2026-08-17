@@ -179,10 +179,19 @@ var _amenaza_nombre := ""
 ## lee `valle.gd` para decidir qué hace la E.
 var _puesto_nodo: Node3D
 var puesto_de := ""
+## Lo que hay tirado a tus pies, si hay algo. Lo calcula `valle.gd`, que es el
+## único que sabe qué hay en la escena y dónde. Vacío = no hay nada al alcance.
+var _suelo_nodo: Node3D
+var _suelo_cerca: Dictionary = {}
+## Mientras dura el pedido de levantar. Es el hermano de `_buscando` y existe
+## por lo mismo: que la tecla no se pueda apretar dos veces y que el cuerpo
+## siga agachado hasta que conteste el servidor.
+var _levantando := false
 var _marca_npc: Label
 var _marca_piso: Label
 var _marca_bicho: Label
 var _marca_puesto: Label
+var _marca_suelo: Label
 var _vida_ultima := -1
 
 
@@ -278,6 +287,12 @@ func _ready() -> void:
 	_marca_bicho = _marca()
 	_marca_bicho.add_theme_color_override("font_color", HOSTIL)
 	_marca_puesto = _marca()
+	# El de lo tirado en el suelo va en ámbar como el de la bolsa, y por el mismo
+	# motivo: **es de la familia de "esto tiene el nombre de alguien"**. Un
+	# cuchillo tirado que dice "lo hizo Ilde" es lo mismo que el renglón ámbar de
+	# la bolsa, visto desde afuera.
+	_marca_suelo = _marca()
+	_marca_suelo.add_theme_color_override("font_color", AMBAR)
 
 	# La línea de teclas, en dos renglones y ordenada por para qué sirve cada
 	# una: primero lo que hacés con el cuerpo, después lo que abre algo, y al
@@ -420,6 +435,9 @@ func _process(_dt: float) -> void:
 	# Bajo: el yunque está a la altura de la cintura y el cartel tiene que
 	# quedar sobre la cosa, no flotando sobre el techo del cuarto.
 	_colocar(_marca_puesto, _puesto_nodo, 1.2, tapado, false)
+	# Más bajo todavía: está tirado en el suelo. Medio metro es lo que hace que
+	# el cartel se lea como "eso de ahí abajo" y no como algo flotando.
+	_colocar(_marca_suelo, _suelo_nodo, 0.55, tapado, false)
 
 
 ## Poner un cartel encima de un punto del mundo. `alto` son los metros por
@@ -455,6 +473,20 @@ func _poner_lugar_da(que: String) -> void:
 ## ofrecerse cuando no se puede es exactamente cómo `[B] buscar` terminó
 ## significando nada.
 func _refrescar_marcas() -> void:
+	# ── Una sola E en pantalla ────────────────────────────────
+	#
+	# La E hace UNA cosa y la elige el contexto (`valle.gd::_al_interactuar`):
+	# primero la persona, después lo que tenés a los pies, y al final el puesto.
+	# Los tres carteles se escriben sobre puntos distintos del mundo, así que
+	# nada impedía que salieran los tres a la vez — y salieron: se midió en una
+	# captura con **"[E] levantar hoja templada" encima de "[E] trabajar en el
+	# puesto de Corvín"**, los dos ilegibles y sólo uno cierto.
+	#
+	# La regla es: **el cartel dice lo que la E va a hacer, o no está.** Un
+	# cartel que ofrece algo que la tecla no hace es peor que ninguno — es la
+	# misma regla por la que `[B] buscar` no aparece donde no hay nada que
+	# juntar.
+	var hay_suelo := not _suelo_cerca.is_empty() or _levantando
 	if _marca_npc != null:
 		_marca_npc.text = "[E] hablar con %s" % npc_cercano if npc_cercano != "" else ""
 	if _marca_puesto != null:
@@ -462,7 +494,7 @@ func _refrescar_marcas() -> void:
 		# objeto sin dueño no significa nada, y ese yunque es de alguien que
 		# puede estar muerto.
 		_marca_puesto.text = ("[E] trabajar en el puesto de %s" % puesto_de) \
-			if puesto_de != "" else ""
+			if puesto_de != "" and npc_cercano == "" and not hay_suelo else ""
 	if _marca_bicho != null:
 		# «pegarle a Kerrak el que quedó», con el nombre propio que la base ya
 		# tiene y que hasta hoy no salía de ahí. Un bicho con nombre no es un
@@ -470,6 +502,35 @@ func _refrescar_marcas() -> void:
 		# pendiente — "el bicho no dice quién es", con el dato viajando ya en
 		# `/mundo`.
 		_marca_bicho.text = ("clic — pegarle a %s" % _amenaza_nombre) if _amenaza_nombre != "" else ""
+	if _marca_suelo != null:
+		# **El cartel se escribe alrededor del NOMBRE, no del objeto.** «[E]
+		# levantar hoja templada» es un ítem; «[E] levantar la hoja templada que
+		# hizo Ilde» es la mitad del juego dicha en un renglón, y es exactamente
+		# lo que `DISENO.md` §4 pide que pase: el objeto arrastra a la persona,
+		# que puede llevar veinte días muerta.
+		#
+		# Los días van cuando son muchos. Que algo lleve semanas tirado es lo que
+		# convierte una cosa en un resto de algo que pasó.
+		_marca_suelo.text = ""
+		if _levantando:
+			_marca_suelo.text = "levantando…"
+		elif not _suelo_cerca.is_empty() and npc_cercano == "":
+			var cosa := str(_suelo_cerca.get("kind", "algo"))
+			var hizo: Variant = _suelo_cerca.get("made_by")
+			var dejo: Variant = _suelo_cerca.get("dejado_por")
+			# OJO con `str(null)`: en Godot da la cadena "<null>", y el servidor
+			# manda `made_by: null` para todo lo que creció solo. Ya salió un
+			# panel diciendo, literal, "la hizo <null>".
+			var quien := "" if hizo == null else str(hizo).strip_edges()
+			var t := "[E] levantar %s" % cosa
+			if quien != "":
+				t = "[E] levantar %s — la hizo %s" % [cosa, quien]
+			elif dejo != null and str(dejo).strip_edges() != "":
+				t = "[E] levantar %s — la dejó %s" % [cosa, str(dejo).strip_edges()]
+			var dias := int(_suelo_cerca.get("dias", 0)) if _suelo_cerca.get("dias") != null else 0
+			if dias >= 3:
+				t += ", hace %d días" % dias
+			_marca_suelo.text = t
 	if _marca_piso == null:
 		return
 	if lugar_da == "":
@@ -874,6 +935,7 @@ func conectar_api(api: Api) -> void:
 
 func _al_aviso(texto: String) -> void:
 	_buscando = false
+	_levantando = false
 	quiere_juntar.emit(false)
 	_refrescar_marcas()
 	avisar(texto)
@@ -1002,6 +1064,43 @@ func mostrar_amenaza(nombre: String, nodo: Node3D) -> void:
 	_amenaza_nombre = nombre
 	_amenaza_nodo = nodo
 	_refrescar_marcas()
+
+
+## Lo que hay tirado a tus pies, y su nodo. La hermana de `mostrar_puesto`, y
+## existe por lo mismo: la interfaz no sabe qué hay en el suelo del valle ni
+## dónde. `{}` significa que no hay nada al alcance.
+func mostrar_suelo(cosa: Dictionary, nodo: Node3D) -> void:
+	_suelo_cerca = cosa
+	_suelo_nodo = nodo
+	_refrescar_marcas()
+
+
+## Levantando: el cuerpo se agacha hasta que conteste el servidor.
+##
+## Reusa `quiere_juntar`, que ya está conectada a `Figura.juntar()` — la misma
+## agachada que hace `buscar`. No es reciclaje por ahorro: **es la misma acción**
+## (agacharse y estirar la mano) y tener dos poses distintas para lo mismo sería
+## que el cuerpo dijera dos cosas.
+##
+## `_al_aviso()` la apaga cuando llega la respuesta, junto con la de buscar.
+func levantando(si: bool) -> void:
+	if si and _levantando:
+		return
+	_levantando = si
+	quiere_juntar.emit(si)
+	_refrescar_marcas()
+	if not si:
+		return
+	# Red de seguridad, igual que en `_buscar()`: si la respuesta se pierde, la
+	# tecla tiene que volver a andar. Sin esto un 504 deja `levantar` muerto
+	# hasta reiniciar el juego.
+	var t := create_tween()
+	t.tween_interval(12.0)
+	t.tween_callback(func() -> void:
+		if _levantando:
+			_levantando = false
+			quiere_juntar.emit(false)
+			_refrescar_marcas())
 
 
 func _al_dialogo(d: Dictionary) -> void:
@@ -1474,22 +1573,60 @@ func _pintar_bolsa() -> void:
 ## valida todo lo demás y contesta con una frase que se muestra tal cual —
 ## medido: "Marta ya casi lo tiene resuelto y no necesita que nadie se meta".
 ## O sea que la opción nunca miente: el que decide sigue siendo el mundo.
+## Y **pedirle** algo a esa misma persona, que es la punta que faltaba.
+##
+## Un solo botón y sin catálogo: no se lista lo que el otro tiene encima. No es
+## una limitación de datos —`/mundo` podría mandarlo— es la decisión: un menú
+## con todo el inventario ajeno convierte a la gente en una tienda, y este juego
+## dice en `DISENO.md` §6 que un menú con todo mata el sistema. Pedís, y lo que
+## te dé lo decide él.
+##
+## **Y cuesta.** El servidor baja el aprecio al entregarte algo, así que esto no
+## es un botón de "dame": pedís dos veces seguidas y la tercera te dicen que no.
+## El texto del botón lo dice, porque si no el jugador lo descubre tarde y mal.
 func _pintar_dar() -> void:
 	if _bolsa_dar == null:
 		return
 	for h in _bolsa_dar.get_children():
 		h.queue_free()
-	if _objetos.is_empty():
-		return
+
+	# Dejar algo en el suelo. Va SIEMPRE que lleves algo, con alguien al lado o
+	# sin nadie: soltar una cosa no necesita destinatario, y ése es todo el
+	# punto — lo que dejás tirado queda ahí para el que pase, hoy o en veinte
+	# días. El servidor lo guarda por LUGAR y todos ven el mismo suelo.
+	for o in _objetos:
+		var dd: Dictionary = o
+		var que := str(dd.get("kind", ""))
+		if que == "":
+			continue
+		var s := Button.new()
+		s.text = "dejar %s aquí" % que
+		s.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		s.add_theme_font_size_override("font_size", 13)
+		s.add_theme_color_override("font_color", TINTA_APAGADA)
+		s.pressed.connect(func() -> void:
+			s.disabled = true
+			_api.soltar(que))
+		_bolsa_dar.add_child(s)
 
 	if npc_cercano == "":
 		var l := Label.new()
-		l.text = "Acércate a alguien para darle algo."
+		l.text = "Acércate a alguien para darle o pedirle algo."
 		l.add_theme_font_size_override("font_size", 12)
 		l.add_theme_color_override("font_color", TINTA_APAGADA)
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_bolsa_dar.add_child(l)
 		return
+
+	var p := Button.new()
+	p.text = "pedirle algo a %s   (gasta el favor)" % npc_cercano
+	p.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	p.add_theme_font_size_override("font_size", 13)
+	var a_quien_pido := npc_cercano
+	p.pressed.connect(func() -> void:
+		p.disabled = true
+		_api.pedir(a_quien_pido))
+	_bolsa_dar.add_child(p)
 
 	for o in _objetos:
 		var d: Dictionary = o

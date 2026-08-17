@@ -236,7 +236,17 @@ agosto y están en `DISENO.md` §6.
   línea: `var t := clampf((p.y - 0.4) / 4.6, 0.0, 1.0)`, que deja el fondo del
   cuenco en pasto y sólo seca las lomas.
 
-**Ya está hecho, no lo rehagas:** **se entra a las doce casas** (verificado
+**Ya está hecho, no lo rehagas:** **las cosas se pueden dejar y levantar del
+suelo** — `/mundo` manda `suelo` (lo que hay tirado en cada lugar, con quién lo
+hizo, quién lo dejó y hace cuántos días) y `valle.gd` lo dibuja; **ninguna
+coordenada viaja**, el punto exacto sale del `id` del objeto alrededor del
+centro del lugar, igual que la posición de las amenazas y de la gente, así que
+todos ven la misma cosa en el mismo pasto. La E lo levanta y el cuerpo se agacha
+con `Figura.juntar()`, la misma agachada de `buscar`. **Y una sola E en
+pantalla**: el cartel dice lo que la tecla va a hacer (persona > lo que tenés a
+los pies > puesto) o no está — salieron los tres encimados una vez y eran
+ilegibles. Los botones de la bolsa (I) dejan, dan y **piden**;
+**se entra a las doce casas** (verificado
 caminando hasta cada puerta, no mirando capturas) y adentro está la persona que
 el servidor dice que está; **el bicho dice su nombre propio** sobre la cabeza;
 **el cielo se ve** (la niebla se lo comía entero: `fog_sky_affect` valía 1,0) y

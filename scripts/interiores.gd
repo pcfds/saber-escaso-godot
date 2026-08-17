@@ -84,6 +84,47 @@ const RECORTE_MARGEN := 0.18
 
 
 # ---------------------------------------------------------------------------
+# LAS PUERTAS
+# ---------------------------------------------------------------------------
+#
+# La hoja la construye `Detalles.casa()` —ver el bloque `LA PUERTA` de ese
+# archivo, que es donde está el porqué— y quien la mueve es esto. Acá vive nada
+# más que la regla: **cuándo se abre.**
+#
+# Y la regla es una sola con dos números: *una puerta se abre cuando vas hacia
+# ella; de noche hay que llegar hasta la puerta.* De día se abre desde los
+# escalones, o sea que la ves abrirse mientras subís; de noche no, y entonces
+# hay que ir hasta el umbral y empujarla, más despacio. **No se traba nunca** —
+# una puerta con llave es estado del mundo y el estado del mundo es del
+# servidor (invariante 4). Lo que cambia de noche no es si podés entrar: es
+# cuánto tenés que acercarte para que ceda.
+#
+# El radio de día es corto a propósito y por el mismo motivo por el que
+# `puesto_cerca()` usa 2,2 m: con un radio grande, cruzar la plaza abre cuatro
+# puertas de una y la aldea se lee como un supermercado. A 2,6 m del hueco ya
+# estás en los escalones de ESA casa.
+
+## Cuánto gira la hoja al abrirse, en radianes. 92°: pasado el ángulo recto, que
+## es donde una puerta abierta de verdad se queda —contra la pared y no en el
+## medio del paso.
+const PUERTA_GIRO := 1.60
+## A qué velocidad, en radianes por segundo. Da poco más de medio segundo de
+## recorrido. **Una puerta tarda**: instantánea deja de ser una puerta y pasa a
+## ser un cambio de estado.
+const PUERTA_VEL := 2.8
+## De día: desde dónde se abre sola. Ver arriba.
+const PUERTA_CERCA := 2.6
+## De noche: hasta dónde hay que llegar para empujarla.
+const PUERTA_EMPUJE := 1.20
+## Y cuánto se queda abierta después de que te fuiste. **Una puerta se queda
+## abierta**: si se cerrara al instante sería una cortina de aire.
+const PUERTA_QUEDA := 5.0
+## Cuánto más lenta es de noche. La misma puerta, con el mismo gozne, pesa lo
+## mismo — lo que cambia es que nadie la está esperando.
+const PUERTA_NOCHE_VEL := 0.55
+
+
+# ---------------------------------------------------------------------------
 # EL CUARTO
 # ---------------------------------------------------------------------------
 #
@@ -195,6 +236,12 @@ var _adentro := ""
 ## Qué muros de la planta baja están apagados, para no reescribir la propiedad
 ## de los ocho paneles en cada cuadro.
 var _muros_fuera: Dictionary = {}
+## El reloj del valle, para saber si es de noche. Es un HERMANO de este nodo
+## —`valle.gd` cuelga los dos de la escena— y se busca una sola vez. Se busca en
+## vez de recibirlo porque el cableado vive en `valle.gd`, que es de otra rama:
+## esto anda hoy y sigue andando el día que alguien pase el ciclo por parámetro.
+var _ciclo: Ciclo = null
+var _ciclo_buscado := false
 
 
 ## Registra una casa recién construida y le pone el amoblado que no depende de
@@ -213,7 +260,15 @@ func amueblar(clave: String, casa: Dictionary, quemada: bool,
 	g.add_child(cuarto)
 
 	for m: Array in (MUEBLES_RUINA if quemada else MUEBLES):
-		_poner(cuarto, m[0], m[1], m[2], m[3], espejo)
+		var mueble := _poner(cuarto, m[0], m[1], m[2], m[3], espejo)
+		# LA BANQUETA. Ya estaba puesta y no era nada: un tocón junto al fuego
+		# que el juego no sabía que era un asiento. Marcarlo no agrega
+		# geometría, agrega que se lo pueda encontrar — ver `asiento_cerca()`.
+		# En la ruina no hay fuego al que mirar y no se marca.
+		if not quemada and str(m[0]) == "naturaleza/stump_round":
+			var hacia: Vector3 = HOGAR - (m[1] as Vector3)
+			Detalles.asiento(mueble, 0.44,
+				atan2(hacia.x * espejo, hacia.z))
 
 	var luz: OmniLight3D = null
 	if not quemada:
@@ -224,12 +279,23 @@ func amueblar(clave: String, casa: Dictionary, quemada: bool,
 	cuarto.add_child(oficio)
 
 	var centro := Vector2(g.global_position.x, g.global_position.z)
+	# La hoja: su transformación de partida se guarda tal cual quedó al
+	# construirla, porque abrir es exactamente eso girado sobre su gozne. La
+	# malla se hizo con el origen EN el gozne justamente para que esto sea un
+	# `rotated_local` y no una recomposición.
+	var hoja: MeshInstance3D = casa.get("hoja")
 	_casas[clave] = {
 		"nodo": g, "cuarto": cuarto, "oficio": oficio, "luz": luz,
 		"alta": casa["alta"], "baja": casa["baja"], "chimenea": null,
 		"centro": centro, "piso": g.global_position.y, "alto": float(casa["alto"]),
 		"giro": g.global_rotation.y, "espejo": espejo,
 		"quemada": quemada, "quien": "", "gente": 0, "recortada": false,
+		"hoja": hoja, "hoja_base": (hoja.transform if hoja != null else Transform3D()),
+		"hoja_angulo": 0.0, "hoja_espera": 0.0,
+		# El punto del hueco de la puerta, en el mundo. Es contra esto que se
+		# mide si estás yendo a esa puerta, y no contra el centro de la casa:
+		# desde el centro, las dos casas vecinas quedan a la misma distancia.
+		"umbral": g.to_global(puerta),
 	}
 
 
@@ -308,7 +374,12 @@ func donde_esta(p: Vector3) -> String:
 
 ## Una vez por cuadro. Decide en qué casa estás, recorta la que corresponda y
 ## enciende los hogares que se ven.
-func actualizar(jugador: Vector3, camara: Vector3) -> void:
+##
+## `dt` en negativo —lo normal— significa "el tiempo de este cuadro". Se puede
+## pasar a mano y eso es sólo para el banco: **una puerta que tarda medio segundo
+## no se puede probar con el reloj real en una corrida headless**, donde un
+## cuadro dura un milisegundo y esperar cinco segundos son cinco mil cuadros.
+func actualizar(jugador: Vector3, camara: Vector3, dt := -1.0) -> void:
 	var ahora := donde_esta(jugador)
 	if ahora != _adentro:
 		if _casas.has(_adentro):
@@ -319,12 +390,24 @@ func actualizar(jugador: Vector3, camara: Vector3) -> void:
 		_recortar(_casas[_adentro], true, camara)
 
 	_encender(jugador)
+	# El delta sale del nodo y no del llamador: `valle.gd` llama a `actualizar()`
+	# sin dt y esa firma es su cableado, no el mío. Esto es un `Node` colgado de
+	# la escena, así que el tiempo del cuadro lo tiene a mano.
+	_puertas(get_process_delta_time() if dt < 0.0 else dt, jugador)
 
 
 ## En qué casa estás. Lo lee `valle.gd` para decidir si tenés un puesto de
 ## trabajo al lado.
 func adentro() -> String:
 	return _adentro
+
+
+## Cuánto está abierta la puerta de una casa, en radianes y con signo. Cero es
+## cerrada. Existe para el banco: **una puerta que se abre no se puede verificar
+## mirando una captura**, porque una captura es un instante y lo que hay que
+## probar es que la hoja se mueve cuando alguien se acerca.
+func puerta(clave: String) -> float:
+	return float((_casas.get(clave, {}) as Dictionary).get("hoja_angulo", 0.0))
 
 
 ## Si estás parado junto al puesto de trabajo de la casa en la que estás, de
@@ -354,6 +437,94 @@ func puesto_cerca(p: Vector3, radio := 2.2) -> Dictionary:
 	return {"nodo": nodo, "de": str(c.get("oficio_de", ""))}
 
 
+## ¿Hay dónde sentarse acá al lado? Devuelve `{"pos", "mirando", "nodo"}` o `{}`.
+##
+## Es el gemelo de `puesto_cerca()` y existe por el mismo motivo: el lugar ya
+## estaba —la banqueta junto al hogar, los troncos del fogón de la plaza— y el
+## juego no sabía que era un lugar. Un tocón que nadie puede usar es una malla.
+##
+## **Lo que falta para que esto sirva no es de esta rama.** Sentarse le toca a
+## `jugador.gd` (parar el cuerpo, clavarlo en `pos`, mirar a `mirando`, soltarlo
+## al primer WASD) y la postura a `figura.gd`. Del otro lado esto es un `if`.
+##
+## Sale del grupo `asientos` y no de un registro propio a propósito: los
+## asientos de adentro los pone esta clase y los del fogón los pone
+## `Detalles.labranza()`, que corre desde `vegetacion.gd` y no me ve. El grupo es
+## el mismo mecanismo con el que `ciclo.gd` encuentra las ventanas.
+##
+## El radio es corto por lo mismo que el del yunque: un asiento que se ofrece a
+## tres metros hace que la plaza entera sea un botón. A 1,5 hay que ir hasta él.
+func asiento_cerca(p: Vector3, radio := 1.5) -> Dictionary:
+	var mejor: Node3D = null
+	var d_min := radio
+	for n in get_tree().get_nodes_in_group("asientos"):
+		var nodo := n as Node3D
+		if nodo == null or not is_instance_valid(nodo):
+			continue
+		var d := p.distance_to(nodo.global_position)
+		if d < d_min:
+			d_min = d
+			mejor = nodo
+	if mejor == null:
+		return {}
+	return {
+		"nodo": mejor,
+		"pos": mejor.global_position
+			+ Vector3(0.0, float(mejor.get_meta("asiento_alto", 0.45)), 0.0),
+		# El giro guardado es relativo al padre; el del mundo se arma sumando el
+		# propio del nodo. Ver `Detalles.asiento()`.
+		"mirando": mejor.global_rotation.y + float(mejor.get_meta("asiento_mira", 0.0)),
+	}
+
+
+## Las puertas del valle, una vez por cuadro. Ver el bloque `LAS PUERTAS`.
+##
+## Cuesta doce distancias y, en el caso normal —ninguna puerta moviéndose—, cero
+## asignaciones y cero escrituras de transformación.
+func _puertas(dt: float, jugador: Vector3) -> void:
+	var noche := _es_de_noche()
+	var alcance := PUERTA_EMPUJE if noche else PUERTA_CERCA
+	var vel := PUERTA_VEL * (PUERTA_NOCHE_VEL if noche else 1.0)
+	for clave: String in _casas:
+		var c: Dictionary = _casas[clave]
+		var hoja: MeshInstance3D = c["hoja"]
+		if hoja == null or not is_instance_valid(hoja):
+			continue
+
+		var espera := float(c["hoja_espera"])
+		if jugador.distance_to(c["umbral"] as Vector3) < alcance:
+			espera = PUERTA_QUEDA
+		elif espera > 0.0:
+			espera = maxf(espera - dt, 0.0)
+		c["hoja_espera"] = espera
+
+		# Hacia dónde abre: siempre para adentro, y el gozne está del lado de la
+		# celda en que cayó la puerta —el mismo signo que el espejo del cuarto—,
+		# así que el giro es el opuesto. Ver `Detalles._hoja()`.
+		var quiero := (-float(c["espejo"]) * PUERTA_GIRO) if espera > 0.0 else 0.0
+		var a := float(c["hoja_angulo"])
+		if absf(a - quiero) < 0.0005:
+			continue
+		a = move_toward(a, quiero, vel * dt)
+		c["hoja_angulo"] = a
+		hoja.transform = (c["hoja_base"] as Transform3D).rotated_local(Vector3.UP, a)
+
+
+## ¿Es de noche en el valle? La hora la manda el SERVIDOR y la tiene `ciclo.gd`;
+## acá no se simula ninguna. Sin ciclo —el banco de prueba no tiene— es de día,
+## que es el caso en que las puertas se portan bien.
+func _es_de_noche() -> bool:
+	if not _ciclo_buscado:
+		_ciclo_buscado = true
+		var p := get_parent()
+		if p != null:
+			for h in p.get_children():
+				if h is Ciclo:
+					_ciclo = h
+					break
+	return _ciclo != null and is_instance_valid(_ciclo) and _ciclo.es_de_noche()
+
+
 ## Abre TODAS las casas y les prende el fuego.
 ##
 ## Es para el banco de prueba —`escenas/prueba_casas.tscn -- --interior`— y para
@@ -361,13 +532,25 @@ func puesto_cerca(p: Vector3, radio := 2.2) -> Dictionary:
 ## todas convierte un caserío en una maqueta seccionada, que es exactamente lo
 ## que un mundo curado no puede parecer. Está acá y no en el banco porque el
 ## registro de casas es privado y no vale la pena abrirlo por una captura.
-func abrir_todas(camara: Vector3) -> void:
+## `recorte` en `false` deja los muros puestos y abre nada más que las puertas:
+## es el A/B que hace falta para juzgar la hoja, porque con el frente recortado
+## la puerta no se ve ni abierta ni cerrada.
+func abrir_todas(camara: Vector3, recorte := true) -> void:
 	for clave: String in _casas:
 		var c: Dictionary = _casas[clave]
-		_recortar(c, true, camara)
+		if recorte:
+			_recortar(c, true, camara)
 		var luz: OmniLight3D = c["luz"]
 		if luz != null:
 			luz.visible = true
+		# Y las puertas abiertas de par en par. En el banco no hay jugador que
+		# las abra y lo que hay que poder mirar es la hoja donde queda.
+		var hoja: MeshInstance3D = c["hoja"]
+		if hoja != null and is_instance_valid(hoja):
+			c["hoja_angulo"] = -float(c["espejo"]) * PUERTA_GIRO
+			c["hoja_espera"] = PUERTA_QUEDA
+			hoja.transform = (c["hoja_base"] as Transform3D).rotated_local(
+				Vector3.UP, float(c["hoja_angulo"]))
 
 
 # ---------------------------------------------------------------------------

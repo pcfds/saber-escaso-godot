@@ -183,6 +183,21 @@ const PUERTA_ANCHO := CASA_CELDA * 0.65
 ## Qué fracción de la altura del panel ocupa el arco. 2,48 / 3,123.
 const PUERTA_ALTO := 0.794
 
+## EL PERFIL EXACTO DEL HUECO, en unidades de panel y sacado del `.gltf`
+## vértice por vértice, no de un comentario. Lo que hay ahí no es un
+## semicírculo: es un **arco rebajado**. Las jambas están en x = ±0,653, el
+## hueco sube recto hasta y = 2,152 y de ahí cierra con un arco de radio 0,811
+## centrado en y = 1,671, que llega a 2,482. Comprobado contra tres vértices
+## del medio del arco: a x = 0,345 la fórmula da 2,405 y la malla dice 2,401.
+##
+## Hace falta con este detalle porque la hoja tiene que entrar en el hueco: un
+## milímetro de más y la puerta cerrada muestra una raja de luz, uno de menos y
+## se ve el canto de la jamba por detrás.
+const HUECO_MEDIO := 0.653
+const HUECO_SALMER := 2.152
+const HUECO_ARCO_R := 0.811
+const HUECO_ARCO_Y := 1.671
+
 ## El hueco de la ventana, del mismo rasterizado sobre
 ## `Wall_Plaster_Window_Wide_Round`: x = ±0,61, y de 1,02 a 2,72. Es un hueco
 ## grande —1,65 × 1,72 m puesto en el valle— y eso tiene dos consecuencias que
@@ -268,7 +283,10 @@ const CASA_PISO := 0.07
 ##   · `puerta`  (int)     0 o 1: en cuál de las dos celdas del frente va la
 ##                         puerta. −1 la sortea. Se elige la del acceso más bajo.
 ##
-## Devuelve `{"nodo", "alero", "alto", "puerta", "baja", "alta"}`:
+## Devuelve `{"nodo", "alero", "alto", "puerta", "baja", "alta", "hoja"}`:
+## `hoja` es la HOJA DE LA PUERTA, o `null` si la casa no tiene (la ruina no
+## tiene). Quien la hace girar es `interiores.gd`; acá sólo se construye y se
+## deja quieta en el marco de la casa. Ver el bloque `LA PUERTA`.
 ## `baja` y `alta` son las dos plantas separadas, y ésa es la mitad de que se
 ## pueda entrar — el recorte de `interiores.gd` apaga `alta` y los muros de
 ## `baja` que se le ponen delante a la cámara. Sin las dos plantas en nodos
@@ -316,6 +334,7 @@ static func casa(padre: Node3D, sitio: Dictionary,
 		lado = rng.randi() % CASA_FRENTE.size()
 	var i_puerta: int = CASA_FRENTE[lado]
 	var luz := _luz_de_ventana()
+	var hoja: MeshInstance3D = null
 
 	for nivel in CASA_NIVELES:
 		var capa := baja if nivel == 0 else alta
@@ -390,6 +409,13 @@ static func casa(padre: Node3D, sitio: Dictionary,
 				v.set_meta("afuera", afuera)
 				capa.add_child(v)
 
+			# LA HOJA. El gozne va contra la pared lateral más cercana —o sea
+			# del lado de la celda en que cayó la puerta— y no en el otro: con
+			# el gozne del lado de adentro, la hoja abierta queda cruzada en el
+			# medio del cuarto de cinco metros en vez de pegada a un rincón.
+			if es_puerta:
+				hoja = _hoja(capa, mi, signf(celda.x), estira, afuera)
+
 			# La colisión SIGUE A LO CONSTRUIDO. Un tabique por panel de planta
 			# baja, y en el de la puerta, dos jambas con el hueco en el medio.
 			# Los muros de la ruina no llevan: por ahí se entra.
@@ -427,7 +453,7 @@ static func casa(padre: Node3D, sitio: Dictionary,
 
 	return {
 		"nodo": g, "alero": alero, "alto": alto_nivel,
-		"puerta": puerta, "baja": baja, "alta": alta,
+		"puerta": puerta, "baja": baja, "alta": alta, "hoja": hoja,
 	}
 
 
@@ -472,6 +498,199 @@ static func _tabique(g: Node3D, pos: Vector3, rot: float, alto: float,
 		cuerpo.position = pos + Vector3(eje, alto / 2.0, t[0]).rotated(Vector3.UP, rot)
 		cuerpo.rotation.y = rot
 		g.add_child(cuerpo)
+
+
+# ===========================================================================
+# LA PUERTA — QUÉ SEPARA UN DECORADO DE UN EDIFICIO
+#
+# Hasta el 18 de agosto **el valle no tenía una sola puerta**. Tenía huecos: se
+# entraba caminando a las doce casas y eso ya era mucho más de lo que había
+# antes, pero un hueco no es una puerta. Una puerta tarda, se queda abierta,
+# hace ruido y **decide si estás adentro o afuera**; un hueco no hace nada de
+# eso y por eso una aldea entera de huecos se lee como una maqueta seccionada.
+#
+# QUÉ SIGNIFICA, que es la pregunta que manda `CLAUDE.md`. Tres cosas, y las
+# tres ya existían en el mundo y no se veían:
+#
+#  1. **De noche la gente se vuelve a su casa.** Lo hace `rutinaDe()` en el
+#     servidor desde hace días, y `dialogo.ts` devuelve una línea propia para el
+#     que duerme: *"La puerta de Sarn está cerrada y no hay luz"*. Hasta hoy esa
+#     frase era una metáfora — no había puerta y no estaba cerrada. Ahora sí.
+#  2. **La luz del hogar sale por la puerta o no sale.** El omni del cuarto
+#     tiene sombra (ver `Interiores.LUZ_HOGAR`), así que **una hoja cerrada le
+#     tapa el paso**: de noche, una casa con la puerta cerrada tiene la ventana
+#     encendida y el umbral a oscuras, y cuando la puerta se abre cae una cuña
+#     naranja sobre los escalones. Eso es lo que se ve a veinte metros, y es
+#     gratis: no hay una línea de código de iluminación acá abajo.
+#  3. **Es lo primero del valle que te contesta.** Te acercás y se abre; te vas
+#     y se cierra. Es un verbo, aunque sea el más chico posible.
+#
+# LO QUE **NO** HACE, Y ES DELIBERADO:
+#
+#  · **La hoja no tiene colisión.** Tres motivos, en orden de peso:
+#      – Se entra a las doce casas y eso está verificado con un barrido de la
+#        cápsula del jugador contra la colisión de la casa
+#        (`prueba_casas.gd::_medir_puertas()`), un barrido en el que no hay
+#        jugador y por lo tanto tampoco hay nada que abra la puerta. Una hoja
+#        sólida haría fallar la prueba que garantiza que se puede entrar.
+#      – Peor que eso: una hoja sólida convierte cualquier falla de la lógica de
+#        apertura —una casa sin registrar, un cuadro perdido— en **una casa a la
+#        que no se puede entrar**, que es exactamente el bug que esta rama vino a
+#        arreglar. Una puerta de presentación no puede poder dejarte afuera.
+#      – Y una puerta que te FRENA es una regla del mundo, no una imagen de él.
+#        Ver el invariante 4: si algún día una puerta tiene que estar cerrada con
+#        llave, eso es estado y es del servidor. Acá no se inventa.
+#  · **No hace ruido**, y es lo único que le falta de la lista de arriba. El
+#    ruido se sintetiza en `sonido.gd`, que es de otra rama. Está pedido.
+#
+# LA GEOMETRÍA, contada y no estimada: **36 triángulos la hoja** (la tabla y sus
+# dos travesaños) **y 14 el tímpano**, o sea 50 por casa y 600 en las doce,
+# contra los 23.400 que ya cuestan los techos. El tímpano no es un adorno: sin
+# él, una puerta "cerrada" deja un ojo de buey abierto arriba por donde se ve el
+# cuarto de día y sale la luz del hogar de noche.
+#
+# Y por qué la hoja lleva travesaños si a 27 m no se ve un herraje: porque la
+# hoja va en `MADERA` (V1) contra un muro V6, o sea que **una puerta cerrada y un
+# agujero negro son la misma mancha**. Los dos travesaños en V3 son lo único que
+# distingue una cosa de la otra desde la calle. Son 24 de los 62 triángulos y se
+# los gana.
+# ===========================================================================
+
+## Cuánto más chica que el hueco es la hoja, por lado. Con cero, la hoja y la
+## jamba comparten plano y pelean por el mismo píxel (z-fighting).
+const HOJA_HOLGURA := 0.015
+## El espesor de la tabla, en unidades de panel: 5,5 cm puestos en el valle.
+const HOJA_ESPESOR := 0.055
+## A qué profundidad del revoque cuelga. El muro va de z = 0 (calle) a −0,20
+## (cuarto): con la hoja en −0,115 queda el canto de la jamba visible desde
+## afuera, que es de dónde sale que una puerta parezca metida en un muro y no
+## pegada encima.
+const HOJA_PLANO := -0.115
+## A qué altura de la hoja van los dos travesaños, de 0 (el piso) a 1 (el
+## dintel). No están simétricos: una puerta de tablas lleva el de abajo más
+## abajo que el de arriba porque es el que aguanta el peso.
+const HOJA_TRAVESANOS: Array[float] = [0.26, 0.72]
+
+
+## Construye la hoja y el tímpano del hueco de la puerta y devuelve la hoja.
+##
+## `panel` es el muro del kit que se acaba de poner: la hoja se cuelga en el
+## mismo nodo (`capa`) **con la transformación del panel aplicada a mano**, que
+## es el mismo truco que `_vidrio()` y por el mismo motivo — así hereda la
+## escala del panel sin quedar colgada de su visibilidad, y el recorte de
+## `interiores.gd` la puede apagar por separado con su propia meta `afuera`.
+##
+## La malla se construye con el ORIGEN EN EL GOZNE, y eso es lo que hace que
+## abrirla sea `transform = base.rotated_local(UP, ángulo)` y nada más: sin eso
+## habría que recomponer una traslación y un giro en cada cuadro. La escala del
+## panel es `(1.35, estira, 1.35)` —simétrica en X y Z— así que conmuta con un
+## giro sobre Y y la hoja no se deforma al abrirse. Si algún día el panel se
+## escalara distinto en X que en Z, esto se rompe y hay que componer a mano.
+static func _hoja(capa: Node3D, panel: MeshInstance3D, signo: float,
+		estira: float, afuera: Vector3) -> MeshInstance3D:
+	if signo == 0.0:
+		signo = 1.0
+	var media := HUECO_MEDIO - HOJA_HOLGURA
+	# El pie de la hoja es el PISO DEL CUARTO, no el cero de la casa: los siete
+	# centímetros de las tablas también los tapa la puerta. En unidades de
+	# panel, o sea dividido por el estirado en Y de esta casa.
+	var y0 := CASA_PISO / maxf(estira, 0.1)
+	var y1 := HUECO_SALMER - 0.012
+	var e := HOJA_ESPESOR * 0.5
+	# La hoja va del gozne hasta la otra jamba, o sea siempre hacia el otro lado.
+	var libre := -signo * (media * 2.0)
+
+	_timpano(capa, panel, media, y1, afuera)
+
+	var malla := ArrayMesh.new()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_caja(st, Vector3(minf(0.0, libre), y0, -e), Vector3(maxf(0.0, libre), y1, e))
+	st.generate_normals()
+	st.commit(malla)
+	# `MADERA` es V1 y la paleta ya dice por qué: *contra un muro V6 una puerta
+	# tiene que leerse como un AGUJERO*. Con grano, porque nada es liso.
+	malla.surface_set_material(0, Paleta.gastar(Paleta.madera(Paleta.MADERA), 0.7))
+
+	st = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for f: float in HOJA_TRAVESANOS:
+		var y := lerpf(y0, y1, f)
+		_caja(st,
+			Vector3(minf(0.0, libre) + 0.035, y - 0.052, -e - 0.013),
+			Vector3(maxf(0.0, libre) - 0.035, y + 0.052, e + 0.013))
+	st.generate_normals()
+	st.commit(malla)
+	malla.surface_set_material(1, Paleta.gastar(Paleta.madera(Paleta.TRONCO_CLARO), 0.5))
+
+	var mi := MeshInstance3D.new()
+	mi.mesh = malla
+	mi.transform = panel.transform * Transform3D(Basis(),
+		Vector3(HUECO_MEDIO * signo, 0.0, HOJA_PLANO))
+	mi.set_meta("afuera", afuera)
+	capa.add_child(mi)
+	return mi
+
+
+## El tímpano: el paño fijo que llena el arco por encima del dintel de la hoja.
+##
+## Es carpintería de verdad —una hoja que siguiera el arco no podría girar, se
+## trabaría contra la jamba— y además resuelve un agujero: sin él, la puerta
+## cerrada deja el arco abierto y de noche sale por ahí la luz del hogar.
+##
+## Va doblado (las dos caras) por lo mismo que el gablete: se ve desde la calle
+## y desde adentro, y una cara sola desaparece de un lado.
+static func _timpano(capa: Node3D, panel: MeshInstance3D, media: float,
+		y1: float, afuera: Vector3) -> void:
+	var radio := HUECO_ARCO_R - 0.012
+	var tramos := 6
+	var arco := PackedVector2Array()
+	for k in tramos + 1:
+		var x := lerpf(-media, media, float(k) / float(tramos))
+		arco.append(Vector2(x, HUECO_ARCO_Y + sqrt(maxf(radio * radio - x * x, 0.0))))
+
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var pivote := Vector2(-media, y1)
+	var borde := PackedVector2Array(arco)
+	borde.append(Vector2(media, y1))
+	for k in borde.size() - 1:
+		for tri: Array in [[0, 1, 2], [0, 2, 1]]:
+			for idx: int in tri:
+				var p: Vector2 = (pivote if idx == 0
+					else (borde[k] if idx == 1 else borde[k + 1]))
+				st.add_vertex(Vector3(p.x, p.y, 0.0))
+	st.generate_normals()
+
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = Paleta.gastar(Paleta.madera(Paleta.MADERA), 0.7)
+	mi.transform = panel.transform * Transform3D(Basis(),
+		Vector3(0.0, 0.0, HOJA_PLANO))
+	mi.set_meta("afuera", afuera)
+	capa.add_child(mi)
+
+
+## Una caja de caras planas dentro de un `SurfaceTool` que ya está abierto.
+##
+## Existe para poder meter varias piezas en una sola malla —la hoja y sus dos
+## travesaños son tres cajas y un solo nodo— y con el winding que pide
+## `CLAUDE.md`: `[0,1,2]/[0,2,3]` y `generate_normals()` después. El winding al
+## revés deja las normales para adentro y la pieza no recibe sol.
+static func _caja(st: SurfaceTool, a: Vector3, b: Vector3) -> void:
+	var lo := Vector3(minf(a.x, b.x), minf(a.y, b.y), minf(a.z, b.z))
+	var hi := Vector3(maxf(a.x, b.x), maxf(a.y, b.y), maxf(a.z, b.z))
+	var v: Array[Vector3] = [
+		Vector3(lo.x, lo.y, lo.z), Vector3(hi.x, lo.y, lo.z),
+		Vector3(hi.x, hi.y, lo.z), Vector3(lo.x, hi.y, lo.z),
+		Vector3(lo.x, lo.y, hi.z), Vector3(hi.x, lo.y, hi.z),
+		Vector3(hi.x, hi.y, hi.z), Vector3(lo.x, hi.y, hi.z),
+	]
+	for cara: Array in [[4, 5, 6, 7], [1, 0, 3, 2], [5, 1, 2, 6],
+			[0, 4, 7, 3], [3, 7, 6, 2], [0, 1, 5, 4]]:
+		for tri: Array in [[0, 1, 2], [0, 2, 3]]:
+			for k: int in tri:
+				st.add_vertex(v[cara[k]])
 
 
 # ===========================================================================
@@ -1387,9 +1606,9 @@ const ESCALA_NATURALEZA := 2.0
 ## pieza, con el número al lado y el motivo — ver `_pilon()`.
 
 
-## Sembrar y cercar. `alturas` es la función de terreno y `lugares` el
-## `LUGARES` de `valle.gd`. Ver el bloque de arriba: cada familia tiene un para
-## qué o no está.
+## Lo que la aldea le hizo a su sitio: sembrar, cercar, sacar agua y prender
+## fuego. `alturas` es la función de terreno y `lugares` el `LUGARES` de
+## `valle.gd`. Ver el bloque de arriba: cada familia tiene un para qué o no está.
 static func labranza(padre: Node3D, alturas: Callable, lugares: Dictionary) -> void:
 	var def: Variant = lugares.get("aldea")
 	if not (def is Dictionary) or not (def as Dictionary).has("pos"):
@@ -1426,6 +1645,7 @@ static func labranza(padre: Node3D, alturas: Callable, lugares: Dictionary) -> v
 		_huerta(padre, alturas, centro, a + PI, i, rng)
 
 	_pilon(padre, alturas, base)
+	_fogon(padre, alturas, base)
 
 
 ## Un paño: el cerco, el portillo, los surcos y lo que crece.
@@ -1512,3 +1732,171 @@ static func _pilon(padre: Node3D, alturas: Callable, base: Vector3) -> void:
 	# puesta por alguien.
 	if mi != null:
 		Kit.tinte(mi, Color(0.72, 0.71, 0.70))
+
+
+# ===========================================================================
+# EL FOGÓN DE LA PLAZA — UN LUGAR DONDE ESTAR SIN ESTAR YENDO A OTRO LADO
+#
+# `CLAUDE.md` lo tiene anotado como carencia desde hace días y con estas
+# palabras: *"No hay lugares para frenar: el valle es todo tránsito, no hay
+# dónde sentarse ni esperar a alguien."* Es literal. Los cinco lugares del valle
+# son destinos y todo lo que hay entre ellos es camino; adentro de una casa hay
+# una banqueta junto al fuego, pero **a la intemperie no hay un solo punto del
+# mapa que no sea el medio de un viaje.**
+#
+# QUÉ SIGNIFICA, antes de poner nada:
+#
+#  · **El agua es por qué se juntaron; el fuego es por qué se quedan.** Vado
+#    Bajo es un anillo de casas mirando hacia adentro y en el medio tenía el
+#    pilón, que resuelve la primera mitad. Un pueblo se junta alrededor del
+#    agua y **se sienta alrededor del fuego**, y son dos cosas distintas.
+#  · **Es multijugador y la gente aparece y desaparece.** Ésa es la razón
+#    concreta y no una metáfora: si tenés que esperar a alguien que se está
+#    conectando, hoy el juego te deja parado en un prado. Sentarse al fuego es
+#    cómo se espera a alguien, y no existe el lugar donde hacerlo.
+#  · **Y al anochecer la aldea se vacía**: la rutina del servidor manda a todos
+#    a su casa. El fogón es entonces lo único encendido al aire libre en el
+#    medio de un anillo de puertas cerradas, que es exactamente la postal que
+#    el valle quiere a esa hora.
+#
+# LO QUE FALTA Y NO ES MÍO: **el verbo.** Sentarse le toca a `jugador.gd` y la
+# postura a `figura.gd`, y ninguno de los dos es de esta rama. Lo que sí queda
+# entregado y andando es la otra mitad: los asientos existen, están en el grupo
+# `asientos` con dónde se apoya el cuerpo y hacia dónde se mira, y
+# `Interiores.asiento_cerca()` los encuentra igual que `puesto_cerca()`
+# encuentra el yunque. Del otro lado es un `if` y una posición.
+#
+# LA LUZ: un omni **sin sombra**, como los cuatro faroles que la plaza ya tiene
+# y no como el hogar de un cuarto. Una omni con sombra es un cubemap —seis
+# dibujados de todo lo que haya alrededor— y esto está al aire libre en el medio
+# del pueblo, o sea en el peor sitio posible para pagarlo. El fuego se ve igual;
+# lo que no proyecta es la sombra de las casas hacia afuera.
+# ===========================================================================
+
+## Dónde va, medido del centro del lugar. **No en el centro**: ahí es donde
+## aparece el jugador al entrar y donde vuelve al levantarse, y nadie tiene que
+## nacer adentro de una hoguera. Queda enfrentado al pilón, con el punto de
+## aparición justo entre el agua y el fuego.
+const FOGON := Vector3(-3.2, 0.0, -2.5)
+
+## El radio del corro y en qué tres ángulos. Como las huertas: **no a 120°
+## exactos**, que se lee como un logo. Dos juntos y uno enfrente, que es como se
+## sienta la gente de verdad.
+const FOGON_RADIO := 1.45
+const FOGON_ASIENTOS: Array = [
+	# ángulo   pieza                        escala  a qué altura se apoya el cuerpo
+	[0.42,  "naturaleza/log_large",    1.35, 0.50],
+	[1.34,  "naturaleza/log_large",    1.35, 0.50],
+	[4.05,  "naturaleza/stump_round",  2.10, 0.42],
+]
+
+## Cuánta luz da. Los faroles de la plaza dan 3,2 a 12 m; el fogón da algo más
+## y llega algo más lejos, porque es el fuego y ellos son la calle.
+const FOGON_LUZ := 4.6
+const FOGON_ALCANCE := 15.0
+
+
+static func _fogon(padre: Node3D, alturas: Callable, base: Vector3) -> void:
+	var c := base + FOGON
+	c.y = alturas.call(c.x, c.z)
+
+	var g := Node3D.new()
+	g.name = "Fogon"
+	g.position = c
+	padre.add_child(g)
+
+	# El pozo, enterrado un dedo: un fogón apoyado al ras del pasto se lee como
+	# una calcomanía, igual que el cerco de las huertas.
+	#
+	# **Una sola pieza y no dos.** La primera versión apiló `campfire_stones`
+	# encima de `campfire-pit` —el corro de piedras del Nature Kit más el pozo
+	# del de útiles— y en la captura no se leyó como un fogón mejor: se leyó como
+	# dos cosas distintas encimadas, con las piedras blancas reventadas por su
+	# propia luz. Es el mismo pozo que usa la fragua, a su escala.
+	Kit.poner(g, "utiles/campfire-pit", Vector3(0, -0.04, 0), 2.1, 5.0)
+
+	# La brasa. Excepción 1 de la paleta —el fuego es donde se gasta toda la
+	# saturación del juego— y es la misma receta que la fragua y que el hogar de
+	# un cuarto, para que las tres cosas sean el mismo fuego.
+	#
+	# **El tamaño salió de mirar, no de elegir, y costó tres vueltas.** Con el
+	# pozo chico (3,4) la brasa era una cúpula naranja apoyada arriba de las
+	# piedras y se leía como un farol tirado en el pasto; achicando la brasa se
+	# leía como un papel prendido. Lo que estaba mal era el POZO: a 5,0 mide 1,39
+	# m, o sea la mitad del corro de troncos, y ahí la brasa vuelve a ser una
+	# brasa. La proporción entre el fuego y lo que lo rodea es lo que lo cuenta,
+	# no el tamaño de ninguno de los dos.
+	var brasa := SphereMesh.new()
+	brasa.radius = 0.30
+	brasa.height = 0.42
+	brasa.radial_segments = 8
+	brasa.rings = 4
+	brasa.material = Paleta.brasa()
+	var mi := MeshInstance3D.new()
+	mi.mesh = brasa
+	mi.position = Vector3(0, 0.26, 0)
+	g.add_child(mi)
+
+	var luz := OmniLight3D.new()
+	luz.light_color = Paleta.LUZ_FAROL
+	luz.light_energy = FOGON_LUZ
+	luz.omni_range = FOGON_ALCANCE
+	luz.shadow_enabled = false
+	luz.position = Vector3(0, 1.05, 0)
+	# Dos senos que no encajan entre sí, el mismo que los faroles y la fragua.
+	# Un fuego que no titila es una lámpara.
+	luz.set_script(preload("res://scripts/parpadeo.gd"))
+	g.add_child(luz)
+
+	for d: Array in FOGON_ASIENTOS:
+		var a: float = d[0]
+		var p := Vector3(cos(a) * FOGON_RADIO, 0.0, sin(a) * FOGON_RADIO)
+		p.y = alturas.call(c.x + p.x, c.z + p.z) - c.y - 0.05
+		# El tronco se cruza de través al fuego —no apuntando a él—, que es como
+		# se pone un tronco para sentarse: a lo largo, no de punta.
+		var s := Kit.poner(g, str(d[1]), p, a + PI / 2.0, float(d[2]))
+		asiento(s, float(d[3]), atan2(-p.x, -p.z))
+		_tope(g, s)
+
+
+## Marca una malla como un lugar donde parar.
+##
+## No hace nada visible: le cuelga al nodo dónde se apoya el cuerpo y hacia
+## dónde se mira el que se sienta, y lo mete en el grupo `asientos`. Lo lee
+## `Interiores.asiento_cerca()`.
+##
+## `mirando` va en el marco del PADRE del nodo y no en el del mundo, y acá se lo
+## guarda restándole el giro propio del nodo. Es a propósito: los asientos se
+## marcan al construirlos, cuando la casa todavía puede no estar colgada del
+## árbol, y `global_rotation` en ese momento no vale nada. Con la resta hecha
+## acá, quien pregunta suma `global_rotation.y` y le da igual cuándo se marcó.
+static func asiento(mi: MeshInstance3D, alto: float, mirando: float) -> void:
+	if mi == null:
+		return
+	mi.set_meta("asiento_alto", alto)
+	mi.set_meta("asiento_mira", mirando - mi.rotation.y)
+	mi.add_to_group("asientos")
+
+
+## Un tronco con el que te chocás. **Un asiento que se atraviesa caminando es
+## peor que no tenerlo**: dice que la cosa está pintada.
+##
+## La caja sale del BULTO DE LA MALLA y no de un número escrito: el corro tiene
+## dos troncos de 1,35 m y un tocón de 0,67, y una caja de tamaño fijo le pone al
+## tocón el volumen del tronco —una pared invisible de casi dos metros en el
+## medio de la plaza—. Se achica un 8% para que el borde de la colisión quede
+## adentro de la madera y no un dedo por fuera.
+static func _tope(padre: Node3D, mi: MeshInstance3D) -> void:
+	if mi == null:
+		return
+	var bulto := mi.get_aabb()
+	var cuerpo := StaticBody3D.new()
+	var cf := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = bulto.size * mi.scale * 0.92
+	cf.shape = bs
+	cuerpo.add_child(cf)
+	cuerpo.position = mi.position \
+		+ (bulto.get_center() * mi.scale).rotated(Vector3.UP, mi.rotation.y)
+	cuerpo.rotation.y = mi.rotation.y
+	padre.add_child(cuerpo)

@@ -895,6 +895,143 @@ func _sincronizar_amenazas(amenazas: Array) -> void:
 			viejo_m.recibir(9999)   # que caiga en pantalla, no que desaparezca
 
 
+## ─────────────────────────────────────────────────────────────
+## Lo que hay tirado en el suelo
+## ─────────────────────────────────────────────────────────────
+##
+## Con qué malla se dibuja cada cosa. Es un mapa corto a propósito: los tipos de
+## objeto son quince y salen todos de tablas del servidor, así que esto no se va
+## a llenar solo. Lo que no está cae en `box`, que es una caja y se lee como
+## "hay algo ahí" — mejor que no dibujar nada.
+##
+## La escala sale de `ESCALA_KIT` como el resto de los enseres: los packs de
+## Kenney no comparten unidad y sin eso los frascos salen del tamaño de un dedal.
+const MALLA_DE_COSA := {
+	"hoja templada": "utiles/tool-axe",
+	"filo de agua": "utiles/tool-axe",
+	"frasco de raíz": "utiles/bottle",
+	"cuenco de cuajada": "utiles/bucket",
+	"carbón": "utiles/resource-stone",
+	"hierro viejo": "utiles/resource-stone",
+	"piedra de afilar": "utiles/resource-stone",
+	"ceniza": "utiles/resource-stone",
+	"rama de roble": "utiles/resource-wood",
+	"raíz del Sotobosque": "utiles/resource-wood",
+	"caña de la orilla": "utiles/resource-wood",
+	"lino en rama": "utiles/resource-wood",
+	"hierba del borde": "utiles/resource-wood",
+	"hongo de tronco": "utiles/resource-wood",
+	"mapa de sendas": "utiles/resource-planks",
+}
+
+## Hasta dónde llega el brazo para levantar algo del suelo. Generoso por el
+## mismo motivo que el golpe: con la cámara a cuarenta metros no se ve la
+## diferencia entre tres y cinco, y apretar y que no pase nada es el peor
+## resultado posible.
+const ALCANCE_SUELO := 5.0
+
+## Lo tirado por el valle: id del objeto -> Node3D. Va por id y no por nombre
+## porque dos hojas templadas son dos cosas distintas y cada una tiene su
+## historia.
+var _suelo: Dictionary = {}
+## Lo que tenés más cerca de los pies ahora mismo, ya resuelto: `{}` si no hay
+## nada al alcance. Lo lee `_al_interactuar` y lo mira `_process` para el cartel.
+var _suelo_cerca: Dictionary = {}
+
+
+## Dibuja lo que el servidor dice que hay tirado.
+##
+## **Ninguna coordenada viaja, y es a propósito.** El mundo del servidor está
+## hecho de `places`: una cosa está "en la Casa Quemada", no en un punto. El
+## punto exacto sale del `id` del objeto —un uuid, que ES estado compartido—
+## alrededor del centro del lugar, exactamente igual que la posición de las
+## amenazas y la de la gente. Misma semilla, mismo punto, en todas las pantallas.
+##
+## Guardar un `x, z` habría metido en la base el único dato que el resto de la
+## simulación no sabe leer: nadie más piensa en metros.
+func _sincronizar_suelo(cosas: Array) -> void:
+	var vistos := {}
+	for c in cosas:
+		var d: Dictionary = c
+		var id := str(d.get("id", ""))
+		var slug := str(d.get("place_slug", ""))
+		if id == "" or not LUGARES.has(slug):
+			continue
+		vistos[id] = true
+		# Los datos se refrescan siempre —los días que lleva ahí suben solos—
+		# pero la malla se arma una sola vez.
+		if _suelo.has(id):
+			var ya: Node3D = _suelo[id]
+			if is_instance_valid(ya):
+				ya.set_meta("cosa", d)
+			continue
+
+		var centro: Vector3 = LUGARES[slug]['pos']
+		var h := id.hash()
+		var ang := float(h % 1000) / 1000.0 * TAU
+		# De 3 a 11 m del centro: al alcance de quien pasa por el lugar, y
+		# afuera del fuego y del pozo que hay en el medio de cada sitio.
+		var rad := 3.0 + float((h / 1000) % 800) / 100.0
+		var px := centro.x + cos(ang) * rad
+		var pz := centro.z + sin(ang) * rad
+
+		var nodo := Node3D.new()
+		nodo.name = "suelo_" + id.substr(0, 8)
+		nodo.position = Vector3(px, altura_en(px, pz), pz)
+		var ruta: String = MALLA_DE_COSA.get(str(d.get("kind", "")), "utiles/box")
+		var e: float = ESCALA_KIT.get(ruta.get_slice("/", 0), 2.0)
+		# Tumbada y girada: una cosa tirada en el piso no está de pie. El giro
+		# sale del mismo hash, así que también es el mismo para todos.
+		Kit.poner(nodo, ruta, Vector3.ZERO,
+			float((h / 100) % 628) / 100.0, e * 0.85)
+		for hijo in nodo.get_children():
+			(hijo as Node3D).rotate_x(deg_to_rad(-78.0))
+		nodo.set_meta("cosa", d)
+		add_child(nodo)
+		_suelo[id] = nodo
+
+	# Lo que ya no está lo levantó alguien. Puede haber sido otro jugador
+	# mientras mirabas para otro lado, y eso es exactamente el juego.
+	for id: String in _suelo.keys():
+		if vistos.has(id):
+			continue
+		var viejo: Node3D = _suelo[id]
+		_suelo.erase(id)
+		if is_instance_valid(viejo):
+			viejo.queue_free()
+	if not _suelo.has(str(_suelo_cerca.get("id", ""))):
+		_suelo_cerca = {}
+
+
+## Lo que tenés al alcance de los pies, y el cartel que lo dice.
+##
+## Sale del mismo lugar que el cartel del bicho y el del puesto: la interfaz no
+## sabe dónde hay nada, este archivo sí.
+func _mirar_el_suelo() -> void:
+	if jugador == null or not is_instance_valid(jugador):
+		return
+	var elegido: Node3D = null
+	var mejor := ALCANCE_SUELO
+	for id: String in _suelo:
+		var n: Node3D = _suelo[id]
+		if not is_instance_valid(n):
+			continue
+		var dist := n.global_position.distance_to(jugador.global_position)
+		if dist < mejor:
+			mejor = dist
+			elegido = n
+	if elegido == null:
+		if not _suelo_cerca.is_empty():
+			_suelo_cerca = {}
+			interfaz.mostrar_suelo({}, null)
+		return
+	var d: Dictionary = elegido.get_meta("cosa", {})
+	if d.get("id", "") == _suelo_cerca.get("id", ""):
+		return
+	_suelo_cerca = d
+	interfaz.mostrar_suelo(d, elegido)
+
+
 ## La otra gente. No los NPC: **las otras personas conectadas al mismo valle.**
 ##
 ## Hasta acá dos jugadores en el mismo lugar no se veían: no era multijugador,
@@ -1775,6 +1912,10 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 
 	_sincronizar_amenazas(datos.get("amenazas", []))
 	_sincronizar_jugadores(datos.get("jugadores", []))
+	# Lo que hay tirado por el valle. Va antes que la bolsa a propósito: cuando
+	# levantás algo, el objeto sale del suelo y entra a la bolsa en la misma
+	# respuesta, y el orden hace que no parpadee en los dos lados a la vez.
+	_sincronizar_suelo(datos.get("suelo", []))
 	var bolsa: Array = datos.get("objetos", [])
 	interfaz.mostrar_inventario(bolsa)
 	# La misma bolsa la mira la magia: el frasco de raíz es lo único que hace
@@ -1984,6 +2125,9 @@ func _process(dt: float) -> void:
 		var puesto := interiores.puesto_cerca(jugador.global_position)
 		interfaz.mostrar_puesto(str(puesto.get("de", "")), puesto.get("nodo"))
 
+	# Y lo que haya tirado a tus pies. Es lo que habilita levantarlo con E.
+	_mirar_el_suelo()
+
 	# Que te reconozcan al pasar. Una sola vez por acercamiento: si se
 	# disparara cada cuadro sería un cartel, y si no se reseteara al alejarte
 	# nunca te volverían a saludar. Por eso se limpia cuando te vas.
@@ -2054,6 +2198,20 @@ func _al_interactuar() -> void:
 		# lo que podés hacer vive en la cosa que tenés delante. Sumar una tecla
 		# nueva por cada verbo es cómo se llega a un teclado entero de atajos
 		# que nadie se acuerda.
+		#
+		# Lo tirado en el suelo va PRIMERO, y es la misma regla llevada un paso
+		# más: una cosa a tus pies es más específica que el yunque de la casa
+		# entera. Los dos alcances no se pisan casi nunca —el puesto está
+		# adentro y esto en el patio— pero cuando se pisan gana lo que está
+		# debajo tuyo, que es lo que el cartel te está señalando.
+		if not _suelo_cerca.is_empty():
+			# El cuerpo SE AGACHA mientras dura el pedido. Es la misma agachada
+			# que ya usa `buscar`: `figura.gd` tiene `juntar()` escrita y la
+			# interfaz ya la tiene conectada a `quiere_juntar`. Sin esto, apretar
+			# E y que aparezca una línea de texto no es una acción, es un cartel.
+			interfaz.levantando(true)
+			api.levantar(str(_suelo_cerca.get("kind", "")))
+			return
 		if interfaz.puesto_de != "":
 			api.actuar("trabajar")
 			# **Sin gesto, a propósito.** `figura.gd` no tiene una pose de

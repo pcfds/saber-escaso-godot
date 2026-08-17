@@ -136,8 +136,46 @@ func tomar(que := "") -> void:
 		func(d: Dictionary) -> void: tomado.emit(d))
 
 
+## ─────────────────────────────────────────────────────────────
+## Las cosas cambian de mano
+## ─────────────────────────────────────────────────────────────
+##
+## Los tres pasan por `/act` como el resto de los verbos del mundo, así que se
+## resuelven en el acto y el resultado vuelve en el aviso del 303. **No inventan
+## rutas nuevas**: `resolveAction()` los conoce, y el CHECK de `actions.verb` los
+## acepta desde la migración `20260818000000_lo_que_queda_en_el_suelo`.
+
+## Dejar algo en el suelo del lugar donde estás parado.
+##
+## Va a la base y no a la escena: **un objeto tirado es estado del mundo**. Si
+## viviera acá, dos jugadores verían dos suelos distintos y lo que uno dejó no
+## existiría para el otro. Y no viaja ninguna coordenada — el servidor guarda el
+## LUGAR, y este cliente deriva el punto exacto del `id` del objeto, que es lo
+## mismo para todos.
+func soltar(que: String) -> void:
+	actuar("soltar", que)
+
+
+## Levantar lo que haya en el suelo de acá. Sin `que`, el mejor que haya.
+##
+## `levantar` y no `tomar`: `tomar` ya existe y es tomarse un cuenco de cuajada.
+func levantar(que: String = "") -> void:
+	actuar("levantar", que)
+
+
+## Pedirle algo a alguien. La punta que faltaba de `dar`.
+##
+## Sin `que`, el servidor elige lo mejor que esa persona pueda soltar. **Cuesta
+## el favor**: pedir baja el aprecio, así que no es un botón de "dame" — y por
+## eso la respuesta del servidor a veces es un "no" que dice en qué escalón
+## estás. Ese texto se muestra tal cual: la razón específica es lo que le enseña
+## al jugador cómo funciona la gente.
+func pedir(a_quien: String, que: String = "") -> void:
+	actuar("pedir", ("%s a %s" % [que, a_quien]) if que != "" else a_quien)
+
+
 ## Mandar una acción del mundo: `buscar`, `aprender`, `trabajar`, `encargarse`,
-## `dar`, `ensenar`, `ir`.
+## `dar`, `ensenar`, `ir`, `soltar`, `levantar`, `pedir`.
 ##
 ## MEDIDO CONTRA PRODUCCIÓN EL 17 DE AGOSTO, y da vuelta lo que se creía:
 ## **`/act` NO espera al tick.** El servidor llama a `resolverAcciones()` en el

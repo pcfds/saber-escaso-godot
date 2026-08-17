@@ -45,6 +45,9 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--interior"):
 		_interiores(rng)
 		return
+	if OS.get_cmdline_user_args().has("--plaza"):
+		_plaza()
+		return
 
 	# Las tres casas del valle: revoque (Vado Bajo), ladrillo desparejo (la
 	# Fragua) y quemada (la ruina). Es la variedad que el valle tiene.
@@ -57,6 +60,52 @@ func _ready() -> void:
 
 	_encuadrar()
 	_censo()
+	_captura()
+
+
+# ===========================================================================
+# LA PLAZA  (`-- --plaza`)
+#
+# Lo mismo que el banco de las casas y por lo mismo: **el fogón de Vado Bajo es
+# imposible de juzgar en una captura del valle**, porque el jugador aparece
+# adentro de la casa que lo tapa y la cámara del juego no se puede mover desde
+# acá. Acá está lo que `Detalles.labranza()` pone en la plaza —huertas, pilón y
+# fogón— sobre suelo plano y con una vara del tamaño del jugador sentada al
+# lado, que es la única forma de discutir si un tronco es un asiento.
+#
+#   godot escenas/prueba_casas.tscn -- --plaza --captura
+# ===========================================================================
+
+func _plaza() -> void:
+	# Suelo plano: la altura la pide `labranza()` y acá vale cero en todas
+	# partes. El valle tiene lomas y eso ya lo resuelve la búsqueda de rellano
+	# que esa función hace; lo que se mira acá es la composición.
+	Detalles.labranza(self, func(_x: float, _z: float) -> float: return 0.0,
+		{"aldea": {"pos": Vector3.ZERO}})
+
+	# La vara, parada donde se sentaría alguien. `asiento_cerca()` no se puede
+	# usar acá —vive en `Interiores` y no hay casas— así que se lee el grupo
+	# directo, que es de dónde lo saca ella también.
+	for n in get_tree().get_nodes_in_group("asientos"):
+		var nodo := n as MeshInstance3D
+		_vara(nodo.global_position + Vector3(0, float(nodo.get_meta("asiento_alto", 0.45)), 0))
+		# El bulto se dice, y no es prolijidad: la colisión del asiento sale de
+		# acá, y con un tamaño fijo el tocón se llevaba la caja del tronco, o sea
+		# casi dos metros de pared invisible en el medio de la plaza.
+		var b := nodo.get_aabb().size * nodo.scale
+		print("  asiento %s: %.2f × %.2f × %.2f m, se apoya a %.2f" % [
+			nodo.name, b.x, b.y, b.z, float(nodo.get_meta("asiento_alto", 0.0))])
+	print("plaza: %d asientos marcados" % get_tree().get_nodes_in_group("asientos").size())
+
+	var cam := get_node_or_null(^"Camara") as Camera3D
+	if cam != null:
+		cam.position = Vector3(-3.2, 6.5, 7.0)
+		cam.look_at(Vector3(-3.2, 0.6, -2.5))
+	var sol := get_node_or_null(^"Sol") as DirectionalLight3D
+	if sol != null:
+		sol.position = Vector3(34, 26, 30)
+		sol.look_at(Vector3(-8, 0, -10))
+		sol.light_color = Paleta.LUZ_ALBA
 	_captura()
 
 
@@ -116,6 +165,7 @@ func _interiores(rng: RandomNumberGenerator) -> void:
 
 	var x := -14.0
 	var puertas: Array[Vector3] = []
+	var hojas: Array[MeshInstance3D] = []
 	for i in 3:
 		var sitio := {
 			"pos": Vector3(x, 0, 0), "giro": 0.0,
@@ -128,19 +178,33 @@ func _interiores(rng: RandomNumberGenerator) -> void:
 		casas.habitar(clave, "Alguien", OFICIOS_MUESTRA[i])
 		var pd: Vector3 = casa["puerta"]
 		puertas.append(Vector3(x + pd.x, pd.y, pd.z))
+		var hoja: MeshInstance3D = casa.get("hoja")
+		if hoja != null:
+			hojas.append(hoja)
 		_vara(Vector3(x + pd.x, 0, Detalles.CASA_LADO / 2.0 + 1.6))
 		_cartel(OFICIOS_MUESTRA[i] if not quemada else "quemada",
 			Vector3(x, 7.4, 0))
 		x += 14.0
 
+	_medir_hojas(hojas)
 	await _medir_puertas(puertas)
+	_medir_apertura(casas, puertas)
 
 	# El recorte, forzado en las tres: la cámara mira desde +Z, así que se
 	# apagan el techo, la planta alta y los muros del frente. En el valle se
 	# abre una sola —ver `Interiores.abrir_todas()`—; acá se abren todas porque
 	# de eso se trata la captura. Con `--cerradas` se ven como las ve el que
 	# pasa por la calle, que es la otra mitad de lo que hay que revisar.
-	if not OS.get_cmdline_user_args().has("--cerradas"):
+	#
+	# Y las tres formas de mirar una puerta, que son las tres que hay que poder
+	# comparar: `--cerradas` la ve desde la calle con la hoja puesta,
+	# `--abiertas` la ve desde la calle con la hoja girada —o sea que ahí se
+	# prueba que la hoja SE MUEVE y adónde va a parar— y sin nada se ve el
+	# cuarto, que es para lo que existía el banco.
+	var args := OS.get_cmdline_user_args()
+	if args.has("--abiertas"):
+		casas.abrir_todas(Vector3(0, 14, 34), false)
+	elif not args.has("--cerradas"):
 		casas.abrir_todas(Vector3(0, 14, 34))
 
 	var cam := get_node_or_null(^"Camara") as Camera3D
@@ -189,6 +253,78 @@ func _medir_puertas(puertas: Array[Vector3]) -> void:
 				print("  casa %d: la cápsula choca en z = %.2f" % [k, z])
 		print("puerta %d: %d de %d pasos libres — hueco %.2f m de ancho" % [
 			k, libre, pasos, Detalles.PUERTA_ANCHO])
+
+
+## LA HOJA DE LA PUERTA, medida y no supuesta.
+##
+## Dos cosas, y las dos se pueden equivocar en silencio:
+##
+##  · **Cuánto mide puesta en el valle.** La hoja se construye en unidades de
+##    panel y la escala se la pone el muro (1,35 en planta, el estirado de esa
+##    casa en alto). Un error ahí no da error de script: da una puerta más chica
+##    que su hueco, y eso se ve como una raja de luz y como un decorado.
+##  · **Que la ruina NO tenga.** Una casa quemada sin techo con la puerta
+##    flamante puesta es peor que no tener puertas.
+##
+## Lo que esto NO prueba es si se entra: eso lo prueba `_medir_puertas()` con la
+## cápsula, y **tiene que seguir dando cinco de cinco con la hoja puesta**. Si
+## alguna vez baja, alguien le puso colisión a la puerta — ver el bloque
+## `LA PUERTA` en `detalles.gd`.
+func _medir_hojas(hojas: Array[MeshInstance3D]) -> void:
+	print("puertas: %d hojas en 3 casas (la quemada no lleva)" % hojas.size())
+	for k in hojas.size():
+		var h: MeshInstance3D = hojas[k]
+		var caja := h.get_aabb()
+		var s: Vector3 = h.global_transform.basis.get_scale()
+		# El conteo va acá y no con `Kit.triangulos()`: esa función lee
+		# `ARRAY_INDEX` y esta malla se hace con `SurfaceTool` sin indexar, así
+		# que le llega un `Nil`. La malla del kit sí viene indexada y por eso allá
+		# anda. (Queda anotado: `Kit.triangulos()` se rompe con mallas sueltas.)
+		var tri := 0
+		for i in h.mesh.get_surface_count():
+			tri += (h.mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]
+				as PackedVector3Array).size() / 3
+		print("  hoja %d: %.2f × %.2f m de tabla, %d triángulos" % [
+			k, absf(caja.size.x * s.x), absf(caja.size.y * s.y), tri])
+
+
+## ¿SE ABRE? Y no mirando una captura: **una captura es un instante y lo que hay
+## que probar es que la hoja se mueve cuando alguien camina hasta la puerta.**
+##
+## Camina un punto —el jugador, sin cuerpo— desde tres metros afuera hasta el
+## umbral, un paso por cuadro, llamando a `Interiores.actualizar()` igual que lo
+## llama `valle.gd`, y después lo saca y espera a que la puerta se cierre sola.
+## Lo que se mide es el ángulo de la hoja en los dos extremos.
+##
+## Esta prueba es la que hay que mirar si algún día una puerta deja de abrirse:
+## si acá abre y en el valle no, el que está mal es el punto del umbral y no la
+## mecánica; si acá tampoco, es la mecánica.
+##
+## El reloj es de mentira —un sesentavo de segundo por vuelta, pasado a mano— y
+## eso es a propósito: en headless un cuadro dura un milisegundo, así que esperar
+## los cinco segundos que la puerta se queda abierta serían cinco mil cuadros y
+## la corrida se muere en el `--quit-after` mucho antes.
+func _medir_apertura(casas: Interiores, puertas: Array[Vector3]) -> void:
+	if puertas.is_empty():
+		return
+	var dt := 1.0 / 60.0
+	var p: Vector3 = puertas[0]
+	var camara := Vector3(p.x, 11.0, p.z + 27.0)
+	var afuera := Vector3(p.x, p.y, p.z + 8.0)
+
+	# Ir hasta la puerta: dos segundos y medio, de sobra para el medio segundo
+	# largo que tarda el recorrido de la hoja.
+	for k in 150:
+		casas.actualizar(afuera.lerp(p, minf(float(k) / 60.0, 1.0)), camara, dt)
+	var abierta := casas.puerta("prueba/0")
+
+	# Y volverse. `PUERTA_QUEDA` son cinco segundos de espera antes de cerrarse.
+	for _k in 420:
+		casas.actualizar(afuera, camara, dt)
+	var cerrada := casas.puerta("prueba/0")
+
+	print("apertura: al llegar %.2f rad (%.0f°), al irse %.2f rad — abre a %.2f"
+		% [abierta, rad_to_deg(absf(abierta)), cerrada, Interiores.PUERTA_GIRO])
 
 
 ## Una vara de la altura del jugador, para que la escala se discuta mirando.
