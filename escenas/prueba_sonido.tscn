@@ -31,7 +31,7 @@
 [node name="Sonido" type="Node3D"]
 script = ExtResource("1_sonido")
 modo_prueba = true
-volumen_general = 0.62
+volumen_general = 0.45
 
 [node name="Oyente" type="Node3D" parent="."]
 

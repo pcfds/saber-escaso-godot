@@ -66,27 +66,27 @@ extends Node3D
 const LECHOS := {
 	# Vado Bajo. Doce casas apretadas contra el recodo del río. El único lugar
 	# con gente: pájaros de día (hay huerta y hay basura), grillos de noche.
-	"aldea":  {"viento": 0.55, "pajaros": 1.00, "grillos": 0.55, "hojas": 0.00, "hueco": 0.00, "brillo": 0.55},
+	"aldea":  {"viento": 0.22, "pajaros": 1.15, "grillos": 0.60, "hojas": 0.00, "hueco": 0.00, "brillo": 0.42},
 	# La Fragua de Ilde. Lo que la define no está en esta tabla: está en el
 	# fuego y el yunque, que son sonidos con LUGAR (ver _armar_emisores).
-	"fragua": {"viento": 0.45, "pajaros": 0.55, "grillos": 0.40, "hojas": 0.00, "hueco": 0.00, "brillo": 0.60},
+	"fragua": {"viento": 0.15, "pajaros": 0.55, "grillos": 0.40, "hojas": 0.00, "hueco": 0.00, "brillo": 0.50},
 	# El Sotobosque. Acá el ambiente se APAGA. No hay grillos, casi no hay
 	# pájaros, el viento queda arriba en las copas. Lo único que queda es la
 	# madera trabajando, y cada tanto algo que se rompe y no sabés qué fue.
 	# Ahí viven Los del Sotobosque, que son un pueblo con un agravio, no
 	# monstruos: el lugar tiene que dar cosa por vacío, no por música de miedo.
-	"bosque": {"viento": 0.22, "pajaros": 0.10, "grillos": 0.00, "hojas": 1.00, "hueco": 0.00, "brillo": 0.22},
+	"bosque": {"viento": 0.20, "pajaros": 0.14, "grillos": 0.00, "hojas": 1.15, "hueco": 0.00, "brillo": 0.06},
 	# La Casa Quemada. Se incendió antes de que nadie vivo estuviera acá y
 	# nadie la reconstruye. Sin techo y sin fuego: el viento entra por los
 	# huecos y la casa canta una nota. Es el único sonido afinado del valle.
-	"ruina":  {"viento": 0.80, "pajaros": 0.12, "grillos": 0.35, "hojas": 0.10, "hueco": 1.00, "brillo": 0.70},
+	"ruina":  {"viento": 0.45, "pajaros": 0.10, "grillos": 0.35, "hojas": 0.10, "hueco": 1.25, "brillo": 0.62},
 	# El Camino del Norte. La única abertura de la cordillera. Por acá entra
 	# el viento y por acá entra la gente — poca. Es el lugar más expuesto y el
 	# más ruidoso al mediodía, y no tiene nada que lo abrigue.
-	"camino": {"viento": 1.45, "pajaros": 0.25, "grillos": 0.10, "hojas": 0.00, "hueco": 0.15, "brillo": 1.00},
+	"camino": {"viento": 1.30, "pajaros": 0.22, "grillos": 0.10, "hojas": 0.00, "hueco": 0.20, "brillo": 1.00},
 	# Campo abierto: el valle entre lugares. No es un relleno — es el estado
 	# por defecto del mundo, y es contra lo que se mide que el bosque apague.
-	"campo":  {"viento": 1.00, "pajaros": 0.50, "grillos": 0.55, "hojas": 0.00, "hueco": 0.00, "brillo": 0.85},
+	"campo":  {"viento": 0.62, "pajaros": 0.75, "grillos": 0.60, "hojas": 0.00, "hueco": 0.00, "brillo": 0.80},
 }
 
 ## Dónde está cada lugar y desde qué distancia se lo empieza a oír.
@@ -119,15 +119,15 @@ const RIO_SEPARACION := 70.0
 ## El viento sigue al sol: mínimo de madrugada, máximo a media tarde. Es
 ## física real y de paso es la voz que nunca se va del todo, la que impide que
 ## el valle quede en silencio absoluto cuando no pasa nada.
-const CURVA_VIENTO := [[0.00, 0.22], [0.20, 0.26], [0.30, 0.42], [0.45, 0.72],
-	[0.55, 0.88], [0.70, 0.80], [0.82, 0.46], [0.92, 0.28], [1.00, 0.22]]
+const CURVA_VIENTO := [[0.00, 0.16], [0.20, 0.19], [0.30, 0.30], [0.45, 0.50],
+	[0.55, 0.62], [0.70, 0.56], [0.82, 0.33], [0.92, 0.20], [1.00, 0.16]]
 
 ## El coro del amanecer es el aviso de hora más fuerte que existe: arranca de
 ## la nada a las 0.20 y explota a las 0.27. Después baja — al mediodía los
 ## pájaros callan, que es real y además deja lugar para el viento — y vuelve
 ## un rato más chico al atardecer. A las 0.86 no queda ninguno.
 const CURVA_PAJAROS := [[0.00, 0.00], [0.18, 0.00], [0.23, 0.55], [0.27, 1.00],
-	[0.34, 0.62], [0.50, 0.20], [0.62, 0.30], [0.76, 0.52], [0.82, 0.14],
+	[0.34, 0.70], [0.50, 0.35], [0.62, 0.45], [0.76, 0.58], [0.82, 0.16],
 	[0.86, 0.00], [1.00, 0.00]]
 
 ## Los grillos son el reloj de la noche y se cruzan con el coro: a las 0.22
@@ -208,7 +208,7 @@ static func mezclar(acento: Dictionary, f: float) -> Dictionary:
 	# La madera trabaja y la casa canta cuando hay viento: las dos cuelgan del
 	# viento en vez de tener curva propia. Y las dos tienen un piso, porque un
 	# bosque en calma sigue crujiendo.
-	var hojas := 0.10 + 0.28 * viento
+	var hojas := 0.20 + 0.30 * viento
 	var hueco := 0.20 + 0.45 * viento
 	var g := {
 		"viento": viento * float(acento.get("viento", 0.0)) * maestro,
@@ -284,9 +284,19 @@ func lecho_en(pos: Vector3, f: float) -> Dictionary:
 ## Prendé esto en una escena y el nodo se prepara solo e imprime el informe.
 ## Es lo que hace `escenas/prueba_sonido.tscn`.
 @export var modo_prueba := false
-## Cuánto sale por el parlante. -9 dB de base: el ambiente NO compite con
-## nada, va debajo de todo lo que pase después (pasos, golpes, diálogo).
-@export var volumen_general := 0.62
+## Cuánto sale por el parlante, en lineal. 0,45 son -6,9 dB.
+##
+## No es un número elegido a ojo: con esto el lugar más sonoro del valle —la
+## fragua al mediodía— queda en -23 dBFS eficaces, y el más callado —el
+## Sotobosque de madrugada— en -40. La referencia es que un lecho de ambiente
+## vive entre -30 y -22 dBFS: arriba de -18 compite con todo lo demás y cansa.
+## La escena de prueba imprime la tabla entera, lugar por lugar y hora por
+## hora, así que este número se puede discutir con datos y no con adjetivos.
+##
+## Y va bajo a propósito: hoy el ambiente es lo ÚNICO que suena, así que la
+## tentación es subirlo. Cuando entren los pasos y los golpes va a tener que
+## estar acá abajo igual, y es más fácil no acostumbrar el oído.
+@export var volumen_general := 0.45
 
 ## De dónde sale la hora. Es `ciclo.gd`, que la recibe del SERVIDOR. Si esto
 ## queda en null se usa `hora_manual`, y eso sólo vale para la prueba: un
@@ -367,6 +377,8 @@ var _ms_generacion := 0.0
 const FORZAR_AUDIO := "--sonido-con-audio"
 
 var _hay_salida := true
+var _bufs: Dictionary = {}
+var _nativo: Dictionary = {}
 
 
 func _ready() -> void:
@@ -386,6 +398,7 @@ func _ready() -> void:
 ## La llama el valle. `lugares` es la tabla LUGARES de valle.gd (opcional: si
 ## no viene, se usa la copia de acá).
 func preparar(lugares: Dictionary = {}) -> void:
+	add_to_group("sonido")   # la interfaz lo busca por acá para el volumen
 	_hay_salida = AudioServer.get_driver_name() != "Dummy" \
 		or OS.get_cmdline_user_args().has(FORZAR_AUDIO)
 	if not lugares.is_empty():
@@ -401,8 +414,13 @@ func preparar(lugares: Dictionary = {}) -> void:
 	# hilo sería un camino más que puede fallar en `_ready()`, que es
 	# exactamente la trampa que este repo ya pisó una vez.
 	var t0 := Time.get_ticks_usec()
-	_montar(_generar_todo())
+	var bufs := _generar_todo()
+	_montar(bufs)
 	_ms_generacion = (Time.get_ticks_usec() - t0) / 1000.0
+	# Sólo la prueba se queda con los bucles sueltos, para medirlos. En el
+	# juego los referencian los emisores y nadie más.
+	if modo_prueba:
+		_bufs = bufs
 
 
 ## Qué hora es en el valle. La manda el servidor a través de `ciclo.gd`.
@@ -552,13 +570,13 @@ func _volumen(bus: String, lineal: float) -> void:
 
 func _armar_emisores() -> void:
 	# El fondo no tiene lugar: suena igual mires para donde mires. Dos copias
-	# del mismo ruido a distinto tono es lo que le saca el bucle de encima —
-	# 4 s y 4/0,83 s no vuelven a coincidir en minutos.
+	# del mismo bucle a tonos que no son múltiplos entre sí es lo que le saca
+	# el bucle de encima: 11 s y 11/0,79 s tardan horas en volver a coincidir.
 	_fondo("viento", PREFIJO + "Viento", 1.00)
-	_fondo("viento", PREFIJO + "Viento", 0.83)
+	_fondo("viento", PREFIJO + "Viento", 0.79)
 	_fondo("pajaros", PREFIJO + "Pajaros", 1.00)
 	_fondo("grillos", PREFIJO + "Grillos", 1.00)
-	_fondo("grillos", PREFIJO + "Grillos", 1.11)
+	_fondo("grillos", PREFIJO + "Grillos", 1.13)
 	_fondo("hojas", PREFIJO + "Hojas", 1.00)
 	_fondo("hueco", PREFIJO + "Hueco", 1.00)
 
@@ -566,9 +584,17 @@ func _armar_emisores() -> void:
 	# el río sería un punto que te sigue; con tres, caminar la orilla se oye
 	# como caminar la orilla, y desde la aldea (26 m) se oye, que es lo que
 	# dice "las casas están apretadas contra el recodo".
+	# Cada tramo a un tono distinto: si los tres corrieran el mismo bucle en
+	# fase, las burbujas volverían las tres a la vez y eso se oye a máquina.
 	var eje := Vector3(cos(deg_to_rad(RIO_GIRO)), 0.0, -sin(deg_to_rad(RIO_GIRO)))
-	for k in [-1.0, 0.0, 1.0]:
-		_mundo("rio", PREFIJO + "Rio", RIO_CENTRO + eje * (k * RIO_SEPARACION), 20.0, 120.0, 1.0)
+	var tonos := [0.91, 1.0, 1.07]
+	for k in 3:
+		var d := (float(k) - 1.0) * RIO_SEPARACION
+		# 85 m de alcance y no 120: el emisor más cercano al Sotobosque está a
+		# 91 m, y con el corte viejo el río se oía desde el bosque. Se midió que
+		# era el 36% de lo que llegaba al oído ahí — justo en el lugar que tiene
+		# que sonar a nada. El río llega a la aldea y a la fragua, y para ahí.
+		_mundo("rio", PREFIJO + "Rio", RIO_CENTRO + eje * d, 18.0, 85.0, float(tonos[k]))
 
 	var f_fragua: Vector3 = _tabla.get("fragua", POS["fragua"])["pos"]
 	# El fuego de la fragua se oye de cerca. La fragua no es un faro sonoro:
@@ -588,8 +614,20 @@ func _armar_emisores() -> void:
 	# la diferencia entre "esto está vacío" y "esto está vacío, ¿o no?".
 	_mundo("crujido", PREFIJO + "Crujido", f_bosque + Vector3(0, 1.5, 0), 14.0, 70.0, 1.0)
 
+	# DOS EMISORES DEL MISMO RUIDO SUENAN 3 dB MÁS FUERTE QUE UNO.
+	#
+	# Es la suma de dos señales no correlacionadas y estaba sin contemplar: el
+	# viento y los grillos salían 3 dB por encima de lo que decía su ganancia,
+	# o sea que la tabla de lechos mentía justo en las dos voces más presentes.
+	# Se compensa acá, en el emisor, y no en el bus: el bus es donde vive la
+	# ganancia de la mezcla y tiene que seguir queriendo decir lo que dice.
 	for voz: String in _jug:
 		_gan[voz] = 0.0
+		var lista: Array = _jug[voz]
+		if lista.size() > 1 and lista[0] is AudioStreamPlayer:
+			var comp := -10.0 * log(float(lista.size())) / log(10.0)
+			for p: Node in lista:
+				p.set("volume_db", comp)
 
 
 func _fondo(voz: String, bus: String, tono: float) -> void:
@@ -654,10 +692,14 @@ func _process(dt: float) -> void:
 	# Las ráfagas. Tres senos de períodos que no encajan (17, 6,3 y 2,9 s) dan
 	# algo que no se repite en varios minutos. El viento sube y el filtro se
 	# abre JUNTOS, porque una ráfaga real trae agudos, no sólo volumen.
-	var rafaga := 0.62 \
-		+ 0.26 * sin(_reloj * TAU / 17.0) \
-		+ 0.14 * sin(_reloj * TAU / 6.3 + 1.7) \
-		+ 0.08 * sin(_reloj * TAU / 2.9 + 0.4)
+	# Los coeficientes suman 0,55: en el peor cruce el viento llega a CERO, y
+	# eso es a propósito. La versión anterior nunca bajaba de 0,14 — o sea que
+	# había ruido de banda ancha permanente, sin un solo hueco, que es la receta
+	# exacta de la fatiga auditiva. Un lecho tiene que respirar hasta el fondo.
+	var rafaga := clampf(0.55 \
+		+ 0.30 * sin(_reloj * TAU / 17.0) \
+		+ 0.16 * sin(_reloj * TAU / 6.3 + 1.7) \
+		+ 0.09 * sin(_reloj * TAU / 2.9 + 0.4), 0.0, 1.2)
 	var brillo := float(g["brillo"])
 
 	_suave("viento", float(g["viento"]) * rafaga, dt, 0.9)
@@ -681,7 +723,7 @@ func _process(dt: float) -> void:
 
 	# El corte del viento: abierto en el camino, tapado bajo las copas, y
 	# abriéndose con cada ráfaga.
-	_corte(PREFIJO + "Viento", lerpf(320.0, 2300.0, clampf(brillo, 0.0, 1.0)) * (0.7 + 0.5 * rafaga))
+	_corte(PREFIJO + "Viento", lerpf(240.0, 2600.0, clampf(brillo, 0.0, 1.0)) * (0.7 + 0.5 * rafaga))
 	# La casa canta más agudo con el viento fuerte, como cualquier hueco.
 	_corte(PREFIJO + "Hueco", 168.0 + 46.0 * rafaga)
 	# De noche la fragua es brasa: menos volumen y bastante más oscura.
@@ -772,19 +814,108 @@ func _crujir(dt: float, pos: Vector3) -> void:
 #               entrega: no se intentan acá.
 # ─────────────────────────────────────────────────────────────────────────
 
+## LARGOS PRIMOS ENTRE SÍ. No es un detalle: es la mitad de por qué un lecho
+## cansa o no.
+##
+## La primera versión tenía todo en bucles de cuatro segundos, y el oído
+## detecta un patrón de cuatro segundos en menos de un minuto — sobre todo con
+## el río y el fuego, que no son ruido liso sino TRANSITORIOS (burbujas,
+## chasquidos) que volvían idénticos y en el mismo orden cada cuatro segundos.
+## Eso no es un lecho: es un tic, y un tic no se puede dejar de oír.
+##
+## Ahora cada voz tiene un largo distinto y ninguno es múltiplo de otro, así
+## que la combinación tarda horas en volver a alinearse. Encima cada voz que
+## tiene más de un emisor los corre a tonos distintos, y un tono distinto es un
+## largo distinto. La prueba imprime el período compuesto medido.
+## Los que llevan TRANSITORIOS sueltos —río, fuego, grillos, pájaros— son los
+## que hay que estirar más: un chasquido idéntico que vuelve es mucho más fácil
+## de detectar que un ruido liso que vuelve.
+const LARGOS := {
+	"viento": 11.0, "rio": 13.0, "hojas": 9.0, "hueco": 15.0,
+	"grillos": 10.0, "pajaros": 17.0, "fuego": 8.0, "hogar": 12.0,
+}
+
+## Todos los bucles salen normalizados al MISMO nivel eficaz. Sin esto las
+## ganancias de la tabla de lechos no querían decir nada: un 0,5 de viento y un
+## 0,5 de grillos sonaban a volúmenes distintos porque los generadores producen
+## amplitudes distintas, y la mezcla que yo creía estar escribiendo no era la
+## que salía. Ahora un 0,5 es un 0,5 en todas las voces.
+##
+## -20 dBFS eficaces por voz es el nivel de trabajo. Con tres o cuatro voces
+## sonando a la vez la suma queda cerca de -14 dBFS, y de ahí baja el volumen
+## general. Un lecho de ambiente tiene que vivir ahí abajo: si compite con lo
+## que pasa en pantalla, cansa.
+const RMS_VOZ := 0.10
+
+
 func _generar_todo() -> Dictionary:
-	return {
-		"viento": _wav(_ruido_rosa_bucle(4.0, 11), true),
-		"rio": _wav(_agua(4.0, 23), true),
-		"hojas": _wav(_ruido_rosa_bucle(4.0, 37), true),
-		"hueco": _wav(_ruido_rosa_bucle(4.0, 53), true),
-		"grillos": _wav(_grillos(4.0, 71), true),
-		"pajaros": _wav(_pajaros(8.0, 97), true),
-		"fuego": _wav(_fuego(4.0, 113), true),
-		"hogar": _wav(_fuego(4.0, 131), true),
-		"yunque": _wav(_yunque(151), false),
-		"crujido": _wav(_crujido(167), false),
-	}
+	var d := {}
+	d["viento"] = _lecho_wav("viento", _ruido_rosa_bucle(LARGOS["viento"], 11))
+	d["rio"] = _lecho_wav("rio", _agua(LARGOS["rio"], 23))
+	d["hojas"] = _lecho_wav("hojas", _ruido_rosa_bucle(LARGOS["hojas"], 37))
+	d["hueco"] = _lecho_wav("hueco", _ruido_rosa_bucle(LARGOS["hueco"], 53))
+	d["grillos"] = _lecho_wav("grillos", _grillos(LARGOS["grillos"], 71))
+	d["pajaros"] = _lecho_wav("pajaros", _pajaros(LARGOS["pajaros"], 97))
+	d["fuego"] = _lecho_wav("fuego", _fuego(LARGOS["fuego"], 113))
+	d["hogar"] = _lecho_wav("hogar", _fuego(LARGOS["hogar"], 131))
+	# Los golpes se normalizan por PICO, no por nivel eficaz: son transitorios,
+	# y lo que importa de un transitorio es que no recorte.
+	d["yunque"] = _golpe_wav("yunque", _yunque(151), 0.85)
+	d["crujido"] = _golpe_wav("crujido", _crujido(167), 0.75)
+	return d
+
+
+## Mide el bucle CRUDO, lo anota, y recién ahí lo normaliza.
+##
+## La medición del crudo no es curiosidad: es la que descubrió el peor defecto
+## que tuvo este archivo. El viento salía del generador a -7,6 dBFS eficaces y
+## con picos de 1,676 — o sea que `_wav()` le recortaba contra el tope el 2%
+## de las muestras, de forma continua. Ruido de banda ancha recortado es
+## áspero, y áspero sostenido es exactamente lo que hace que alguien baje el
+## volumen. Encima el viento salía 20 dB por encima de los pájaros, así que la
+## tabla de acentos por lugar era pura ficción: dijera lo que dijera, ganaba el
+## viento. Queda medido para siempre para que no vuelva a pasar en silencio.
+func _lecho_wav(voz: String, m: PackedFloat32Array) -> AudioStreamWAV:
+	# Una sola medición y una sola escalada: son dos millones de muestras por
+	# bucle y cada recorrida de más se paga en el arranque del juego.
+	var r := _rms(m)
+	var pk := _pico(m)
+	_nativo[voz] = {"rms": r, "pico": pk}
+	var k := RMS_VOZ / maxf(r, 0.000001)
+	# Un bucle con transitorios puede tener picos muy por encima del nivel
+	# eficaz. Si recortara, el recorte es distorsión y se oye.
+	if pk * k > 0.98:
+		k = 0.98 / pk
+	return _wav(_escalar(m, k), true)
+
+
+func _golpe_wav(voz: String, m: PackedFloat32Array, pico: float) -> AudioStreamWAV:
+	var r := _rms(m)
+	var pk := _pico(m)
+	_nativo[voz] = {"rms": r, "pico": pk}
+	return _wav(_escalar(m, pico / maxf(pk, 0.000001)), false)
+
+
+static func _rms(m: PackedFloat32Array) -> float:
+	if m.is_empty():
+		return 0.0
+	var s := 0.0
+	for i in m.size():
+		s += m[i] * m[i]
+	return sqrt(s / float(m.size()))
+
+
+static func _pico(m: PackedFloat32Array) -> float:
+	var p := 0.0
+	for i in m.size():
+		p = maxf(p, absf(m[i]))
+	return p
+
+
+static func _escalar(m: PackedFloat32Array, k: float) -> PackedFloat32Array:
+	for i in m.size():
+		m[i] *= k
+	return m
 
 
 static func _wav(m: PackedFloat32Array, bucle: bool) -> AudioStreamWAV:
@@ -853,15 +984,21 @@ static func _ruido_rosa_bucle(seg: float, semilla: int) -> PackedFloat32Array:
 ## son un río. Es de las cosas que la síntesis hace bien de verdad.
 static func _agua(seg: float, semilla: int) -> PackedFloat32Array:
 	var n := int(seg * HZ) + CRUCE
-	var o := _ruido_rosa(n, semilla)
+	# El lecho de ruido va A LA MITAD, y las burbujas al doble. La primera
+	# versión estaba al revés y se midió: el río tenía el mismo reparto por
+	# banda que el viento, hasta el último punto porcentual. O sea que en la
+	# mezcla no había río, había más viento — y el río es justamente la voz
+	# que tiene que anclar el valle. Lo que el oído reconoce como agua son los
+	# transitorios, no el siseo, así que el siseo se corre para atrás.
+	var o := _escalar(_ruido_rosa(n, semilla), 0.42)
 	var r := RandomNumberGenerator.new()
 	r.seed = semilla + 7
-	var cuantas := int(seg * 42.0)
+	var cuantas := int(seg * 70.0)
 	for _k in cuantas:
-		var dur := r.randi_range(160, 620)
+		var dur := r.randi_range(140, 560)
 		var pos := r.randi_range(0, n - dur - 1)
-		var f := r.randf_range(360.0, 1600.0)
-		var amp := r.randf_range(0.025, 0.085)
+		var f := r.randf_range(380.0, 2200.0)
+		var amp := r.randf_range(0.06, 0.20)
 		var dec := 4.0 / float(dur)
 		var w := TAU * f / float(HZ)
 		var subida := r.randf_range(0.25, 1.10)
@@ -989,19 +1126,23 @@ static func _fuego(seg: float, semilla: int) -> PackedFloat32Array:
 	o.resize(n)
 	var r := RandomNumberGenerator.new()
 	r.seed = semilla
+	# El filtro estaba clavadísimo: se midió y el 86% de la energía caía debajo
+	# de 250 Hz. Eso no es fuego, es un retumbe — un fuego real es sobre todo
+	# chasquido. Se abre el filtro, se le saca peso al soplo grave y se sube la
+	# cantidad y el nivel de los chasquidos, que son lo que lo hace fuego.
 	var b := 0.0
 	var lp := 0.0
 	for i in n:
-		b = b * 0.994 + r.randf_range(-1.0, 1.0) * 0.035
-		lp += (b - lp) * 0.06
-		o[i] = lp * 3.2
-	var cuantos := int(seg * 26.0)
+		b = b * 0.982 + r.randf_range(-1.0, 1.0) * 0.06
+		lp += (b - lp) * 0.34
+		o[i] = lp * 1.0
+	var cuantos := int(seg * 95.0)
 	for _k in cuantos:
-		var dur := r.randi_range(30, 260)
+		var dur := r.randi_range(20, 170)
 		var pos := r.randi_range(0, n - dur - 1)
-		var amp := r.randf_range(0.03, 0.22)
-		var dec := 5.0 / float(dur)
-		var f := r.randf_range(700.0, 3800.0)
+		var amp := r.randf_range(0.10, 0.62)
+		var dec := 5.5 / float(dur)
+		var f := r.randf_range(900.0, 5200.0)
 		var w := TAU * f / float(HZ)
 		for j in dur:
 			var t := float(j)
@@ -1080,6 +1221,11 @@ static func _crujido(semilla: int) -> PackedFloat32Array:
 #  EL INFORME. Lo único de todo esto que se puede verificar sin oír nada.
 # ─────────────────────────────────────────────────────────────────────────
 
+## Un punto de campo abierto de verdad: adentro del valle y fuera del alcance
+## de los cinco lugares. (Antes estaba en (120,-150), que cae afuera del
+## terreno: se estaba midiendo un lugar que no existe.)
+const PUNTO_CAMPO := Vector3(35, 0, -60)
+
 const HORAS_DE_PRUEBA := [0.05, 0.25, 0.38, 0.50, 0.65, 0.78, 0.90]
 const RUTA := ["aldea", "fragua", "bosque", "ruina", "camino", "aldea"]
 
@@ -1097,6 +1243,11 @@ func _informe_de_prueba() -> void:
 	_probar_el_reloj()
 	_revisar_la_cadena()
 	print("")
+	_medir_las_voces(_bufs)
+	_medir_la_repeticion()
+	_medir_los_niveles()
+	_medir_las_zonas()
+	_medir_el_timbre()
 	print("Ganancias lineales. `fondo` es la suma del lecho sin lugar")
 	print("(viento+pájaros+grillos+hojas+hueco); río, fuego, hogar y yunque")
 	print("tienen lugar en el mundo y la distancia los termina de bajar.")
@@ -1161,6 +1312,336 @@ func _probar_el_reloj() -> void:
 		% [leida, franja(leida), "OK" if absf(leida - 0.40) < 0.005 else "MAL"])
 	ciclo = null
 	c.free()
+
+
+## ── LA MEDICIÓN ──────────────────────────────────────────────────────────
+##
+## Nadie del equipo puede escuchar, así que la única crítica honesta que se
+## puede hacer de este lecho es numérica. Lo que sigue mide lo que se puede
+## medir: cuánto suena cada voz, en qué frecuencias, cada cuánto se repite, y
+## qué nivel llega al oído en cada lugar y a cada hora.
+
+## Las bandas. La de 2 a 5 kHz está separada porque es donde el oído es más
+## sensible y donde se decide si un ambiente cansa: mucha energía ahí, sostenida
+## y sin huecos, es fatiga garantizada por más bajo que esté el volumen.
+## Qué fracción del tiempo suena cada voz. Las continuas valen 1; los golpes
+## valen lo que ocupan de verdad — el yunque son rachas con pausas largas y el
+## crujido del bosque es uno cada quince o veinte segundos.
+const SERVICIO := {"yunque": 0.30, "crujido": 0.03}
+
+const BANDAS := [
+	["grave", 60.0, 250.0], ["cuerpo", 250.0, 800.0], ["medio", 800.0, 2500.0],
+	["FATIGA 2-5k", 2500.0, 5000.0], ["aire", 5000.0, 10000.0],
+]
+
+
+## Las muestras que quedaron de verdad adentro del stream.
+static func _muestras(w: AudioStreamWAV) -> PackedFloat32Array:
+	var d := w.data
+	var n := d.size() / 2
+	var o := PackedFloat32Array()
+	o.resize(n)
+	for i in n:
+		o[i] = float(d.decode_s16(i * 2)) / 32768.0
+	return o
+
+
+## Nivel eficaz dentro de una banda, con un pasabanda biquad (RBJ).
+static func _banda(m: PackedFloat32Array, lo: float, hi: float) -> float:
+	var f0: float = sqrt(lo * hi)
+	var q: float = f0 / maxf(hi - lo, 1.0)
+	var w0 := TAU * f0 / float(HZ)
+	var alfa := sin(w0) / (2.0 * q)
+	var a0 := 1.0 + alfa
+	var b0 := alfa / a0
+	var b2 := -alfa / a0
+	var a1 := -2.0 * cos(w0) / a0
+	var a2 := (1.0 - alfa) / a0
+	var x1 := 0.0
+	var x2 := 0.0
+	var y1 := 0.0
+	var y2 := 0.0
+	var s := 0.0
+	for i in m.size():
+		var x := m[i]
+		var y := b0 * x + b2 * x2 - a1 * y1 - a2 * y2
+		x2 = x1
+		x1 = x
+		y2 = y1
+		y1 = y
+		s += y * y
+	return sqrt(s / float(maxi(m.size(), 1)))
+
+
+static func _dbfs(x: float) -> float:
+	return 20.0 * log(maxf(x, 0.0000001)) / log(10.0)
+
+
+## Ficha técnica de cada bucle: cuánto dura, cuánto suena, cuánto pica y dónde
+## tiene la energía.
+func _medir_las_voces(bufs: Dictionary) -> void:
+	print("── LOS BUCLES, MEDIDOS")
+	print("  cresta = pico/eficaz. Alta = transitorios sueltos (bien: respira).")
+	print("  Baja y pareja = ruido plano y constante, que es lo que cansa.")
+	print("  crudo = lo que sale del generador ANTES de normalizar. Un pico")
+	print("  crudo arriba de 1.00 quiere decir que se estaba recortando contra")
+	print("  el tope, y ruido recortado sostenido es lo que hace que alguien")
+	print("  baje el volumen. Ésa era la falla, y esta columna la vigila.")
+	var cab := "  %-9s %6s %8s %7s %7s %9s %8s   %s"
+	print(cab % ["voz", "largo", "eficaz", "pico", "cresta", "crudo ef.",
+		"crudo pk", "reparto por banda (%)"])
+	var total_s := 0.0
+	for voz: String in bufs:
+		var w: AudioStreamWAV = bufs[voz]
+		var m := _muestras(w)
+		var seg := float(m.size()) / float(HZ)
+		total_s += seg
+		var r := _rms(m)
+		var p := _pico(m)
+		var partes: Array[float] = []
+		var suma := 0.0
+		for b: Array in BANDAS:
+			var e := _banda(m, float(b[1]), float(b[2]))
+			partes.append(e * e)
+			suma += e * e
+		var texto := ""
+		for i in BANDAS.size():
+			var pct := 100.0 * partes[i] / maxf(suma, 0.0000001)
+			texto += "%s %2.0f  " % [(BANDAS[i] as Array)[0], pct]
+		var nat: Dictionary = _nativo.get(voz, {})
+		var npk := float(nat.get("pico", 0.0))
+		print(cab % [voz, "%.1fs" % seg, "%.1f dB" % _dbfs(r), "%.1f dB" % _dbfs(p),
+			"%.1fx" % (p / maxf(r, 0.000001)),
+			"%.1f dB" % _dbfs(float(nat.get("rms", 0.0))),
+			("%.2f ¡!" % npk) if npk > 1.0 else "%.2f" % npk, texto])
+	print("  total generado: %.0f s de audio, %.1f MB en RAM, 0 bytes en disco."
+		% [total_s, total_s * float(HZ) * 2.0 / 1048576.0])
+	print("")
+
+
+## Cada cuánto vuelve a repetirse lo que se oye.
+func _medir_la_repeticion() -> void:
+	print("── CADA CUÁNTO SE REPITE")
+	var periodos: Array[float] = []
+	var detalle := ""
+	for voz: String in _jug:
+		for p: Node in _jug[voz]:
+			var s := p.get("stream") as AudioStreamWAV
+			if s == null or s.loop_mode != AudioStreamWAV.LOOP_FORWARD:
+				continue
+			var t := (float(s.data.size() / 2) / float(HZ)) / float(p.get("pitch_scale"))
+			periodos.append(t)
+			detalle += "%s %.1fs  " % [voz, t]
+	periodos.sort()
+	print("  capas: %s" % detalle)
+	# La capa más corta es la que el oído puede llegar a agarrar sola.
+	print("  la capa más corta vuelve cada %.1f s (antes: 4.0 s en TODAS)"
+		% periodos[0])
+	# Y cada cuánto vuelven a caer juntas dos capas: el mínimo común múltiplo
+	# de sus períodos, no el batido entre sus frecuencias. (La primera versión
+	# medía el batido y daba 15 s, que sonaba alarmante y no quería decir nada:
+	# dos capas de 8 y 17 segundos no se alinean a los 15, se alinean a los
+	# 136. Una métrica mal elegida es peor que ninguna.)
+	var antes := 1000000.0
+	var par := ""
+	for i in periodos.size():
+		for j in range(i + 1, periodos.size()):
+			var l := _mcm(periodos[i], periodos[j])
+			if l < antes:
+				antes = l
+				par = "%.1fs y %.1fs" % [periodos[i], periodos[j]]
+	print("  las dos capas que antes vuelven a caer juntas (%s) tardan %.0f s (%.1f min)"
+		% [par, antes, antes / 60.0])
+	print("")
+
+
+## Mínimo común múltiplo de dos períodos reales, con tolerancia: cada cuánto
+## dos bucles de largo distinto vuelven a arrancar a la vez.
+static func _mcm(a: float, b: float) -> float:
+	var x := maxf(a, b)
+	var y := minf(a, b)
+	# Euclides con reales: el máximo común divisor con 10 ms de tolerancia, que
+	# es más o menos lo que el oído puede llegar a notar como "juntas".
+	var guardia := 0
+	while y > 0.01 and guardia < 200:
+		var t := fmod(x, y)
+		x = y
+		y = t
+		guardia += 1
+	if x < 0.01:
+		return 1000000.0
+	return a * b / x
+
+
+## Cuánto le llega al oído, en dBFS, parado en cada lugar.
+##
+## Suma la potencia de cada voz: las de fondo tal cual, y las que tienen lugar
+## en el mundo atenuadas por distancia con la misma cuenta que hace Godot para
+## ATTENUATION_INVERSE_DISTANCE (unit_size/distancia, cortado en max_distance).
+func _nivel_en(pos: Vector3, f: float) -> float:
+	var g := lecho_en(pos, f)
+	var pot := 0.0
+	for voz: String in _jug:
+		var gan := float(g.get(voz, 0.0))
+		if gan <= 0.0:
+			continue
+		for p: Node in _jug[voz]:
+			if p is AudioStreamPlayer:
+				# Ya compensados entre sí: el conjunto vale una vez la ganancia.
+				pot += pow(RMS_VOZ * gan, 2.0) / float((_jug[voz] as Array).size())
+			else:
+				var e := p as AudioStreamPlayer3D
+				var d := e.global_position.distance_to(pos)
+				if d > e.max_distance:
+					continue
+				var att: float = minf(1.0, e.unit_size / maxf(d, 0.01))
+				pot += pow(RMS_VOZ * gan * att, 2.0)
+	return _dbfs(sqrt(pot) * volumen_general)
+
+
+func _medir_los_niveles() -> void:
+	print("── QUÉ NIVEL LLEGA AL OÍDO (dBFS eficaces, ya con el volumen general)")
+	print("  Referencia: un lecho de ambiente vive entre -30 y -22 dBFS. Arriba")
+	print("  de -18 compite con todo lo demás y cansa; abajo de -38 no está.")
+	var cab := "  %-9s %8s %8s %8s %8s %8s %8s %8s"
+	print(cab % ["lugar", "0.05", "0.25", "0.38", "0.50", "0.65", "0.78", "0.90"])
+	for slug: String in ["aldea", "fragua", "bosque", "ruina", "camino"]:
+		var fila: Array = [slug]
+		for f: float in HORAS_DE_PRUEBA:
+			fila.append("%.1f" % _nivel_en(_tabla[slug]["pos"], f))
+		print(cab % fila)
+	# El campo abierto: un punto lejos de todo.
+	var lejos := PUNTO_CAMPO
+	var fila2: Array = ["campo"]
+	for f: float in HORAS_DE_PRUEBA:
+		fila2.append("%.1f" % _nivel_en(lejos, f))
+	print(cab % fila2)
+	print("")
+
+
+## ¿Suena distinto cada lugar, de verdad?
+##
+## Ésta es la pregunta que importa y hasta ahora no la contestaba nadie con un
+## número. Compara el reparto de energía entre voces de dos lugares: 0% es
+## "idénticos", 100% es "no comparten nada". Si esto da chico, el lecho es el
+## mismo en todos lados por más que la tabla tenga cinco filas.
+func _diferencia(a: String, b: String, f: float) -> float:
+	var pa := _reparto(_tabla[a]["pos"] if _tabla.has(a) else PUNTO_CAMPO, f)
+	var pb := _reparto(_tabla[b]["pos"] if _tabla.has(b) else PUNTO_CAMPO, f)
+	var d := 0.0
+	for v: String in pa:
+		d += absf(float(pa[v]) - float(pb.get(v, 0.0)))
+	return d * 50.0
+
+
+## Qué fracción del sonido que llega al oído aporta cada voz, parado en un
+## punto. Incluye las voces que tienen lugar en el mundo con su atenuación por
+## distancia: el río y la fragua son la mitad de la identidad de sus lugares y
+## dejarlas afuera de la cuenta era medir otra cosa.
+func _reparto(pos: Vector3, f: float) -> Dictionary:
+	var g := lecho_en(pos, f)
+	var pot := {}
+	var tot := 0.0
+	for voz: String in _jug:
+		var gan := float(g.get(voz, 0.0))
+		var e := 0.0
+		for p: Node in _jug[voz]:
+			if p is AudioStreamPlayer:
+				e += pow(RMS_VOZ * gan, 2.0) / float((_jug[voz] as Array).size())
+			else:
+				var w := p as AudioStreamPlayer3D
+				var dd := w.global_position.distance_to(pos)
+				if dd <= w.max_distance:
+					e += pow(RMS_VOZ * gan * minf(1.0, w.unit_size / maxf(dd, 0.01)), 2.0)
+		# El yunque y el crujido no suenan todo el tiempo: son golpes sueltos.
+		# Contarlos como si fueran continuos inflaba su parte de la mezcla.
+		pot[voz] = e * float(SERVICIO.get(voz, 1.0))
+		tot += e
+	for voz: String in pot:
+		pot[voz] = float(pot[voz]) / maxf(tot, 0.0000001)
+	return pot
+
+
+func _medir_las_zonas() -> void:
+	print("── ¿SUENA DISTINTO CADA LUGAR? (0% = idénticos, 100% = nada en común)")
+	print("  Compara el REPARTO entre voces, no el volumen: dos lugares con el")
+	print("  mismo reparto suenan igual aunque uno esté más fuerte.")
+	var lugares := ["aldea", "fragua", "bosque", "ruina", "camino", "campo"]
+	var cab := "  %-9s %8s %8s %8s %8s %8s %8s"
+	print(cab % ([""] + lugares))
+	for a: String in lugares:
+		var fila: Array = [a]
+		for b: String in lugares:
+			fila.append("—" if a == b else "%.0f%%" % _diferencia(a, b, 0.50))
+		print(cab % fila)
+	print("  (al mediodía; las dos voces que más pesan en cada lugar:)")
+	for a: String in lugares:
+		var rep := _reparto(_tabla[a]["pos"] if _tabla.has(a) else PUNTO_CAMPO, 0.50)
+		var claves := rep.keys()
+		claves.sort_custom(func(x, y): return float(rep[x]) > float(rep[y]))
+		print("    %-9s %-8s %2.0f%%   %-8s %2.0f%%"
+			% [a, claves[0], 100.0 * float(rep[claves[0]]),
+				claves[1], 100.0 * float(rep[claves[1]])])
+	print("")
+
+
+## ¿El viento suena DISTINTO en cada lugar, o sólo más fuerte?
+##
+## Es la única afirmación del diseño que no estaba respaldada por ningún
+## número. El viento sale del mismo bucle en todos lados —lo que lo cambia es
+## el filtro de su bus, que se abre o se cierra según lo abierto que esté el
+## lugar—, así que medir el bucle crudo no dice nada: hay que medirlo DESPUÉS
+## del filtro, que es lo que llega al oído. Bajo las copas del Sotobosque el
+## corte queda en 320 Hz y en el Camino del Norte en 2300: si eso no mueve el
+## reparto por banda, el `brillo` es decorativo y hay que sacarlo.
+func _medir_el_timbre() -> void:
+	print("── ¿EL VIENTO SUENA DISTINTO EN CADA LUGAR? (mismo bucle, otro filtro)")
+	var m: PackedFloat32Array = _muestras(_bufs["viento"])
+	var cab := "  %-9s %8s   %s"
+	print(cab % ["lugar", "corte", "reparto por banda (%)"])
+	for slug: String in ["bosque", "aldea", "fragua", "ruina", "campo", "camino"]:
+		var brillo := float((LECHOS[slug] as Dictionary)["brillo"])
+		var hz := lerpf(240.0, 2600.0, clampf(brillo, 0.0, 1.0))
+		var fil := _pasabajos_off(m, hz)
+		var partes: Array[float] = []
+		var suma := 0.0
+		for b: Array in BANDAS:
+			var e := _banda(fil, float(b[1]), float(b[2]))
+			partes.append(e * e)
+			suma += e * e
+		var texto := ""
+		for i in BANDAS.size():
+			texto += "%s %2.0f  " % [(BANDAS[i] as Array)[0], 100.0 * partes[i] / maxf(suma, 1e-7)]
+		print(cab % [slug, "%.0f Hz" % hz, texto])
+	print("")
+
+
+## Pasabajos de dos polos, para medir fuera del motor lo que el bus le hace al
+## viento. Mismos 12 dB por octava que `AudioEffectLowPassFilter`.
+static func _pasabajos_off(m: PackedFloat32Array, hz: float) -> PackedFloat32Array:
+	var w0 := TAU * hz / float(HZ)
+	var alfa := sin(w0) / (2.0 * 0.707)
+	var cw := cos(w0)
+	var a0 := 1.0 + alfa
+	var b0 := (1.0 - cw) / 2.0 / a0
+	var b1 := (1.0 - cw) / a0
+	var a1 := -2.0 * cw / a0
+	var a2 := (1.0 - alfa) / a0
+	var o := PackedFloat32Array()
+	o.resize(m.size())
+	var x1 := 0.0
+	var x2 := 0.0
+	var y1 := 0.0
+	var y2 := 0.0
+	for i in m.size():
+		var x := m[i]
+		var y := b0 * x + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2
+		x2 = x1
+		x1 = x
+		y2 = y1
+		y1 = y
+		o[i] = y
+	return o
 
 
 ## Cuántos bucles distintos están SONANDO. No es lo mismo que la cantidad de

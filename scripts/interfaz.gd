@@ -26,6 +26,7 @@ var _bolsa: RichTextLabel
 var _pasos: RichTextLabel
 var _saludo: RichTextLabel
 var _flash: ColorRect
+var _volumen := 0.45
 var _tw_flash: Tween
 var _fundido: Tween
 var _ya_saludamos := false
@@ -77,13 +78,14 @@ func _ready() -> void:
 	ayuda.offset_top = -Y_AYUDA
 	ayuda.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ayuda.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	ayuda.text = "WASD caminar · shift correr · E hablar · M mapa · F1 calidad · F2 captura"
+	ayuda.text = "WASD caminar · shift correr · E hablar · M mapa · F1 calidad · +/− volumen"
 	ayuda.add_theme_font_size_override("font_size", 12)
 	ayuda.add_theme_color_override("font_color", Color(0.45, 0.50, 0.48))
 	add_child(ayuda)
 
 	_armar_vida()
 	_armar_caja()
+	_cargar_volumen()
 
 
 var _vida_barra: ColorRect
@@ -489,7 +491,7 @@ func dar_bienvenida(region: Dictionary, cronica: String, pasos: Array) -> void:
 		for p in pasos:
 			partes.append("· %s" % (p as Dictionary).get("texto", ""))
 	partes.append("")
-	partes.append("[color=#7d867f]WASD caminar · shift correr · E hablar · clic pegar · M mapa · F1 calidad · F2 captura[/color]")
+	partes.append("[color=#7d867f]WASD caminar · shift correr · E hablar · clic pegar · M mapa · F1 calidad · +/− volumen[/color]")
 	t.text = "\n".join(partes)
 	col.add_child(t)
 
@@ -594,3 +596,47 @@ func abrir_charla(quien: String, adelanto: String, animo: String) -> void:
 	if _decir != null:
 		_decir.editable = false
 	_caja.visible = true
+
+
+## El volumen, con las flechas de más y menos del teclado.
+##
+## Hace falta porque el ambiente es lo único que suena y todavía no lo escuchó
+## casi nadie: hasta que alguien con orejas diga que está bien, el jugador
+## tiene que poder bajarlo sin salir del juego. Se guarda igual que el nivel de
+## calidad — que te obliguen a ajustarlo cada vez que entrás es peor que no
+## tenerlo.
+const _CONF_VOL := "user://volumen.json"
+
+func _cargar_volumen() -> void:
+	var v := 0.45
+	if FileAccess.file_exists(_CONF_VOL):
+		var t: Variant = JSON.parse_string(FileAccess.open(_CONF_VOL, FileAccess.READ).get_as_text())
+		if t is Dictionary and (t as Dictionary).has("volumen"):
+			v = clampf(float((t as Dictionary)["volumen"]), 0.0, 1.0)
+	_volumen = v
+	_aplicar_volumen(false)
+
+
+func _aplicar_volumen(avisar_en_pantalla := true) -> void:
+	var s := get_tree().get_first_node_in_group("sonido")
+	if s != null:
+		s.set("volumen_general", _volumen)
+	if avisar_en_pantalla:
+		avisar("Volumen %d%%" % roundi(_volumen * 100.0))
+	var f := FileAccess.open(_CONF_VOL, FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify({"volumen": _volumen}))
+
+
+func _unhandled_input(evento: InputEvent) -> void:
+	if not (evento is InputEventKey and evento.pressed) or escribiendo():
+		return
+	var k := (evento as InputEventKey).keycode
+	if k == KEY_EQUAL or k == KEY_KP_ADD:
+		_volumen = minf(1.0, _volumen + 0.1)
+	elif k == KEY_MINUS or k == KEY_KP_SUBTRACT:
+		_volumen = maxf(0.0, _volumen - 0.1)
+	else:
+		return
+	_aplicar_volumen()
+	get_viewport().set_input_as_handled()
