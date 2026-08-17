@@ -44,11 +44,15 @@ func _ready() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20260817
 
+	if OS.get_cmdline_user_args().has("--interior"):
+		_interiores(rng)
+		return
+
 	# Kenney, tres casas: piedra, madera y quemada. Es la variedad que el valle
 	# tiene hoy.
-	Detalles.casa(self, Vector3(-13.0, 0, 0), 0.0, rng, true, false)
-	Detalles.casa(self, Vector3(-8.0, 0, -4.0), 0.6, rng, false, false)
-	Detalles.casa(self, Vector3(-17.0, 0, -4.5), -0.4, rng, true, true)
+	Detalles.casa(self, {"pos": Vector3(-13.0, 0, 0), "giro": 0.0}, rng, true, false)
+	Detalles.casa(self, {"pos": Vector3(-8.0, 0, -4.0), "giro": 0.6}, rng, false, false)
+	Detalles.casa(self, {"pos": Vector3(-17.0, 0, -4.5), "giro": -0.4}, rng, true, true)
 	_cartel("KENNEY · hoy", Vector3(-13.0, 4.6, 0))
 
 	# Quaternius, las mismas tres.
@@ -58,6 +62,88 @@ func _ready() -> void:
 
 	_encuadrar()
 	_captura()
+
+
+# ===========================================================================
+# EL BANCO DE PRUEBA DE LOS INTERIORES  (`-- --interior`)
+#
+# Existe por una sola razón, y es la que el encargo puso primero: **un interior
+# que no entra en su exterior es peor que no tenerlo.** Acá están las tres casas
+# con el cuarto puesto, el recorte forzado, y —lo que no se puede discutir sin
+# tenerlo delante— **una vara de 1,85 m parada en la puerta**, que es cuánto
+# mide el jugador. Si la vara no pasa por el hueco, no hay interior.
+#
+# Con `--umbral` se les pone medio metro de zócalo y de escalón, para ver la
+# casa en pendiente sin tener que ir a buscar la ladera correcta del valle.
+# ===========================================================================
+
+const OFICIOS_MUESTRA := ["herrera", "destiladora", "guardia"]
+
+
+func _interiores(rng: RandomNumberGenerator) -> void:
+	var inclinada := OS.get_cmdline_user_args().has("--umbral")
+	var zocalo := 0.55 if inclinada else 0.0
+	var umbral := 0.62 if inclinada else 0.0
+	# El suelo del banco es un plano, así que hay que bajarlo: la casa apoya en
+	# lo más alto de su planta y lo que se quiere ver es justamente lo que queda
+	# entre el piso y la calle. Sin esto el zócalo y los escalones quedan
+	# enteros DEBAJO del plano y la captura no muestra nada — que es lo que pasó
+	# la primera vez y por poco se da por bueno.
+	var suelo := get_child(get_child_count() - 1) as MeshInstance3D
+	if inclinada and suelo != null:
+		suelo.position.y = -umbral
+
+	var casas := Interiores.new()
+	add_child(casas)
+
+	var x := -14.0
+	for i in 3:
+		var sitio := {
+			"pos": Vector3(x, 0, 0), "giro": 0.0,
+			"zocalo": zocalo, "umbral": umbral, "puerta": i % 2,
+		}
+		var quemada := i == 2
+		var casa := Detalles.casa(self, sitio, rng, i == 0, quemada)
+		var clave := "prueba/%d" % i
+		casas.amueblar(clave, casa, quemada, rng)
+		casas.habitar(clave, "Alguien", OFICIOS_MUESTRA[i])
+		_vara(Vector3(x + (1.35 if i % 2 == 1 else -1.35), 0, 4.2))
+		_cartel(OFICIOS_MUESTRA[i] if not quemada else "quemada",
+			Vector3(x, 7.4, 0))
+		x += 14.0
+
+	# El recorte, forzado en las tres: la cámara mira desde +Z, así que se
+	# apagan el techo, la planta alta y los muros del frente. En el valle se
+	# abre una sola —ver `Interiores.abrir_todas()`—; acá se abren todas porque
+	# de eso se trata la captura. Con `--cerradas` se ven como las ve el que
+	# pasa por la calle, que es la otra mitad de lo que hay que revisar.
+	if not OS.get_cmdline_user_args().has("--cerradas"):
+		casas.abrir_todas(Vector3(0, 14, 34))
+
+	var cam := get_node_or_null(^"Camara") as Camera3D
+	if cam != null:
+		cam.position = Vector3(0.0, 11.0, 27.0)
+		cam.look_at(Vector3(0.0, 1.4, 0.0))
+	var sol := get_node_or_null(^"Sol") as DirectionalLight3D
+	if sol != null:
+		sol.position = Vector3(34, 26, 30)
+		sol.look_at(Vector3(-8, 0, -10))
+		sol.light_color = Paleta.LUZ_ALBA
+	_captura()
+
+
+## Una vara de la altura del jugador, para que la escala se discuta mirando.
+func _vara(pos: Vector3) -> void:
+	var c := CapsuleMesh.new()
+	c.radius = 0.45
+	c.height = 1.85
+	c.radial_segments = 10
+	c.rings = 4
+	c.material = Paleta.tela(Paleta.JADE)
+	var mi := MeshInstance3D.new()
+	mi.mesh = c
+	mi.position = pos + Vector3(0, 0.93, 0)
+	add_child(mi)
 
 
 ## Una casa con los módulos de Quaternius.

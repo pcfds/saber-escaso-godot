@@ -82,6 +82,25 @@ var _golpe := 0.0
 var _arma: MeshInstance3D
 var _juntando := false
 var _agache := 0.0
+## El amago: 0 cuerpo normal, 1 cuerpo encabritado. Sube en `AMAGO_ALZA` y baja
+## en `AMAGO_SUELTA`, o sea que no es un `lerp` con rapidez: es una rampa con
+## los cuadros de `impacto.gd`. Ver `amagar()`.
+var _amago := 0.0
+var _amago_on := false
+## Lo maltrecho que está, 0 entero y 1 en las últimas. Ver `maltratar()`.
+var _maltrecho := 0.0
+## El gesto social en curso y cuánto lleva, en segundos. Ver el bloque «Los
+## gestos» más abajo.
+var _gesto := Gesto.NINGUNO
+var _gesto_reloj := 0.0
+## La conversación, que no es un gesto de una vez sino un estado: mientras dura,
+## el cuerpo está orientado al otro. `_charla_yaw` es el ángulo LOCAL hacia él.
+var _charlando := false
+var _charla_yaw := 0.0
+var _charla_suave := 0.0
+## ¿Alguien llamó a `animar()` en este cuadro? De eso depende quién aplica la
+## pose del gesto. Ver `_process()`.
+var _animado := false
 ## Segundos que le quedan al respingo de dolor, normalizado 1→0 sobre
 ## `DOLOR_DURA`. Ver `doler()`.
 var _dolor := 0.0
@@ -89,6 +108,10 @@ var _dolor := 0.0
 ## juntan una sola vez (recursivo) y se invalidan al reconstruir o al equipar.
 var _mallas: Array[MeshInstance3D] = []
 var _destello: StandardMaterial3D
+## ¿Hay overlay puesto ahora mismo? Antes esto se deducía de `_raiz.scale != ONE`,
+## que dejó de valer cuando el amago pasó a escribir la escala también: un bicho
+## encabritado tiene la escala distinta de 1 sin que nadie le haya pegado.
+var _destello_puesto := false
 var _vivo := true
 var _reloj := 0.0          ## tiempo propio, para respirar y mirar alrededor
 var _espera_parpadeo := 3.0
@@ -535,8 +558,37 @@ func _process(dt: float) -> void:
 		# que no se le note el ciclo — el mismo truco que `parpadeo.gd` usa con
 		# el fuego. Toca sólo el eje Y: el X es de `animar()`, y si los dos
 		# escriben lo mismo se pelean cuadro por medio.
+		#
+		# **Salvo si está conversando**, y ahí lo escribe `_pose_de_charla()`:
+		# alguien que te está hablando y mientras tanto mira alrededor con su
+		# ciclo de siempre no está conversando, está esperando el colectivo.
+	# Fuera del `if quieto`: este eje necesita que alguien lo asiente TODOS los
+	# cuadros, camine o no, porque los gestos le suman encima. Con `quieto` en
+	# cero la línea escribe cero, que es la base correcta.
+	if _charla_suave <= 0.01:
 		_cabeza.rotation.y = (sin(_reloj * 0.31 + _fase_mira) * 0.30
 			+ sin(_reloj * 0.13 + _fase_mira * 2.0) * 0.16) * quieto
+
+	# ── Los gestos, para los que nadie anima ────────────────────────────────
+	#
+	# `animar()` corre en el proceso de FÍSICA de quien tenga cuerpo —el jugador
+	# y los bichos— y esto corre en el de dibujo. El que se anima ya aplicó su
+	# gesto allá, encima de la pose de la caminata; el que no —los NPC del
+	# valle, que son justamente los que reciben regalos y conversan— lo aplica
+	# acá, que es el único lugar donde se mueve.
+	if _animado:
+		_animado = false
+	else:
+		# **Y acá hay que reponer la pose neutra a mano.** Los gestos suman con
+		# `+=` contando con que alguien puso la base ese cuadro, que es lo que
+		# hace `animar()` con `_inclinacion`. Sin este reset lo que suman se
+		# acumula cuadro a cuadro y en dos segundos el NPC está doblado en dos:
+		# es el mismo bug de la inclinación realimentada, en el otro extremo.
+		_torso.rotation = Vector3.ZERO
+		_cabeza.rotation.x = 0.0
+		_brazo_i.rotation = Vector3.ZERO
+		_brazo_d.rotation = Vector3.ZERO
+		_gestos(dt)
 
 	if _ojo_i == null:
 		return
@@ -558,9 +610,15 @@ func _process(dt: float) -> void:
 
 
 ## Se llama cada cuadro con la velocidad horizontal real del personaje.
+##
+## **Ojo: a los NPC del valle nadie les llama esto.** Están parados en su lugar
+## y sólo corre su `_process()`. Por eso todo lo que tenga que verse en un NPC
+## —respirar, parpadear, y ahora los gestos— tiene que poder aplicarse desde los
+## dos lados. Ver `_gestos()`.
 func animar(dt: float, velocidad: float, en_piso: bool) -> void:
 	if _torso == null:
 		return
+	_animado = true
 
 	var v := clampf(velocidad / 7.5, 0.0, 1.4)
 	_intensidad = lerp(_intensidad, v, 9.0 * dt)          # (4) arranque y freno suaves
@@ -579,6 +637,15 @@ func animar(dt: float, velocidad: float, en_piso: bool) -> void:
 	# (2) un rebote por pisada, no por ciclo
 	_torso.position.y = _alto * 0.52 + abs(s2) * 0.055 * _intensidad
 	_torso.rotation.z = s * 0.05 * _intensidad
+	# **La base del giro del torso, que faltaba.** Todos los ejes que reciben un
+	# `+=` más abajo tienen que quedar asentados en algo cada cuadro; el `.x` sale
+	# de `_inclinacion` y el `.z` de la línea de arriba, pero el `.y` no lo ponía
+	# nadie: sólo lo ASIGNABA el swing, y el resto del tiempo quedaba flotando con
+	# el último valor. Medido con el gesto de enseñar puesto, que le suma 15°
+	# nominales: a los 6 cuadros el torso estaba a **55°**, porque los 15 se
+	# sumaban a los 15 del cuadro anterior. Es, otra vez, el bug de la
+	# inclinación realimentada.
+	_torso.rotation.y = 0.0
 
 	# (3) inclinación proporcional a la velocidad.
 	#
@@ -616,21 +683,68 @@ func animar(dt: float, velocidad: float, en_piso: bool) -> void:
 		_pierna_i.rotation.x = lerp(_pierna_i.rotation.x, -0.45, _agache)
 		_pierna_d.rotation.x = lerp(_pierna_d.rotation.x, -0.25, _agache)
 
+	# El orden de acá abajo no es casual y tiene DOS reglas, no una.
+	#
+	# **1. De lo más permanente a lo más instantáneo**, para todo lo que se suma
+	# con `+=`: lo maltrecho dura minutos, el swing un tercio de segundo y el
+	# respingo un sexto. Así, un bicho en las últimas que pega sigue estando
+	# encorvado mientras pega.
+	#
+	# **2. El amago va DESPUÉS del swing, y ahí la regla se invierte a propósito.**
+	# Los dos ASIGNAN `_brazo_*.rotation.x` en vez de sumarle, y los dos se
+	# solapan durante los 4 cuadros en que el amago se deshace. Medido con el
+	# orden al revés: en el cuadro del compromiso el brazo saltaba de -135° a
+	# +17°, **152 grados en un cuadro**, justo en el cuadro que tiene que leerse
+	# como el arranque del golpe. Poniendo el amago último, lo que hace es
+	# interpolar `lerp(lo que dejó el swing, la pose del amago, a)` con `a`
+	# bajando de 1 a 0: el brazo sale de la pose abierta y entra al swing sin
+	# saltar un solo cuadro.
+	# Los gestos sociales van antes que todo lo del golpe: si te están pegando
+	# mientras regalás algo, gana el golpe, y está bien que gane.
+	_gestos(dt)
+
+	if _maltrecho > 0.01:
+		_pose_de_maltrecho(_maltrecho)
+
 	if _golpe > 0.0:
 		_golpe = maxf(0.0, _golpe - dt)
 		_pose_de_golpe(Impacto.SWING_TOTAL - _golpe)
-		if _golpe <= 0.0:
-			# La curva llega a cero sola, pero dejarla clavada en cero exacto
-			# evita que un resto de 0,001 rad se quede peleando con `_process`.
-			_torso.rotation.y = 0.0
+		# Antes acá había un `_torso.rotation.y = 0.0` al terminar el swing. Ya no
+		# hace falta: la base del eje se pone arriba, todos los cuadros.
 
+	_correr_amago(dt)
+	if _amago > 0.001:
+		_pose_de_amago(_amago)
+
+	# **`_raiz.position.x` y `_raiz.scale` los escriben DOS efectos cada uno** —el
+	# respingo del dolor, el tambaleo del herido, el estirón del amago— así que se
+	# acumulan en variables locales y se aplican UNA vez. Dos líneas escribiendo
+	# la misma propiedad es el bug que ya costó caro dos veces en este proyecto
+	# (la inclinación del torso acá arriba, el desenfoque entre `ambiente.gd` y
+	# `rendimiento.gd`): gana el que corre último y lo que se ve no es lo que dice
+	# el código.
+	#
+	# Y que el amago estire y el impacto aplaste no es coincidencia: es
+	# **estirar y aplastar**, el principio más viejo que hay. El cuerpo se estira
+	# al cargar y se achata al recibir, y cuando las dos cosas se pisan —te
+	# pegaron en mitad del amago— se multiplican, que es exactamente lo que
+	# corresponde.
+	var desvio := 0.0
+	var forma := Vector3.ONE
+	if _amago > 0.001:
+		forma = Vector3(1.0 - 0.035 * _amago, 1.0 + 0.11 * _amago, 1.0 - 0.035 * _amago)
 	if _dolor > 0.0:
 		_dolor = maxf(0.0, _dolor - dt / DOLOR_DURA)
-		_pose_de_dolor(_dolor)
-	elif _raiz.position.x != 0.0 or _raiz.scale != Vector3.ONE:
-		_raiz.position.x = 0.0
-		_raiz.scale = Vector3.ONE
+		desvio = _pose_de_dolor(_dolor)
+		forma *= _aplaste(_dolor)
+	elif _destello_puesto:
 		_apagar_destello()
+	if _maltrecho > 0.01:
+		desvio += _tambaleo(_maltrecho)
+	if _raiz.position.x != desvio:
+		_raiz.position.x = desvio
+	if _raiz.scale != forma:
+		_raiz.scale = forma
 
 
 ## El swing, cuadro por cuadro. `e` son los segundos transcurridos desde que
@@ -693,7 +807,11 @@ func _pose_de_golpe(e: float) -> void:
 ## los 13 cm de sacudida lateral que tenía antes son cuatro píxeles moviéndose
 ## medio pestañeo, o sea nada. Lo que sí se ve desde ahí es que la silueta
 ## cambie de forma.
-func _pose_de_dolor(d: float) -> void:
+##
+## **Devuelve el desvío lateral en vez de escribirlo.** Ver el comentario de
+## `animar()`: el tambaleo del herido escribe en el mismo `_raiz.position.x`, y
+## dos escritores de una propiedad es un bug esperando.
+func _pose_de_dolor(d: float) -> float:
 	# Sacudida lateral: 19 cm y DOS vueltas enteras en los 10 cuadros.
 	#
 	# La fase se saca de lo TRANSCURRIDO (`1 - d`) y no de `d * 62`, que es como
@@ -702,15 +820,22 @@ func _pose_de_dolor(d: float) -> void:
 	# los cuadros y **no oscilaba**: medido, la sacudida salía de -11,6 cm y
 	# volvía a cero sin cruzar el cero ni una vez. Era un desplazamiento, no un
 	# temblor. `TAU * 2` deja las dos vueltas escritas y a prueba de aliasing.
-	_raiz.position.x = sin((1.0 - d) * TAU * 2.0) * d * 0.19
+	var desvio := sin((1.0 - d) * TAU * 2.0) * d * 0.19
 	# El tronco se dobla 46° hacia atrás. Es EL cambio de silueta del respingo.
 	_torso.rotation.x -= d * 0.80
-	# Y el cuerpo entero se aplasta y se ensancha. `d*d` hace que el aplaste se
-	# vaya antes que la sacudida: primero el impacto deforma, después el cuerpo
-	# se sigue tambaleando ya recuperada la forma.
-	var ap := d * d
-	_raiz.scale = Vector3(1.0 + ap * 0.16, 1.0 - ap * 0.17, 1.0 + ap * 0.16)
 	_fundir_destello(d)
+	return desvio
+
+
+## El cuerpo entero se aplasta y se ensancha. `d*d` hace que el aplaste se vaya
+## antes que la sacudida: primero el impacto deforma, después el cuerpo se sigue
+## tambaleando ya recuperada la forma.
+##
+## Está aparte de `_pose_de_dolor()` porque `_raiz.scale` tiene otro escritor —el
+## estirón del amago— y se componen multiplicando. Ver `animar()`.
+func _aplaste(d: float) -> Vector3:
+	var ap := d * d
+	return Vector3(1.0 + ap * 0.16, 1.0 - ap * 0.17, 1.0 + ap * 0.16)
 
 
 # ── El destello del impacto: 4 cuadros ──────────────────────────────────────
@@ -746,12 +871,14 @@ func _fundir_destello(d: float) -> void:
 	for m in _mallas:
 		if is_instance_valid(m) and m.material_overlay != _destello:
 			m.material_overlay = _destello
+	_destello_puesto = true
 
 
 func _apagar_destello() -> void:
 	for m in _mallas:
 		if is_instance_valid(m) and m.material_overlay != null:
 			m.material_overlay = null
+	_destello_puesto = false
 
 
 func _juntar_mallas(n: Node) -> void:
@@ -761,11 +888,417 @@ func _juntar_mallas(n: Node) -> void:
 		_juntar_mallas(h)
 
 
+# ---------------------------------------------------------------------------
+# Los gestos: el cuerpo participa de las cosas sociales
+# ---------------------------------------------------------------------------
+#
+# *"si le doy algo que haya gestos, detalles, movimientos, falta todo"*. Hasta
+# acá el cuerpo sabía caminar, pegar, dolerse, agacharse y sostener algo — o
+# sea, todo lo que se hace SOLO. Las cosas que se hacen con otro, que son la
+# mitad de este juego, no movían un músculo: regalar era un botón y un renglón
+# de texto.
+#
+# ## La tabla de cuadros
+#
+# La tabla del GOLPE está en `impacto.gd` y no se toca. Ésta es la de los
+# gestos, y vive acá porque `impacto.gd` es sobre choques y esto no lo es.
+#
+# | gesto      | cuadros | reparto                                          |
+# |------------|---------|--------------------------------------------------|
+# | dar        |   44    | 8 recoger · 10 extender · 16 SOSTENER · 10 volver |
+# | recibir    |   30    | 6 sobresalto · 8 recoger contra el pecho · 16 volver |
+# | enseñar    |   54    | tres ciclos de 18: mostrar, bajar, mostrar        |
+# | conversar  |  sostenido, mientras el servidor diga que hay charla |
+#
+# **Los 16 cuadros de sostén de `dar` son el gesto.** Un brazo que se estira y
+# vuelve en el mismo movimiento se lee como un tic; uno que se estira y SE
+# QUEDA ahí un cuarto de segundo se lee como una oferta esperando respuesta. Es
+# la misma razón por la que el amago del bicho tiene 14 cuadros quieto.
+#
+# ## Qué se mueve, y por qué no es el brazo
+#
+# Vale la misma aritmética que arrastró al amago a rehacerse: **en este cuerpo
+# el brazo mide 43 cm y no puede asomar por encima de la cabeza**, así que un
+# gesto de brazo no cambia la silueta y a 40 m no existe. Lo que sí cambia la
+# silueta es el TRONCO:
+#
+#   · dar      → el cuerpo se inclina 23° HACIA EL OTRO. Dos cuerpos, uno
+#                inclinado hacia el otro, es la imagen de dar. El brazo
+#                extendido es el detalle de cerca, no la lectura de lejos.
+#   · recibir  → primero se echa atrás (sobresalto) y después se inclina
+#                adelante (agradecer). Es un balanceo entero, no una mano.
+#   · enseñar  → el tronco gira hacia el aprendiz y vuelve, tres veces. El
+#                brazo abierto ensancha, que es el otro eje que sí se lee.
+#   · conversar→ **orientarse.** Es el más barato y el más fuerte de los
+#                cuatro: dos figuras mirándose se leen como dos personas
+#                hablando, y dos figuras mirando al mismo lado se leen como dos
+#                maniquíes en el mismo metro cuadrado. Eso es literalmente el
+#                reclamo, y se arregla con un ángulo.
+#
+# ## Lo que este bloque NO hace
+#
+# **No inventa un regalo ni una enseñanza.** Igual que el golpe: acá sólo está
+# cómo se dobla un cuerpo. Que haya habido un regalo lo dice el servidor —los
+# eventos `regalo`, `ensenanza` y `conversacion` ya existen— y quien los
+# escucha es `valle.gd`. Si nadie llama a estas funciones, no pasa nada, que es
+# exactamente lo que tiene que pasar cuando el mundo no dijo que pasó.
+
+enum Gesto { NINGUNO, DAR, RECIBIR, ENSENAR }
+
+const GESTO_DAR := 44.0 / 60.0
+const GESTO_DAR_RECOGE := 8.0 / 60.0
+const GESTO_DAR_EXTIENDE := 18.0 / 60.0   ## fin de la extensión (8 + 10)
+const GESTO_DAR_SOSTIENE := 34.0 / 60.0   ## fin del sostén (18 + 16)
+
+const GESTO_RECIBIR := 30.0 / 60.0
+const GESTO_RECIBIR_SUSTO := 6.0 / 60.0
+const GESTO_RECIBIR_RECOGE := 14.0 / 60.0
+
+const GESTO_ENSENAR := 54.0 / 60.0
+const GESTO_ENSENAR_CICLO := 18.0 / 60.0
+
+
+## Ofrecer algo. Un solo tiro de 44 cuadros. Lo dispara el evento `regalo` del
+## servidor, del lado del que da.
+func dar() -> void:
+	_gesto = Gesto.DAR
+	_gesto_reloj = 0.0
+
+
+## Acusar que te dieron algo. 30 cuadros. Lo dispara el mismo evento `regalo`,
+## del lado del que recibe. **Sin esto un regalo es una transacción**: uno
+## estira el brazo y el otro no se entera.
+func recibir_regalo() -> void:
+	_gesto = Gesto.RECIBIR
+	_gesto_reloj = 0.0
+
+
+## Mostrar cómo se hace. 54 cuadros, tres veces. Lo dispara `ensenanza`, del
+## lado del que enseña — que es la operación central del juego y hasta ahora no
+## se veía nada.
+func ensenar() -> void:
+	_gesto = Gesto.ENSENAR
+	_gesto_reloj = 0.0
+
+
+## Estar conversando. `yaw_local` es el ángulo hacia el otro **en el espacio de
+## esta figura**: `atan2(d.x, d.z)` menos la rotación que ya tenga el cuerpo.
+## Se pasa cada vez que se llama; con 0.0 el cuerpo no se orienta y sólo hace el
+## movimiento de estar hablando.
+func conversar(prendido: bool, yaw_local := 0.0) -> void:
+	_charlando = prendido
+	if prendido:
+		_charla_yaw = clampf(yaw_local, -1.2, 1.2)
+
+
+## Avanza los relojes y aplica la pose. Se llama desde `animar()` y, para los
+## que no tienen quien se los anime —los NPC del valle, que son justamente los
+## que conversan y reciben regalos—, desde `_process()`.
+func _gestos(dt: float) -> void:
+	# La charla primero: es el estado, y el gesto de una vez se suma encima.
+	_charla_suave = lerp(_charla_suave, 1.0 if _charlando else 0.0, 5.0 * dt)
+	if _charla_suave > 0.01:
+		_pose_de_charla(_charla_suave)
+
+	if _gesto == Gesto.NINGUNO:
+		return
+	_gesto_reloj += dt
+	match _gesto:
+		Gesto.DAR:
+			if _gesto_reloj >= GESTO_DAR:
+				_soltar_gesto()
+			else:
+				_pose_de_dar(_gesto_reloj)
+		Gesto.RECIBIR:
+			if _gesto_reloj >= GESTO_RECIBIR:
+				_soltar_gesto()
+			else:
+				_pose_de_recibir(_gesto_reloj)
+		Gesto.ENSENAR:
+			if _gesto_reloj >= GESTO_ENSENAR:
+				_soltar_gesto()
+			else:
+				_pose_de_ensenar(_gesto_reloj)
+
+
+## El gesto terminó. **Los ejes `z` de los brazos hay que apagarlos a mano**: no
+## los asienta nadie más, así que el último valor escrito se queda puesto para
+## siempre. Los `x` no hacen falta —los repone `animar()` o el reset de
+## `_process()`— pero se apagan igual, que es más barato que acordarse de cuál
+## era cuál.
+func _soltar_gesto() -> void:
+	_gesto = Gesto.NINGUNO
+	_gesto_reloj = 0.0
+	_brazo_i.rotation.z = 0.0
+	_brazo_d.rotation.z = 0.0
+
+
+## Ofrecer. `e` son los segundos desde que empezó.
+func _pose_de_dar(e: float) -> void:
+	var inclina := 0.0    # cuánto se dobla el tronco hacia el otro
+	var brazo := 0.0      # 0 colgando, 1 extendido al frente
+	if e < GESTO_DAR_RECOGE:
+		# Recoger: el cuerpo se echa un poco atrás y junta el brazo. Es el mismo
+		# anticipo del golpe y por el mismo motivo — sin él, el brazo aparece.
+		var u := e / GESTO_DAR_RECOGE
+		inclina = -0.12 * sin(u * PI * 0.5)
+		brazo = 0.18 * u
+	elif e < GESTO_DAR_EXTIENDE:
+		var u := (e - GESTO_DAR_RECOGE) / (GESTO_DAR_EXTIENDE - GESTO_DAR_RECOGE)
+		var p := u * u * (3.0 - 2.0 * u)
+		inclina = lerpf(-0.12, 0.40, p)
+		brazo = lerpf(0.18, 1.0, p)
+	elif e < GESTO_DAR_SOSTIENE:
+		# El sostén. Quieto: es el cuadro en que el otro tiene que ver la oferta.
+		inclina = 0.40
+		brazo = 1.0
+	else:
+		var u := clampf((e - GESTO_DAR_SOSTIENE) / (GESTO_DAR - GESTO_DAR_SOSTIENE),
+			0.0, 1.0)
+		var k := 1.0 - u * u * (3.0 - 2.0 * u)
+		inclina = 0.40 * k
+		brazo = k
+
+	_torso.rotation.x += inclina
+	# La cabeza acompaña la mitad: mirar lo que ofrecés es la mitad de ofrecerlo.
+	_cabeza.rotation.x += inclina * 0.45
+	# El brazo derecho al frente. Negativo es adelante en este esqueleto (ver
+	# `_pose_de_amago`), y el 0,22 de `rotation.z` lo saca del eje del tronco
+	# para que no quede escondido detrás del cuerpo visto de costado.
+	_brazo_d.rotation.x = lerpf(_brazo_d.rotation.x, -1.30, brazo)
+	_brazo_d.rotation.z = 0.22 * brazo
+	# Y lo que llevás en la mano va colgado del brazo derecho, así que un regalo
+	# que tenés puesto se extiende solo. No hay que hacer nada más.
+
+
+## Acusar el regalo: sobresalto y después agradecer.
+func _pose_de_recibir(e: float) -> void:
+	var inclina := 0.0
+	var brazos := 0.0
+	if e < GESTO_RECIBIR_SUSTO:
+		var u := e / GESTO_RECIBIR_SUSTO
+		inclina = -0.20 * sin(u * PI * 0.5)
+		brazos = u * 0.5
+	elif e < GESTO_RECIBIR_RECOGE:
+		var u := (e - GESTO_RECIBIR_SUSTO) / (GESTO_RECIBIR_RECOGE - GESTO_RECIBIR_SUSTO)
+		var p := u * u * (3.0 - 2.0 * u)
+		inclina = lerpf(-0.20, 0.26, p)
+		brazos = lerpf(0.5, 1.0, p)
+	else:
+		var u := clampf((e - GESTO_RECIBIR_RECOGE) / (GESTO_RECIBIR - GESTO_RECIBIR_RECOGE),
+			0.0, 1.0)
+		var k := 1.0 - u * u * (3.0 - 2.0 * u)
+		inclina = 0.26 * k
+		brazos = k
+
+	_torso.rotation.x += inclina
+	# La cabeza baja MÁS que el tronco: es lo que convierte la inclinación en un
+	# agradecimiento y no en un tropezón.
+	_cabeza.rotation.x += inclina * 1.3
+	# Las dos manos contra el pecho. Los dos brazos y no uno: dos es recibir,
+	# uno es señalar.
+	_brazo_i.rotation.x = lerpf(_brazo_i.rotation.x, -1.05, brazos)
+	_brazo_d.rotation.x = lerpf(_brazo_d.rotation.x, -1.05, brazos)
+	_brazo_i.rotation.z = 0.30 * brazos
+	_brazo_d.rotation.z = -0.30 * brazos
+
+
+## Mostrar cómo se hace, tres veces. El tronco gira hacia el aprendiz y vuelve,
+## y el brazo abierto se levanta con cada vuelta.
+func _pose_de_ensenar(e: float) -> void:
+	# Entrada y salida suaves para que los tres ciclos no arranquen ni corten en
+	# seco: 6 cuadros de cada lado.
+	var borde: float = minf(minf(e, GESTO_ENSENAR - e) / (6.0 / 60.0), 1.0)
+	var u := e / GESTO_ENSENAR_CICLO
+	var onda := sin(u * TAU)
+	_torso.rotation.y += 0.26 * onda * borde
+	# El brazo se abre al costado —eso es lo que ensancha la silueta— y sube y
+	# baja con el ciclo.
+	var alza: float = (0.5 - cos(u * TAU) * 0.5) * borde
+	# **`rotation.z` se ASIGNA, no se interpola desde lo que había.** Nadie más
+	# pone una base en ese eje, así que un `lerp(actual, objetivo, alza)` con
+	# `alza` bajando a cero no vuelve: se queda clavado en el objetivo. Medido:
+	# al terminar los 54 cuadros el brazo seguía abierto y la silueta quedaba en
+	# 34,7 px de ancho en vez de los 25,0 de un cuerpo parado, para siempre.
+	_brazo_d.rotation.z = 1.05 * alza
+	_brazo_d.rotation.x = lerpf(_brazo_d.rotation.x, -0.55, alza)
+	# La cabeza cuelga del torso, así que el giro del tronco ya se la lleva. Un
+	# `+=` propio acá sólo agregaría un segundo escritor a un eje que es de
+	# `_process()` y de la charla.
+	# Un cabeceo por ciclo, al final de cada muestra: el "¿se entiende?".
+	_cabeza.rotation.x += 0.12 * maxf(0.0, -cos(u * TAU * 2.0)) * borde
+
+
+## Estar conversando. `f` es 0..1 y entra y sale suave.
+##
+## **Lo que hace el trabajo acá es la primera línea.** Orientar el cuerpo hacia
+## el otro es lo que separa "dos personas hablando" de "dos maniquíes en el
+## mismo metro cuadrado", y a 40 m se lee antes que cualquier otra cosa que
+## pudiéramos animar.
+func _pose_de_charla(f: float) -> void:
+	_torso.rotation.y += _charla_yaw * f
+	# La cabeza mira un poco más que el tronco, que es como mira la gente.
+	_cabeza.rotation.y = _charla_yaw * 0.35 * f
+	# Asentir. Va con dos frecuencias que no encajan y con una envolvente que
+	# también, así que asiente a ratos en vez de todo el tiempo: hablar sin
+	# parar de cabecear se lee como un muñeco de auto.
+	var gana: float = maxf(0.0, sin(_reloj * 0.37 + _fase_mira))
+	_cabeza.rotation.x += sin(_reloj * 2.6 + _fase_resp) * 0.10 * gana * f
+	# Cambiar el peso de pie. Es lento y chico y es lo que hace que alguien
+	# parado hablando no parezca clavado al piso.
+	_torso.rotation.z += sin(_reloj * 0.47 + _fase_resp) * 0.045 * f
+
+
+# ---------------------------------------------------------------------------
+# El amago: el cuerpo avisa que va a pegar
+# ---------------------------------------------------------------------------
+#
+# *"me ataca el monstruo sin decirme nada"*. Los 5 cuadros de anticipo del swing
+# no alcanzan para eso y no están para eso: el anticipo hace que el golpe se lea
+# como un golpe, no que se pueda ver venir. **83 ms no es un aviso**, es el
+# tiempo que tarda una persona en pestañear una vez y media.
+#
+# Esto son 24 cuadros —400 ms— y el criterio de qué se mueve es el mismo que el
+# del swing: **a 40 m no hay brazos, hay silueta**.
+#
+# ## La primera versión de esta pose NO SERVÍA, y lo dijo la medición
+#
+# Estaba escrita como se escribe siempre un encabritamiento: subir, echarse
+# para atrás, los brazos arriba. Medida contra una cámara de 40 m con FOV 42° a
+# 900p, la silueta pasaba de **43,0 x 24,9 px a 41,7 x 24,5 px**: el cuerpo se
+# hacía MÁS CHICO. Es el mismo error que ya se había cometido con el swing —
+# *"no mueve los brazos"* con el brazo a 114°— y por la misma razón, así que
+# vale dejar la aritmética escrita para que no vuelva a pasar una tercera vez:
+#
+#   · el brazo mide `_alto * 0.30` = 43 cm y cuelga de un hombro a 99 cm
+#   · o sea que con el brazo VERTICAL la mano llega a 1,42 m
+#   · y la coronilla ya está en 1,42 m
+#
+# **En este cuerpo los brazos no pueden asomar por encima de la cabeza. Levantar
+# los brazos no cambia la silueta, nunca, hagas lo que hagas.** Y encima
+# echarse para atrás BAJA la coronilla, así que la pose "obvia" resta.
+#
+# ## Lo que sí cambia la silueta acá es el ANCHO
+#
+# Con los brazos abiertos al costado la mano llega a `0,34 + 0,43 = 77 cm` del
+# eje: **1,55 m de ancho contra los 0,85 m del cuerpo con los brazos colgando.**
+# Casi el doble, y eso son veinte píxeles a 40 m. Por eso esta pose es en cruz y
+# no en Y:
+#
+#   · los brazos se abren 77° al costado  → el ancho casi se duplica
+#   · las piernas se abren                → y la base se planta
+#   · el cuerpo se estira un 11% en Y     → gana los píxeles de alto que el
+#     (`_raiz.scale`, ver `animar()`)        echarse para atrás le sacaba
+#   · sube 9 cm y se echa 10°             → poco: son los que pagan el resto
+#
+# La lectura que queda es "el bicho se abrió", que además es lo que hace un
+# animal antes de tirarse encima. La pose correcta era también la barata.
+
+func _correr_amago(dt: float) -> void:
+	if _amago_on:
+		if _amago < 1.0:
+			_amago = minf(1.0, _amago + dt / Impacto.AMAGO_ALZA)
+	elif _amago > 0.0:
+		_amago = maxf(0.0, _amago - dt / Impacto.AMAGO_SUELTA)
+
+
+## `a` va de 0 a 1. Todo lo de acá es `+=` o `lerp` desde lo que dejó la
+## caminata: el bicho puede estar frenando cuando se encabrita.
+func _pose_de_amago(a: float) -> void:
+	# `a*a` en la subida y `a` en el resto: el cuerpo empieza a abrirse despacio
+	# y termina de golpe, que es como se carga algo con peso. Al revés se ve como
+	# un globo inflándose.
+	var s := a * a
+	_torso.position.y += _alto * 0.062 * s
+	_torso.rotation.x -= 0.18 * a
+
+	# **El ancho, que es todo el efecto.** 1,35 rad son 77°: abiertos del todo la
+	# silueta casi se duplica. Los dos brazos y no uno — un brazo es la pose de
+	# pegar, dos son la pose de estar por pegar.
+	#
+	# `rotation.z` de los miembros no lo escribe nadie más, así que se asigna y
+	# vuelve solo a cero cuando `a` baja. `rotation.x` sí lo escriben la caminata
+	# y el swing, así que ahí se interpola desde lo que dejaron: es lo que hace
+	# que los 4 cuadros de suelta entren al golpe sin un salto. Ver `animar()`.
+	#
+	# **El signo importa y no es el que parece.** `_brazo_i` cuelga en x
+	# negativo, así que para ABRIRLO hacia afuera su `rotation.z` va negativo.
+	# Con los signos al revés —que fue como salió la primera vez— los dos brazos
+	# se cruzan por delante del pecho y el ancho medido BAJA de 24,8 a 20,3 px:
+	# el bicho se encoge justo cuando tenía que abrirse.
+	_brazo_i.rotation.z = -1.35 * a
+	_brazo_d.rotation.z = 1.35 * a
+	_brazo_i.rotation.x = lerpf(_brazo_i.rotation.x, -0.85, a)
+	_brazo_d.rotation.x = lerpf(_brazo_d.rotation.x, -0.85, a)
+
+	# La base. Un cuerpo que se va a tirar encima planta los pies, y de paso
+	# ensancha abajo lo que los brazos ensanchan arriba: sin esto la silueta
+	# queda con forma de T y se lee como un espantapájaros.
+	_pierna_i.rotation.z = -0.30 * a
+	_pierna_d.rotation.z = 0.30 * a
+	_cabeza.rotation.x += 0.22 * a
+
+
+## Encabritarse (`true`) o deshacer la pose (`false`). El que decide cuándo es
+## `monstruo.gd`, que es el que sabe si el jugador sigue al alcance.
+func amagar(prendido: bool) -> void:
+	_amago_on = prendido
+
+
+# ---------------------------------------------------------------------------
+# Maltrecho: el cuerpo se entera de que la vida bajó
+# ---------------------------------------------------------------------------
+#
+# *"la vida baja en un número y el cuerpo no se entera."* Esto es la mitad de la
+# respuesta —la otra mitad es la velocidad, y esa vive en `monstruo.gd`—, y son
+# dos cosas: **una postura que se queda** y **un tambaleo que no para**.
+#
+# El tambaleo es el que hace el trabajo y por un motivo que vale escribir: a 40
+# m, 17 cm de vaivén son cuatro píxeles, o sea nada **por cuadro**. Pero no se
+# lee por cuadro. Un contorno que va y viene con período de 44 cuadros se lee
+# como un cuerpo que no se puede sostener, y eso se ve de lejos igual que se ve
+# de cerca, porque lo que se está leyendo es el MOVIMIENTO, no el tamaño.
+
+func _pose_de_maltrecho(f: float) -> void:
+	# Se encorva hacia adelante y se hunde. Es lo contrario exacto del amago, y
+	# está bien que lo sea: uno es un cuerpo que puede y el otro uno que no.
+	_torso.rotation.x += 0.34 * f
+	_torso.position.y -= _alto * 0.055 * f
+	_cabeza.rotation.x += 0.26 * f
+	# Los brazos cuelgan. Sólo hasta la mitad: si se anulara del todo la
+	# caminata, un bicho herido caminaría con los brazos clavados y se leería
+	# como un bug de animación, no como cansancio.
+	_brazo_i.rotation.x = lerpf(_brazo_i.rotation.x, 0.30, f * 0.55)
+	_brazo_d.rotation.x = lerpf(_brazo_d.rotation.x, 0.30, f * 0.55)
+	# El escoramiento del tambaleo. Va desfasado 1,1 rad del vaivén lateral: si
+	# fueran en fase el cuerpo se movería en bloque y se leería como que el mundo
+	# se inclina; desfasados, el cuerpo se cae hacia un lado y se recupera.
+	_torso.rotation.z += sin(_reloj * TAU * Impacto.TAMBALEO_HZ + 1.1) * 0.20 * f
+
+
+func _tambaleo(f: float) -> float:
+	return sin(_reloj * TAU * Impacto.TAMBALEO_HZ) * Impacto.TAMBALEO_AMP * f
+
+
+## Lo maltrecho que está: 0 entero, 1 en las últimas. Lo calcula `monstruo.gd`
+## contra la vida que manda el SERVIDOR — acá no se decide ninguna vida, sólo
+## cómo se para un cuerpo al que ya le bajaron la que tenía.
+func maltratar(f: float) -> void:
+	_maltrecho = clampf(f, 0.0, 1.0)
+
+
 ## Arranca el swing. 23 cuadros: 5 de anticipo, 8 de embate, 10 de recuperación.
 ## El contacto —el cuadro en que quien pega tiene que pintar la pausa, la
 ## sacudida y la chispa— es el cuadro 5, `Impacto.CONTACTO`.
+##
+## **Y acá sale el zumbido del aire**, que es la única cosa que distingue un
+## golpe que erró de uno que no antes de leer un cartel: errar suena a aire
+## solo, acertar suena a aire con el impacto encima 5 cuadros después. El pico
+## del zumbido está puesto justo en ese cuadro 5 (ver `Impacto._zumbido`), así
+## que sale de acá y no de un temporizador.
 func atacar() -> void:
 	_golpe = Impacto.SWING_TOTAL
+	Impacto.zumbar(self)
 
 
 ## Lo que llevás en la mano.
@@ -840,6 +1373,18 @@ func caer() -> void:
 	# Si lo mataste con el destello prendido, el cuerpo se queda en el piso
 	# brillando para siempre: `animar()` ya no va a volver a pasar por acá.
 	_apagar_destello()
+	# Lo mismo con el amago y con lo maltrecho. Un cadáver con los brazos
+	# levantados y tambaleándose en el piso es de las cosas que más rompen la
+	# escena, y pasa porque `animar()` deja de llamarse justo cuando el cuerpo
+	# está en mitad de una pose. Se apagan acá, que es el único cuadro que queda.
+	_amago_on = false
+	_amago = 0.0
+	_maltrecho = 0.0
+	for m: Node3D in [_brazo_i, _brazo_d, _pierna_i, _pierna_d]:
+		if m != null:
+			m.rotation.z = 0.0
+	_raiz.position.x = 0.0
+	_raiz.scale = Vector3.ONE
 	if _ojo_i != null:
 		# Los ojos se cierran y se quedan cerrados. Es lo único que hace falta
 		# para que el cuerpo en el piso lea como cuerpo y no como muñeco tirado.

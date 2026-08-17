@@ -49,6 +49,42 @@ const BALDOSA := 34.0
 # celdas vecinas se superponen en el cuadradito de la esquina, así que cierran
 # solos. Las piezas `wall-corner` son para otra cosa (muros de una celda de
 # espesor visible) y acá sobran.
+#
+# LA PUERTA SE ABRE. Hasta el 17 de agosto la casa tenía UN colisionador: una
+# caja maciza de la planta entera. O sea que la puerta estaba dibujada y la
+# pared invisible pasaba por delante — el pedido más viejo del proyecto
+# (*"comercios, edificios con cosas adentro"*) chocaba contra una sola línea.
+#
+# Ahora la colisión **sigue a la geometría que se construyó**: un tabique por
+# panel de la planta baja, y en el panel de la puerta dos jambas con el hueco
+# real en el medio. Tres cosas salen gratis de eso:
+#
+#   · Se entra. El hueco de `wall-door` mide 0,4 × 0,75 de celda, o sea
+#     **1,08 m de ancho por ~2 m de alto** con `CASA_CELDA` en 2,7. El jugador
+#     es una cápsula de 0,90 de diámetro y 1,85 de alto: entra, y entra justo,
+#     que es la proporción correcta para una puerta de casa.
+#   · La Casa Quemada se camina por dentro. Sus muros son `-broken` y un tercio
+#     directamente no está, así que no llevan tabique: se entra por donde se
+#     cayó la pared. Es lo que ya era y no se veía.
+#   · Adentro hay 4,86 × 4,86 m libres —la cara interna del muro cae en
+#     0,40 de celda— con 2,6 a 3,1 m hasta el entrepiso. Es un cuarto, no un
+#     hueco: entra una fragua, una cama y alguien parado.
+#
+# EL TERRENO NO ES PLANO Y ESO NO ERA UN DETALLE. Medido sobre las doce casas
+# del valle: bajo la planta de una casa el suelo sube y baja **hasta 1,53 m**, y
+# la casa se apoyaba en la altura de su CENTRO. O sea que el terreno entraba más
+# de un metro adentro del cuarto. Un interior con una loma adentro es peor que
+# no tener interior.
+#
+# Se arregla en tres pasos y los tres están acá o en `valle.gd`:
+#
+#   1. `valle.gd` le busca a cada casa el rellano más parejo cerca de donde le
+#      tocaba (`_sitio_de_casa()`). El desnivel peor pasa de 1,53 a 1,03 m.
+#   2. La casa se apoya en el punto MÁS ALTO de su planta, no en el del centro,
+#      y lo que queda en el aire lo tapa un **zócalo de piedra**. Un basamento
+#      en pendiente no es un parche: es lo que hace una casa de verdad.
+#   3. La puerta tiene **escalones**, con una rampa invisible debajo, porque
+#      `CharacterBody3D` no sube un escalón solo. El umbral peor queda en 0,94 m.
 # ===========================================================================
 
 ## Un módulo del kit, en metros. 2 celdas → planta de 2,6 m, que es la caja de
@@ -84,9 +120,58 @@ const CASA_CARAS: Array = [
 ## igual que hacía `ventanas_y_puerta()` con la caja.
 const CASA_FRENTE: Array[int] = [4, 5]
 
+## El lado de la planta, en metros: 5,4.
+const CASA_LADO := CASA_CELDA * 2.0
 
-## Arma una casa y la cuelga de `padre`. Devuelve la altura del alero, que es
-## lo que `valle.gd` necesita para poner la chimenea y el humo.
+## De dónde a dónde llega el cuarto, medido del centro de la casa. El muro del
+## kit ocupa de 0,40 a 0,50 de celda, así que la cara de adentro cae en
+## `0,40 + 0,5` de celda desde el centro: 2,43 m. El cuarto es de 4,86 × 4,86.
+const CASA_ADENTRO := CASA_CELDA * 0.9
+
+## El espesor del muro, en metros. Es el 0,10 de celda que mide la pieza.
+const CASA_MURO := CASA_CELDA * 0.10
+
+## El hueco de la puerta, medido sobre la malla `wall-door`: los montantes
+## están en ±0,20 de celda y el arco cierra a 0,75 de la altura del panel.
+## Con la celda en 2,7 son 1,08 m de ancho, y de alto entre 1,92 y 2,33 según
+## cuánto le haya tocado de altura de planta a esa casa.
+const PUERTA_ANCHO := CASA_CELDA * 0.40
+const PUERTA_ALTO := 0.75
+
+## Cuánto sobresale el zócalo de la línea del muro, por lado. Un basamento al
+## ras del muro no se lee como basamento: se lee como que la casa se hundió.
+const ZOCALO_VUELO := 0.12
+
+## Lo que sube cada escalón del umbral, como mucho.
+const ESCALON := 0.28
+## Y lo que mide de fondo.
+const ESCALON_HUELLA := 0.5
+
+## A qué altura queda el piso del cuarto, medido del origen de la casa. Son las
+## tablas apoyadas sobre el zócalo. Todo lo de adentro se apoya acá, y la rampa
+## del umbral llega hasta acá: si este número y el del umbral se separan, se
+## entra a la casa y se cae siete centímetros.
+const CASA_PISO := 0.07
+
+
+## Arma una casa y la cuelga de `padre`.
+##
+## `sitio` es el terreno ya resuelto por `valle.gd` —dónde apoyarla, cuánto
+## zócalo hace falta y cuánto hay que subir para entrar—, porque el que sabe de
+## alturas es el que tiene el terreno en la mano y no este archivo:
+##
+##   · `pos`     (Vector3) el piso de la casa, en el marco de `padre`
+##   · `giro`    (float)   radianes; el frente (+Z) mira para afuera
+##   · `zocalo`  (float)   cuánto baja el terreno bajo la planta
+##   · `umbral`  (float)   cuánto hay que subir desde la calle hasta el piso
+##   · `puerta`  (int)     0 o 1: en cuál de las dos celdas del frente va la
+##                         puerta. −1 la sortea. Se elige la del acceso más bajo.
+##
+## Devuelve `{"nodo", "alero", "alto", "puerta", "baja", "alta"}`:
+## `baja` y `alta` son las dos plantas separadas, y ésa es la mitad de que se
+## pueda entrar — el recorte de `interiores.gd` apaga `alta` y los muros de
+## `baja` que se le ponen delante a la cámara. Sin las dos plantas en nodos
+## distintos habría que adivinarlo recorriendo el árbol en cada cuadro.
 ##
 ## `rng` se pasa de afuera a propósito: las casas ya se sorteaban en
 ## `_armar_lugar()` y el sorteo tiene que seguir saliendo de la misma corriente
@@ -95,12 +180,22 @@ const CASA_FRENTE: Array[int] = [4, 5]
 ## `piedra` elige la familia de muro —revoque o tabla—. Es la única variación
 ## de material: **una sola familia por casa.** Mezclar piedra y madera en la
 ## misma pared es lo que hace que un kit modular se vea a kit modular.
-static func casa(padre: Node3D, pos: Vector3, giro: float,
-		rng: RandomNumberGenerator, piedra: bool, quemada: bool) -> float:
+static func casa(padre: Node3D, sitio: Dictionary,
+		rng: RandomNumberGenerator, piedra: bool, quemada: bool) -> Dictionary:
+	var giro: float = sitio.get("giro", 0.0)
 	var g := Node3D.new()
-	g.position = pos
+	g.position = sitio.get("pos", Vector3.ZERO)
 	g.rotation.y = giro
 	padre.add_child(g)
+
+	# Las dos plantas, en nodos aparte. Ver el encabezado: es lo que hace
+	# posible el recorte de la casa cuando estás adentro.
+	var baja := Node3D.new()
+	baja.name = "Baja"
+	g.add_child(baja)
+	var alta := Node3D.new()
+	alta.name = "Alta"
+	g.add_child(alta)
 
 	var fam := "pueblo/wall" if piedra else "pueblo/wall-wood"
 	# Las plantas no son todas iguales de altas: entre 0,95 y 1,15 de celda hay
@@ -109,15 +204,21 @@ static func casa(padre: Node3D, pos: Vector3, giro: float,
 	var alto_nivel := CASA_CELDA * rng.randf_range(0.95, 1.15)
 
 	# La puerta va en una de las dos celdas del frente; la otra lleva ventana.
-	var i_puerta: int = CASA_FRENTE[rng.randi() % CASA_FRENTE.size()]
+	# Cuál de las dos la decide el terreno: la que tenga el acceso más bajo.
+	var lado: int = int(sitio.get("puerta", -1))
+	if lado != 0 and lado != 1:
+		lado = rng.randi() % CASA_FRENTE.size()
+	var i_puerta: int = CASA_FRENTE[lado]
 	var luz := _luz_de_ventana()
 
 	for nivel in CASA_NIVELES:
+		var capa := baja if nivel == 0 else alta
 		for i in CASA_CARAS.size():
 			var celda: Vector2 = CASA_CARAS[i][0]
 			var rot: float = CASA_CARAS[i][1]
 			var pieza := fam
 			var ventana := false
+			var es_puerta := false
 
 			if quemada:
 				# La Casa Quemada: muros rotos, sin puerta y sin luz. Un
@@ -128,6 +229,7 @@ static func casa(padre: Node3D, pos: Vector3, giro: float,
 				pieza = fam + "-broken"
 			elif nivel == 0 and i == i_puerta:
 				pieza = fam + "-door"
+				es_puerta = true
 			elif i in CASA_FRENTE or rng.randf() < 0.34:
 				# Ventanas: siempre al frente, y a veces en los costados. Con
 				# ventana en las ocho caras la casa se vuelve un farol.
@@ -141,15 +243,182 @@ static func casa(padre: Node3D, pos: Vector3, giro: float,
 				celda.y * CASA_CELDA)
 			mi.rotation.y = rot
 			mi.scale = Vector3(CASA_CELDA, alto_nivel, CASA_CELDA)
-			g.add_child(mi)
+			# Hacia dónde da este muro, ya en coordenadas del mundo. Lo usa el
+			# recorte: se apaga el muro que la cámara tiene delante. Se anota
+			# ahora porque acá el dato es una suma de dos ángulos y después
+			# habría que sacarlo de una matriz.
+			var afuera := Vector3.RIGHT.rotated(Vector3.UP, giro + rot)
+			mi.set_meta("afuera", afuera)
+			capa.add_child(mi)
 
 			if ventana:
-				g.add_child(_vidrio(mi, luz))
+				var v := _vidrio(mi, luz)
+				v.set_meta("afuera", afuera)
+				capa.add_child(v)
+
+			# La colisión SIGUE A LO CONSTRUIDO. Un tabique por panel de planta
+			# baja, y en el de la puerta, dos jambas con el hueco en el medio.
+			# Los muros rotos de la ruina no llevan: por ahí se entra.
+			if nivel == 0 and not quemada:
+				_tabique(g, mi.position, rot, alto_nivel, es_puerta)
 
 	var alero := CASA_NIVELES * alto_nivel
 	if not quemada:
-		_techo(g, alero, rng)
-	return alero
+		_techo(alta, alero, rng)
+
+	# El basamento y los escalones. La ruina también los lleva: una casa
+	# quemada sigue teniendo cimientos, y sin ellos su planta baja flota.
+	_zocalo(g, float(sitio.get("zocalo", 0.0)), quemada)
+	# Los escalones también en la ruina, y no es un descuido: su zócalo llega a
+	# un metro y sin ellos la Casa Quemada es tres plataformas a las que no se
+	# puede subir. Una casa quemada conserva el umbral — es de piedra y es lo
+	# último que se cae.
+	var puerta := Vector3(CASA_CARAS[i_puerta][0].x * CASA_CELDA, CASA_PISO, CASA_ADENTRO)
+	_umbral(g, puerta.x, float(sitio.get("umbral", 0.0)))
+
+	return {
+		"nodo": g, "alero": alero, "alto": alto_nivel,
+		"puerta": puerta, "baja": baja, "alta": alta,
+	}
+
+
+## Un tabique de la planta baja, del tamaño del panel que se acaba de poner.
+##
+## `pos` es la posición del panel en el marco de la casa y `rot` su giro. El
+## muro del kit ocupa de 0,40 a 0,50 de celda hacia afuera, así que su eje cae
+## en 0,45 — y ahí va la caja, con el espesor real y no con la planta entera.
+##
+## Con `puerta`, en vez de una caja van dos jambas: el hueco de `wall-door`
+## mide 0,4 de celda, o sea 1,08 m, y lo que queda a cada lado son 0,81.
+static func _tabique(g: Node3D, pos: Vector3, rot: float, alto: float,
+		puerta: bool) -> void:
+	var eje := CASA_CELDA * 0.45
+	var tramos: Array = [[0.0, CASA_CELDA]]
+	if puerta:
+		var jamba := (CASA_CELDA - PUERTA_ANCHO) / 2.0
+		var centro := (CASA_CELDA + PUERTA_ANCHO) / 4.0
+		tramos = [[-centro, jamba], [centro, jamba]]
+	for t: Array in tramos:
+		var cuerpo := StaticBody3D.new()
+		var cf := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = Vector3(CASA_MURO, alto, t[1])
+		cf.shape = bs
+		cuerpo.add_child(cf)
+		cuerpo.position = pos + Vector3(eje, alto / 2.0, t[0]).rotated(Vector3.UP, rot)
+		cuerpo.rotation.y = rot
+		g.add_child(cuerpo)
+
+
+## El zócalo: el basamento de piedra que tapa lo que la pendiente deja en el
+## aire, y que además es el piso sobre el que se camina adentro.
+##
+## Va en `Paleta.LOSA_CAMINO` (V5) y no en `LADRILLO` (V3): contra un suelo V4
+## el basamento tiene que leerse como piedra trabajada, un peldaño POR ARRIBA
+## del prado. En V3 desaparece y la casa vuelve a parecer clavada en el pasto.
+## El piso son tablas y va un peldaño POR DEBAJO del muro (V5 contra V6). Con el
+## mismo valor que la pared, el cuarto entero se lee como una sola mancha con la
+## luz del hogar encima; un escalón abajo, la luz del fuego tiene dónde caer.
+## En la ruina el piso es tierra: ahí no queda tabla que no se haya quemado.
+static func _zocalo(g: Node3D, hondo: float, quemada: bool) -> void:
+	# Siempre asoma un poco aunque el terreno sea plano —una casa apoyada
+	# directamente sobre el pasto se lee como una calcomanía— y siempre se
+	# entierra un cuarto de metro, para que el borde no quede al aire.
+	var alto := maxf(hondo, 0.16) + 0.3
+	var lado := CASA_LADO + ZOCALO_VUELO * 2.0
+
+	var caja := BoxMesh.new()
+	caja.size = Vector3(lado, alto, lado)
+	caja.material = Paleta.piedra(Paleta.LOSA_CAMINO)
+	var mi := MeshInstance3D.new()
+	mi.mesh = caja
+	mi.position.y = -alto / 2.0
+	g.add_child(mi)
+
+	var tablas := BoxMesh.new()
+	tablas.size = Vector3(CASA_ADENTRO * 2.0, CASA_PISO, CASA_ADENTRO * 2.0)
+	tablas.material = (Paleta.piedra(Paleta.TIERRA) if quemada
+		else Paleta.madera(Paleta.MURO_FRAGUA))
+	var piso := MeshInstance3D.new()
+	piso.mesh = tablas
+	piso.position.y = CASA_PISO / 2.0
+	g.add_child(piso)
+
+	# Un solo cuerpo para los dos: la cara de arriba es el piso del cuarto y los
+	# costados son el basamento, que es contra lo que chocás caminando afuera.
+	var cuerpo := StaticBody3D.new()
+	var cf := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = Vector3(lado, alto + CASA_PISO, lado)
+	cf.shape = bs
+	cuerpo.add_child(cf)
+	cuerpo.position.y = CASA_PISO - (alto + CASA_PISO) / 2.0
+	g.add_child(cuerpo)
+
+
+## Los escalones de la puerta, con la rampa que los hace subibles.
+##
+## **`CharacterBody3D` no sube un escalón solo.** `move_and_slide()` desliza
+## contra la caja y el jugador se queda abajo mirando la puerta, que es
+## exactamente el bug que esta rama vino a arreglar y sería ridículo
+## reintroducirlo doce centímetros más abajo. Así que los escalones son SÓLO
+## mallas y quien hace el trabajo es una caja inclinada enterrada debajo.
+##
+## Es la única pieza del valle donde lo que se ve y lo que se toca no son la
+## misma geometría, y por eso está dicho acá y no en un comentario suelto.
+static func _umbral(g: Node3D, puerta_x: float, alto: float) -> void:
+	# Desde la calle hasta las TABLAS, no hasta el zócalo: los siete
+	# centímetros del piso también hay que subirlos.
+	var subida := maxf(alto, 0.05) + CASA_PISO
+	var n := clampi(int(ceil(subida / ESCALON)), 1, 4)
+	var largo := ESCALON_HUELLA * n
+	var z0 := CASA_LADO / 2.0 + ZOCALO_VUELO
+	var ancho := PUERTA_ANCHO + 0.7
+	var mat := Paleta.piedra(Paleta.LOSA_CAMINO)
+
+	for k in n:
+		# k = 0 es el de arriba, al ras del piso. Cada uno se entierra 0,3 para
+		# que la contrahuella no deje ver el pasto por debajo.
+		var caja := BoxMesh.new()
+		caja.size = Vector3(ancho, subida / n + 0.3, ESCALON_HUELLA)
+		caja.material = mat
+		var mi := MeshInstance3D.new()
+		mi.mesh = caja
+		mi.position = Vector3(puerta_x,
+			CASA_PISO - subida * k / n - caja.size.y / 2.0,
+			z0 + ESCALON_HUELLA * (k + 0.5))
+		g.add_child(mi)
+
+	# La rampa NO mide lo que miden los escalones, y ésa fue la corrección que
+	# costó el andamio de más abajo.
+	#
+	# Primero se le dio el largo de la escalera, y **dos de nueve casas seguían
+	# sin poder entrarse**: el pie de la rampa caía donde el terreno estaba más
+	# alto que ella, así que el jugador nunca la pisaba y terminaba de frente
+	# contra la cara del zócalo, treinta y tres centímetros abajo de su propia
+	# puerta. Medido con el andamio, no deducido — la posición en que quedaba
+	# clavado estaba justo en el hueco de la puerta y no en el muro.
+	#
+	# Ahora es una pendiente FIJA de 30° y tres metros de largo, siempre igual,
+	# que se hunde bajo el pasto. Donde el terreno la cruza, ahí empieza la
+	# subida, y ese punto lo elige el terreno solo. Cubre 1,73 m de desnivel,
+	# casi el doble del peor umbral del valle (0,94 m).
+	var pend := deg_to_rad(30.0)
+	var largo_r := 3.0
+	var rampa := StaticBody3D.new()
+	var cf := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = Vector3(ancho, 0.18, largo_r / cos(pend))
+	cf.shape = bs
+	rampa.add_child(cf)
+	# El centro se corre media pastilla hacia abajo por la normal inclinada,
+	# para que la CARA de arriba —y no el centro de la caja— pase por el borde
+	# del zócalo.
+	rampa.position = Vector3(puerta_x,
+		CASA_PISO - largo_r * tan(pend) / 2.0 - 0.09 * cos(pend),
+		z0 + largo_r / 2.0 - 0.09 * sin(pend))
+	rampa.rotation.x = pend
+	g.add_child(rampa)
 
 
 ## El techo: una pirámide de cuatro caras del kit, estirada a la planta entera.
@@ -169,8 +438,15 @@ static func _techo(g: Node3D, alero: float, rng: RandomNumberGenerator) -> void:
 	# La pieza mide 1,1 de ancho por celda, o sea que a escala 2 cubre las dos
 	# celdas y sobra 0,1 de alero por lado. Ese sobrante es el punto.
 	var s := 2.0 * CASA_CELDA
+	# **El empinado se achica a la mitad y no es un capricho.** `roof-point`
+	# mide 0,5 de alto por 1,1 de ancho y `roof-high-point` mide 1,0: al mismo
+	# factor, el segundo son 5,4 m de techo sobre 5,6 m de pared, o sea un
+	# campanario. Medido mirando el banco de prueba: al lado de una casa normal
+	# no se leía como "más empinado", se leía como otro edificio. Con 0,55 queda
+	# en 3,0 m contra los 2,7 del otro — un peldaño, que es lo que se pedía.
+	var alto := s * (0.55 if empinado else 1.0) * rng.randf_range(0.85, 1.15)
 	mi.position = Vector3(0.0, alero, 0.0)
-	mi.scale = Vector3(s, s * rng.randf_range(0.85, 1.15), s)
+	mi.scale = Vector3(s, alto, s)
 	g.add_child(mi)
 
 
@@ -250,7 +526,11 @@ static func ventanas_y_puerta(casa: MeshInstance3D, ancho: float, alto: float) -
 	casa.add_child(puerta)
 
 
-static func chimenea(padre: Node3D, pos: Vector3, ancho: float) -> void:
+## Devuelve el bulto de ladrillo, que es lo único de acá que hay que poder
+## apagar: cuando el recorte le saca el techo a la casa en la que estás
+## parado, una chimenea flotando sola sobre el cuarto es peor que el techo.
+## El humo no se toca — sale de un fuego que sigue encendido.
+static func chimenea(padre: Node3D, pos: Vector3, ancho: float) -> MeshInstance3D:
 	# La chimenea es lo único que sobresale del techo, así que su trabajo entero
 	# es silueta. `Paleta.LADRILLO` está en V3 y el techo en V2: un peldaño de
 	# separación, que es lo mínimo para que el bulto se vea contra la tapa
@@ -266,6 +546,7 @@ static func chimenea(padre: Node3D, pos: Vector3, ancho: float) -> void:
 	padre.add_child(mi)
 
 	padre.add_child(_humo(pos + Vector3(0, ancho * 0.4, 0)))
+	return mi
 
 
 static func _humo(pos: Vector3) -> GPUParticles3D:

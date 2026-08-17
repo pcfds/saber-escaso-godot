@@ -175,7 +175,7 @@ func _accion_completada(
 		# Se vio un 504 real: la acción tardó más que el límite de la función.
 		# Decirlo es mejor que quedarse mudo, que es lo que se leía como "el
 		# juego no hace nada".
-		texto = "El valle tardó demasiado en contestar. Probá de nuevo."
+		texto = "El valle tardó demasiado en contestar. Prueba de nuevo."
 	if texto != "":
 		aviso_recibido.emit(texto)
 	# El mundo YA cambió: la bolsa, los vínculos, el lugar. Sin este pedido el

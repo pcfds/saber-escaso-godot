@@ -93,14 +93,38 @@ void fragment() {
 
 	// Y se apaga con la distancia. Una línea de un píxel sobre algo que ocupa
 	// tres es ruido, no dibujo.
-	borde *= 1.0 - smoothstep(distancia_maxima * 0.55, distancia_maxima, z);
+	float cerca = 1.0 - smoothstep(distancia_maxima * 0.55, distancia_maxima, z);
+	borde *= cerca;
 
 	// Luz en escalones, sobre el brillo ya calculado. Se hace en luminancia y
 	// no por canal para no correr el matiz — ya nos pasó con el tinte de la
 	// vegetación, donde dividir canal por canal volvió cian a todo el bosque.
+	//
+	// ======================================================================
+	// Y SE APAGA CON LA DISTANCIA, IGUAL QUE EL CONTORNO. Ésta era la causa de
+	// las franjas horizontales que cruzaban el cielo y la cordillera.
+	// ======================================================================
+	//
+	// Cuatro escalones al 50% sobre una superficie ILUMINADA es el efecto que
+	// buscamos: dice que alguien pintó esto. Los mismos cuatro escalones sobre
+	// una RAMPA SUAVE Y GRANDE —el degradé del cielo, la cordillera lavada por
+	// la niebla— no dicen nada: producen bandas de Mach, o sea rayas
+	// horizontales de borde duro atravesando el horizonte de lado a lado.
+	//
+	// Medido sobre una captura del juego, columna x=200: el cielo subía de luma
+	// 184 a 196 **de un renglón al siguiente** (y=328 a y=336) y volvía a bajar
+	// noventa píxeles más abajo. Eso no es el cielo: el shader del cielo es un
+	// degradé continuo. Era este `floor()`.
+	//
+	// El arreglo es el mismo criterio que ya usaba el contorno tres líneas más
+	// arriba —una línea de un píxel sobre algo que ocupa tres es ruido— dicho
+	// para el sombreado: **un escalón de luz sobre algo que no tiene volumen
+	// legible es ruido.** `cerca` vale 1 en el valle y 0 en el cielo, que está
+	// en el plano lejano, así que el cielo vuelve a ser un degradé y el hito y
+	// las casas siguen pintados a escalones.
 	float lum = dot(col, vec3(0.299, 0.587, 0.114));
 	float paso = floor(lum * escalones + 0.5) / escalones;
-	col *= mix(1.0, paso / max(lum, 0.001), fuerza_escalones);
+	col *= mix(1.0, paso / max(lum, 0.001), fuerza_escalones * cerca);
 
 	ALBEDO = mix(col, color_linea, borde);
 	ALPHA = 1.0;

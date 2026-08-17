@@ -62,6 +62,36 @@ const ESQUIVE_ESPERA := 1.15
 ## por debajo y no hay nada ahí.
 const PITCH_MIN := deg_to_rad(2.0)
 const PITCH_MAX := deg_to_rad(64.0)
+
+## ── MIRAR EL CIELO ──────────────────────────────────────────────────────────
+##
+## La órbita sola **no puede mirar para arriba, y no es cuestión de aflojarle el
+## tope.** Con la cámara en una esfera alrededor del jugador y la mira siempre
+## puesta en él, inclinarse hacia el cielo significa bajar la cámara por debajo
+## de los pies: se mete abajo del terreno y se ve el mundo desde el revés. Por
+## eso `PITCH_MIN` ya se movió una vez —de 28° a 2°— y no alcanzó: a 2° se mira
+## un pelo por encima del horizonte y nada más. **El tope no era el problema; el
+## modelo lo era.**
+##
+## Lo que hay ahora son DOS cosas y no una. El arrastre acumula un solo número
+## (`_mirada`), y ese número se reparte:
+##
+##   · mientras es positivo, es la inclinación de la ÓRBITA — la cámara sube y
+##     mira al jugador desde arriba, que es la vista de trabajo;
+##   · cuando llega al piso de la órbita y seguís arrastrando, lo que sigue
+##     **levanta la MIRA** sin mover la cámara de lugar. La cámara se queda
+##     donde está, arriba del suelo, y gira la cabeza.
+##
+## Y esto no es una comodidad: en el cielo hay un reloj y un calendario. El sol
+## da una vuelta cada día del valle —seis horas reales— y **la fase de la luna
+## es el día del valle**, ocho por vuelta. Mirás para arriba y sabés cuánto hace
+## que no entrás, sin abrir ningún menú. Todo eso estaba construido y era
+## inalcanzable por un número.
+##
+## 85° deja ver casi el cenit. No se llega a 90 a propósito: con la mira
+## exactamente vertical, `look_at()` y el vector "arriba" se alinean y la
+## orientación se vuelve indefinida.
+const ALZA_MAX := deg_to_rad(85.0)
 ## La cámara vive LEJOS. Es la vista del juego —Stardew, Baldur's Gate— y es
 ## lo que hace que el valle se lea como un lugar y no como el pasto que tenés
 ## delante de la nariz. Acercarse es un gesto puntual para mirar algo, no la
@@ -74,7 +104,29 @@ var _yaw := deg_to_rad(38.0)
 ## la vista con menos información que hay. A 38° se ven las fachadas, los
 ## troncos y la silueta de la gente contra el suelo — que es lo que hace
 ## legible un mundo visto de lejos.
-var _pitch := deg_to_rad(38.0)
+##
+## ── 26° y no 38°, y esto es LA razón de "parece una torta" ────────────────
+##
+## Se midió, no se opinó: con `_pitch` en 38° y el FOV en 42°, el borde
+## SUPERIOR del cuadro apunta 17° **por debajo** de la horizontal. O sea que la
+## vista muere a **ochenta metros** y **el horizonte no entra en pantalla, para
+## nada**. Lo único que se ve es un disco de pasto — y un disco de pasto es
+## exactamente lo que alguien describe como *"un mundo de torta"*.
+##
+## La consecuencia práctica es que **ningún hito servía**: se levantó una
+## puerta de roca de 62 m a la entrada del valle, que mide 340 píxeles de alto
+## sobre 900 —el 38% de la pantalla—, y con este número no se veía nunca. La
+## escala no se arregla agrandando las cosas si la cámara mira al piso.
+##
+## A 26° el horizonte y la cordillera entran, y no se pierde nada de lo de
+## arriba: siguen viéndose las fachadas, los troncos y la silueta de la gente
+## contra el suelo, que es lo que hace legible un mundo visto de lejos.
+var _pitch := deg_to_rad(26.0)
+## Lo que pidió el arrastre, de `-ALZA_MAX` a `PITCH_MAX`. De acá salen `_pitch`
+## y `_alza`: ver `_repartir_mirada()`.
+var _mirada := deg_to_rad(26.0)
+## Cuánto levanta la cabeza la cámara sin moverse de lugar. Cero casi siempre.
+var _alza := 0.0
 var _dist := 40.0
 var _dist_objetivo := 40.0
 var _arrastrando := false
@@ -113,6 +165,7 @@ var tecleando := Callable()
 
 func _ready() -> void:
 	_camara.current = true
+	_repartir_mirada()
 	_recolocar_camara(true)
 
 
@@ -155,7 +208,8 @@ func _unhandled_input(evento: InputEvent) -> void:
 	elif evento is InputEventMouseMotion and _arrastrando:
 		var m := evento as InputEventMouseMotion
 		_yaw -= m.relative.x * 0.006
-		_pitch = clampf(_pitch + m.relative.y * 0.004, PITCH_MIN, PITCH_MAX)
+		_mirada = clampf(_mirada + m.relative.y * 0.004, -ALZA_MAX, PITCH_MAX)
+		_repartir_mirada()
 	elif evento.is_action_pressed("interactuar"):
 		quiere_interactuar.emit()
 	elif evento.is_action_pressed("golpear"):
@@ -169,6 +223,34 @@ func _unhandled_input(evento: InputEvent) -> void:
 		# Tecla cruda y no una acción del mapa de entrada porque `project.godot`
 		# no se toca en esta rama. Cuando se agregue, esto pasa a "esquivar".
 		_esquivar()
+
+
+## Un solo arrastre, dos efectos. Arriba del piso de la órbita mueve la cámara;
+## debajo, la deja quieta y le levanta la mira. El reparto es continuo —no hay
+## salto en el cruce— porque las dos mitades salen del mismo número.
+## Hacia dónde está mirando el cuerpo, en radianes.
+##
+## Existe porque **el que gira no es este nodo sino su malla**: el
+## `CharacterBody3D` no rota nunca, así que `global_rotation.y` da siempre lo
+## mismo y cualquiera que lo lea desde afuera se lleva un dato falso sin que
+## nada se queje. Ya casi me pasa dibujando la cuña de dirección del mapa.
+##
+## Y de paso queda escrita la convención de este archivo, que **no es la de
+## Godot**: acá el frente es `(sin θ, 0, cos θ)`, o sea +Z, y no el −Z de
+## `basis.z`. Está así en `_esquivar()` desde antes; lo que faltaba era que se
+## pudiera preguntar sin ir a leer un miembro privado.
+func mira_hacia() -> float:
+	return _malla.rotation.y
+
+
+## El mismo dato como vector, para el que lo necesita para dibujar o apuntar.
+func frente() -> Vector3:
+	return Vector3(sin(_malla.rotation.y), 0.0, cos(_malla.rotation.y))
+
+
+func _repartir_mirada() -> void:
+	_pitch = maxf(_mirada, PITCH_MIN)
+	_alza = maxf(0.0, PITCH_MIN - _mirada)
 
 
 ## Rodar. Se compromete a una dirección y no se puede corregir a mitad de
@@ -331,6 +413,13 @@ func _recolocar_camara(inmediato: bool) -> void:
 		pos += arr * sin(_sacudida_reloj * 173.0 + 1.7) * amp * 0.7
 	_camara.position = pos
 	_camara.look_at(global_position + Vector3.UP * 1.1, Vector3.UP)
+	# Y después de apuntar al jugador, la cabeza se levanta. Va acá y no en el
+	# `look_at` —moviendo el punto mirado hacia arriba— porque con la cámara a
+	# 40 m habría que subir el punto cuarenta metros para girar 45°, y en el
+	# camino el jugador se sale de cuadro de costado. Rotar sobre el eje X local
+	# de la cámara gira exactamente lo que se pidió y nada más.
+	if _alza > 0.0:
+		_camara.rotate_object_local(Vector3.RIGHT, _alza)
 
 
 ## Pegar.

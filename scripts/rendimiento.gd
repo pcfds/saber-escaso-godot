@@ -18,8 +18,6 @@
 ## aporta.
 ##
 ##   en los TRES  · sol cálido y sombras largas
-##                · desenfoque de lejanía — el efecto maqueta, que es lo que
-##                  hace que esto se lea como diorama y no como paisaje
 ##                · brillo de la fragua y de las ventanas encendidas
 ##                · niebla de distancia y la cordillera azulada del fondo
 ##                · humo de chimenea y luciérnagas
@@ -196,41 +194,67 @@ func _aplicar_entorno() -> void:
 	e.ssr_enabled = nivel == ALTO
 	e.ssr_max_steps = 24
 
-	# Los ajustes de color eran +2% de saturación y +4% de contraste: por
-	# debajo de lo que el ojo distingue, y prenden una variante más de shader.
-	e.adjustment_enabled = false
+	# LA CORRECCIÓN DE COLOR NO SE DECIDE ACÁ. Este renglón decía
+	# `e.adjustment_enabled = false` en los tres niveles, con el argumento de
+	# que el grade era +2% de saturación y +4% de contraste, o sea nada.
+	#
+	# El argumento era razonable y la línea igual estaba mal, por la regla de
+	# abajo: **quién decide si un efecto existe es `ambiente.gd`.** El costo de
+	# tenerla acá no fue el 2%: fue que el bloque de grade de `ambiente.gd` pasó
+	# a ser código muerto sin que lo dijera nada, y alguien perdió una tarde
+	# moviendo la saturación de 1,38 a 0,85 y midiendo capturas idénticas píxel
+	# a píxel. **Una propiedad que un archivo escribe y otro pisa en silencio no
+	# cuesta el efecto, cuesta la próxima medición.**
+	#
+	# Lo que sí es de este archivo es el COSTO: el grade prende una variante más
+	# de shader, y en BAJO no se paga.
+	if nivel == BAJO:
+		e.adjustment_enabled = false
 
 	# En BAJO se fue el rebote de luz. Sin compensar, el valle queda plano y
 	# más oscuro de lo que era. Se sube la exposición un 8%: no reemplaza la
 	# luz indirecta, pero evita que apagar SDFGI se lea como "se rompió algo".
 	# Va por exposición y no por luz ambiente porque ciclo.gd reescribe la luz
 	# ambiente en cada cuadro y pisaría el ajuste.
-	e.tonemap_exposure = 0.95
+	#
+	# **Y va sólo en BAJO.** Estaba escrito sin condición, así que los tres
+	# niveles corrían a 0,95 y la exposición de `ambiente.gd` —1,02— no llegaba
+	# a la pantalla nunca. La compensación de una cosa que sólo pasa en BAJO no
+	# puede aplicarse en ALTO: ahí no hay nada que compensar.
+	if nivel == BAJO:
+		e.tonemap_exposure = 0.95
 
-	if _camara != null:
-		# El desenfoque de LEJOS se queda entero en los tres niveles: es el
-		# efecto maqueta, o sea la identidad. Lo que cambia con el nivel no es
-		# el efecto sino cómo se calcula (ver _aplicar_global).
-		_camara.dof_blur_far_enabled = true
-		# El de CERCA no se toca desde acá, y este renglón es la corrección de
-		# un bug que borroneaba el juego entero.
-		#
-		# Decía `= true`, con el argumento de que un tilt-shift sin desenfoque
-		# de cerca deja de leerse como maqueta. `ambiente.gd` lo había apagado
-		# a propósito, con su motivo escrito al lado: con la cámara a cuarenta
-		# metros no hay NADA entre ella y el jugador que valga la pena
-		# desenfocar. Dos archivos opinando distinto sobre la misma propiedad,
-		# y ganaba éste por correr último.
-		#
-		# El resultado no era una diferencia de gusto: **la escena entera salía
-		# borrosa**, casas a cuarenta metros incluidas. Se aisló con dos
-		# capturas y una sola variable —prendido: mancha; apagado: nítido— y
-		# antes se habían descartado con el mismo método el nivel de calidad y
-		# el desenfoque de lejos, que empieza a 95 m cuando la cámara llega a
-		# 68 y por lo tanto no podía ser.
-		#
-		# La regla que sale de acá: **un archivo de rendimiento decide CÓMO se
-		# calcula un efecto, no si existe.** El qué es de `ambiente.gd`.
+	# EL DESENFOQUE DE LEJOS TAMPOCO SE DECIDE ACÁ, y esta línea era la
+	# tercera del mismo error. Decía `_camara.dof_blur_far_enabled = true`
+	# en los tres niveles, con el argumento de que el efecto maqueta es la
+	# identidad del juego.
+	#
+	# Ese argumento se cayó entero: el efecto maqueta ES el reclamo. El
+	# dueño del proyecto viene diciendo *"parece de juguete"*, *"muy de
+	# torta"*, y una maqueta es literalmente un juguete. Lo apaga
+	# `ambiente.gd`, con la medición al lado; acá lo único que queda es
+	# CÓMO se calcularía si estuviera prendido (forma de bokeh y calidad,
+	# en `_aplicar_global`), que es lo que este archivo sí decide.
+	#
+	# El de CERCA no se toca desde acá, y este renglón es la corrección de
+	# un bug que borroneaba el juego entero.
+	#
+	# Decía `= true`, con el argumento de que un tilt-shift sin desenfoque
+	# de cerca deja de leerse como maqueta. `ambiente.gd` lo había apagado
+	# a propósito, con su motivo escrito al lado: con la cámara a cuarenta
+	# metros no hay NADA entre ella y el jugador que valga la pena
+	# desenfocar. Dos archivos opinando distinto sobre la misma propiedad,
+	# y ganaba éste por correr último.
+	#
+	# El resultado no era una diferencia de gusto: **la escena entera salía
+	# borrosa**, casas a cuarenta metros incluidas. Se aisló con dos
+	# capturas y una sola variable —prendido: mancha; apagado: nítido— y
+	# antes se habían descartado con el mismo método el nivel de calidad y
+	# el desenfoque de lejos, que empieza a 95 m cuando la cámara llega a
+	# 68 y por lo tanto no podía ser.
+	#
+	# La regla que sale de acá: **un archivo de rendimiento decide CÓMO se
+	# calcula un efecto, no si existe.** El qué es de `ambiente.gd`.
 
 
 # ---------------------------------------------------------------------------

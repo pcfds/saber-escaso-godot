@@ -21,9 +21,17 @@ const RADIO_MUNDO := 190.0
 ## ahora no se redibuja nunca.
 const CADA := 0.1
 const SE_MOVIO := 0.5
+## Y cuánto tiene que haber GIRADO. Sin esto, la cuña de dirección que se
+## agregó abajo quedaba congelada apuntando a donde mirabas cuando llegaste:
+## parado y girando, `distance_to` da cero y no se redibuja nunca. Ocho grados
+## es cuando la punta de la cuña se corre un píxel a este tamaño.
+const SE_GIRO := 0.14
 
 var lugares: Dictionary = {}         ## slug → {pos, nombre}
-var jugador: Node3D
+## Tipado como `Jugador` y no como `Node3D` a propósito: la cuña de dirección
+## necesita `mira_hacia()`, y con el tipo puesto un cambio de nombre de ese
+## método rompe al compilar en vez de en pantalla.
+var jugador: Jugador
 ## Las marcas de amenazas las reescribe el valle cada vez que contesta el
 ## servidor. El setter está para que asignarlas alcance para pedir el redibujo:
 ## así el que las escribe no tiene que acordarse de avisar.
@@ -38,6 +46,7 @@ var vecinos: Array = []
 var _fuente: Font
 var _reloj := 0.0
 var _ultimo_yo := Vector3(1e9, 0, 0)
+var _ultimo_giro := 1e9
 
 
 func _ready() -> void:
@@ -64,6 +73,7 @@ func alternar() -> void:
 	set_process(visible)
 	if visible:
 		_ultimo_yo = Vector3(1e9, 0, 0)
+		_ultimo_giro = 1e9
 		queue_redraw()
 
 
@@ -81,9 +91,12 @@ func _process(dt: float) -> void:
 	if jugador == null or not is_instance_valid(jugador):
 		return
 	var yo := jugador.global_position
-	if yo.distance_to(_ultimo_yo) < SE_MOVIO:
+	var giro := jugador.mira_hacia()
+	if yo.distance_to(_ultimo_yo) < SE_MOVIO \
+			and absf(angle_difference(giro, _ultimo_giro)) < SE_GIRO:
 		return
 	_ultimo_yo = yo
+	_ultimo_giro = giro
 	queue_redraw()
 
 
@@ -136,9 +149,40 @@ func _draw() -> void:
 
 	if jugador != null and is_instance_valid(jugador):
 		var yo := _a_pantalla(jugador.global_position, centro, radio)
+
+		# HACIA DÓNDE ESTÁS MIRANDO. Es lo que faltaba para que el mapa sirva
+		# para caminar y no sólo para mirar.
+		#
+		# Un punto en un mapa te dice dónde estás; sin la dirección no te dice
+		# hacia dónde arrancar, y hay que salir a probar y volver. En un valle
+		# de 360 metros con cinco lugares eso es la diferencia entre orientarse
+		# y adivinar — y era el reclamo: *"el mapa es tan chico y sin vida que
+		# no sirve de nada"*. Mostraba dónde estaban las cosas y no cómo llegar.
+		#
+		# La dirección se le PREGUNTA al jugador (`frente()`) en vez de deducirla
+		# de su transform, y eso es el arreglo de un bug que casi entra: **el
+		# que gira no es el `CharacterBody3D` sino su malla**, así que
+		# `global_rotation.y` da siempre lo mismo y la cuña habría quedado
+		# clavada apuntando al norte. Encima este proyecto usa `+Z` como frente
+		# y no el `−Z` de Godot, así que la cuenta "obvia" salía dada vuelta dos
+		# veces. Un mapa que miente es peor que no tener mapa: se descubre
+		# después de caminar cien metros.
+		var f := jugador.frente()
+		var dir := Vector2(f.x, -f.z)
+		if dir.length_squared() > 0.0001:
+			dir = dir.normalized()
+			var lado := Vector2(-dir.y, dir.x)
+			# Una cuña corta y ancha, no una flecha larga: a este tamaño una
+			# flecha se lee como un palito y no se distingue su punta.
+			draw_colored_polygon(PackedVector2Array([
+				yo + dir * 20.0,
+				yo + lado * 7.0,
+				yo - lado * 7.0,
+			]), Color(0.35, 0.82, 0.70, 0.45))
+
 		draw_circle(yo, 7.0, Color(0.35, 0.82, 0.70))
 		draw_arc(yo, 12.0, 0, TAU, 24, Color(0.35, 0.82, 0.70, 0.55), 1.5, true)
-		draw_string(_fuente, yo + Vector2(-8, -17), "vos",
+		draw_string(_fuente, yo + Vector2(-8, -17), "tú",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.45, 0.90, 0.78))
 
 	draw_string(_fuente, Vector2(centro.x - 60, size.y - 40), "[M] cerrar el mapa",

@@ -34,8 +34,17 @@ uniform vec3  luna_dir      = vec3(-0.35, 0.55, 0.75);
 uniform vec3  luna2_dir     = vec3(0.72, 0.30, 0.62);
 uniform vec3  planeta_dir   = vec3(-0.80, 0.16, -0.58);
 uniform float estrellas_giro = 0.0;
-// 0 luna nueva, 0.5 llena, 1 nueva otra vez. La manda el servidor: es el día
-// del valle, así que dos jugadores conectados ven la MISMA fase.
+// LA FASE, Y EL COMENTARIO ESTABA AL REVÉS. Decía 0 nueva y 0.5 llena, y la
+// cuenta de abajo hace exactamente lo contrario: en 0.5 la tapa cae encima de
+// la luna y queda en el 6% de brillo (luna NUEVA), y en 0 y en 1 la tapa se
+// corre 3.7 grados —más que el radio del disco, que es 3.2— y la luna sale
+// entera (LLENA). Se deja arreglado el comentario y no la cuenta: la vuelta de
+// ocho días existe y funciona, y lo que estaba mal era lo que decía.
+//
+//   día del valle 0 -> llena · 2 -> menguante · 4 -> nueva · 6 -> creciente
+//
+// La manda el servidor: es el día del valle, así que dos jugadores conectados
+// ven la MISMA fase, y por eso mirar arriba dice cuánto hace que no entrás.
 uniform float fase_luna = 0.5;
 
 float hash13(vec3 p3) {
@@ -47,24 +56,48 @@ float hash13(vec3 p3) {
 // Estrellas: una por celda del cubo, con posición y brillo aleatorios. El
 // brillo se reparte en una curva para que haya muchas tenues y pocas
 // intensas — un cielo con todas las estrellas iguales se lee como ruido.
+//
+// ===========================================================================
+// LAS ESTRELLAS ERAN SUBPÍXEL Y POR ESO NO EXISTÍAN. Medido, no deducido.
+// ===========================================================================
+//
+// El jugador dijo que no ve estrellas, y tenía razón por dos motivos, y
+// éste es el segundo (el primero es la niebla, ver `ambiente.gd`).
+//
+// La cuenta de antes: la celda era `d * 190.0`, o sea 1/190 rad ≈ 0,3° de
+// lado. Con FOV 42° en 900 píxeles de alto, eso son ~5 px por celda. Y el radio
+// del punto era `0.085 + mag*0.05` **en unidades de celda**: entre 0,4 y 0,7
+// PÍXELES. Una estrella más chica que un píxel no se dibuja tenue: se dibuja o
+// no se dibuja, según dónde caiga el centro de la muestra. Contando puntos con
+// un filtro de paso alto sobre una captura del cielo, de las ~350 estrellas que
+// la fórmula pone en pantalla se veían **cinco**.
+//
+// El arreglo es al revés de lo que pide el instinto: **menos estrellas y más
+// grandes.** Celda de 120 (≈8 px) y radio de 0,16 a 0,26 de celda (1,3 a 2,1
+// px), que es el mínimo para que un punto sobreviva al filtrado y al
+// antialias. El umbral se corrige para que la densidad ANGULAR quede parecida y
+// el cielo no se llene de bolas.
+//
+// Y el piso de brillo sube de 0,25 a 0,55: una estrella que aporta 0,25 sobre
+// un cielo nocturno de 0,05 y después pasa por AgX no llega a distinguirse.
 vec3 estrellas(vec3 d, float densidad) {
-	vec3 p = d * 190.0;
+	vec3 p = d * 120.0;
 	vec3 celda = floor(p);
 	float h = hash13(celda);
-	float umbral = mix(0.9955, 0.978, densidad);
+	float umbral = mix(0.9930, 0.966, densidad);
 	if (h < umbral) return vec3(0.0);
 
 	vec3 off = vec3(hash13(celda + 11.0), hash13(celda + 23.0), hash13(celda + 37.0)) - 0.5;
-	float dist = length(fract(p) - 0.5 - off * 0.66);
+	float dist = length(fract(p) - 0.5 - off * 0.60);
 	float mag = (h - umbral) / max(1.0 - umbral, 0.0001);
 	mag = mag * mag;                       // pocas brillantes, muchas tenues
 
 	float centelleo = 0.72 + 0.28 * sin(TIME * (1.1 + mag * 5.0) + h * 120.0);
-	float punto = smoothstep(0.085 + mag * 0.05, 0.0, dist);
+	float punto = smoothstep(0.16 + mag * 0.10, 0.0, dist);
 
 	// Las estrellas no son blancas: unas tiran a azul, otras a naranja.
 	vec3 tinte = mix(vec3(0.72, 0.82, 1.0), vec3(1.0, 0.84, 0.66), hash13(celda + 5.0));
-	return tinte * punto * (0.25 + mag * 2.6) * centelleo;
+	return tinte * punto * (0.55 + mag * 3.2) * centelleo;
 }
 
 // Un disco en el cielo. `tam` en coseno del ángulo: más chico = más lejos.

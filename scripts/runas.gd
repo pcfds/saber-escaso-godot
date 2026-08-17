@@ -233,6 +233,15 @@ var _quedan: Dictionary = {}
 var _frasco: Dictionary = {}
 ## De qué día del valle es lo que recuerda `_colgadas`. Ver `_guardar_la_manana()`.
 var _tick_memoria := -1
+## ¿Este jugador lanzó algo alguna vez? Se guarda junto con la mañana y **no
+## caduca con el día**: es lo único que decide si la pantalla explica el gesto o
+## se calla.
+##
+## Es un tutorial que se borra solo, y ésa es la única clase que este juego
+## admite. Un cartel modal al entrar se cierra sin leer; un renglón que está ahí
+## mientras hace falta y desaparece cuando dejó de hacer falta, se lee — porque
+## está en el momento en que el jugador tiene la pregunta.
+var _nunca_lanzo := true
 ## La mezcla que el servidor acaba de declarar nueva y que todavía no está en el
 ## grimorio que tenemos en la mano. Ver `_al_lanzar()`.
 var _por_estrenar: Array = []
@@ -363,7 +372,19 @@ func _al_preparar(d: Dictionary) -> void:
 	_eleccion = []
 	_rehacer_sigilos_encima()
 	_lienzo.queue_redraw()
-	_decir(str(d.get("cuenta", "")))
+	# **El paso 1 tiene que empujar al paso 2.** Antes elegías tres runas, el
+	# panel se cerraba, y volvías a un valle idéntico al de hace diez segundos:
+	# el ritual no entregaba a nada. Ahora lo primero que dice el mundo al
+	# cerrarse el panel es cómo se tira lo que acabás de colgarte — y sólo la
+	# primera vez, porque después ya lo sabés.
+	if _nunca_lanzo:
+		# El paso 1 entrega al paso 2 en el instante exacto en que termina, y por
+		# una sola vez. No duplica el renglón de `primeros_pasos` que ya manda el
+		# servidor: aquél cuenta la situación, éste es el empujón.
+		_decir("Ya las llevas encima. Ahora mantén [R] pulsada y suéltala "
+			+ "encima de algo.")
+	else:
+		_decir(str(d.get("cuenta", "")))
 	if api != null:
 		api.pedir_grimorio()
 
@@ -383,6 +404,10 @@ func _al_lanzar(d: Dictionary) -> void:
 	for s in d.get("quedan", []):
 		_quedan[str(s)] = true
 	_rehacer_sigilos_encima()
+	# Salió: el renglón que explicaba el gesto ya no hace falta nunca más.
+	if _nunca_lanzo:
+		_nunca_lanzo = false
+		_guardar_la_manana()
 
 	_decir(str(d.get("cuenta", "")))
 	if bool(d.get("nueva", false)):
@@ -431,7 +456,8 @@ func _guardar_la_manana() -> void:
 	var f := FileAccess.open(MEMORIA, FileAccess.WRITE)
 	if f == null:
 		return
-	f.store_string(JSON.stringify({"tick": tick, "colgadas": _colgadas}))
+	f.store_string(JSON.stringify({
+		"tick": tick, "colgadas": _colgadas, "lanzo": not _nunca_lanzo}))
 
 
 func _recordar_la_manana() -> void:
@@ -444,6 +470,10 @@ func _recordar_la_manana() -> void:
 	if j is Dictionary:
 		_colgadas = (j as Dictionary).get("colgadas", [])
 		_tick_memoria = int((j as Dictionary).get("tick", -1))
+		# Esto NO se descarta cuando la mañana es de otro día: haber lanzado una
+		# vez se aprende para siempre, igual que en el diseño (§6, *aprende el
+		# jugador, no el personaje*).
+		_nunca_lanzo = not bool((j as Dictionary).get("lanzo", false))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -642,10 +672,10 @@ func _abrir_radial() -> void:
 		_decir("Todavía no sabes ninguna runa. Se aprenden de alguien.")
 		return
 	if _colgadas.is_empty():
-		_decir("No te colgaste ninguna runa hoy. P para hacerlo.")
+		_decir("Hoy no llevas ninguna runa encima. Pulsa [P] para elegir las de hoy.")
 		return
 	if _mano().is_empty():
-		_decir("Ya gastaste todo lo que llevabas. Mañana se cuelgan otras.")
+		_decir("Ya gastaste todo lo que llevabas hoy. Mañana eliges otras.")
 		return
 	_radial = true
 	_trazo = []
@@ -690,6 +720,12 @@ func _soltar_trazo() -> void:
 	_trazo = []
 	_lienzo.queue_redraw()
 	if secuencia.is_empty():
+		# Soltaste R sin poner nada. Es EL error del principiante con un gesto
+		# compuesto —apretar y soltar como si fuera un botón— y hasta hoy no
+		# pasaba nada, que es lo que hace pensar que la tecla no anda.
+		if _nunca_lanzo:
+			_decir("No elegiste ningún sigilo. Hay que tener [R] pulsada "
+				+ "mientras eliges, y soltarla encima del blanco.")
 		return
 	if api == null:
 		return
@@ -707,7 +743,7 @@ func _soltar_trazo() -> void:
 ## bicho, una persona, vos, o el suelo. El suelo no compite — es lo que queda
 ## cuando no hay nada más, y por eso siempre hay adónde tirar.
 func _blanco_bajo(donde: Vector2) -> Dictionary:
-	var suelo := {"tipo": "lugar", "id": "", "nombre": "el suelo de acá"}
+	var suelo := {"tipo": "lugar", "id": "", "nombre": "el suelo de aquí"}
 	if camara == null or not is_instance_valid(camara) or not blancos.is_valid():
 		return suelo
 	var lista: Array = blancos.call()
@@ -899,9 +935,14 @@ func _pintar_mano() -> void:
 	if _sabidas.is_empty():
 		return
 
+	# **"Colgarte una runa" es vocabulario nuestro y el jugador no tiene por qué
+	# aprenderlo antes de poder apretar una tecla.** Dice qué te da la tecla, que
+	# es lo único que hace que alguien la apriete. Un renglón y no dos: la
+	# situación —que sabes trazar y hoy no llevas nada— ya la cuenta el servidor
+	# en `primeros_pasos`, y repetirla acá es la esquina otra vez.
 	if _colgadas.is_empty():
-		_texto(Vector2(x, y + 26.0), "P — colgarte las runas de hoy",
-			14, Paleta.UI_TEXTO_DEBIL)
+		_texto(Vector2(x, y + 26.0), "[P]  elegir las %d runas que llevas hoy"
+			% _cuantas_entran_hoy(), 15, Paleta.UI_ACENTO)
 		return
 
 	var vivas := _mano().size()
@@ -916,7 +957,12 @@ func _pintar_mano() -> void:
 		var encendido: bool = _quedan.has(slug)
 		_sigilo(c, SIGILO_HUD * 0.5, slug, encendido, 1.0)
 
-	var pie := "R trazar · G grimorio" if vivas > 0 else "G grimorio"
+	# **"R (mantenida)" y no "R trazar".** Un paréntesis de dos palabras es todo
+	# lo que hace falta acá, y es lo que faltaba: que la tecla se MANTIENE no lo
+	# sugiere nada en pantalla, y un gesto de dos tiempos que nadie te enseñó es
+	# un gesto que no existe. El resto —qué eliges y sobre qué soltás— se enseña
+	# mientras lo hacés, en el radial, y no con un párrafo acá parado.
+	var pie := "R (mantenida) trazar · G grimorio" if vivas > 0 else "G grimorio"
 	_texto(Vector2(x, y + SIGILO_HUD + 40.0), pie, 12, Paleta.UI_TEXTO_DEBIL)
 
 
@@ -962,7 +1008,7 @@ func _pintar_radial() -> void:
 	# La frase, creciendo, cada pieza del color de su runa.
 	var base := _centro_radial + Vector2(0, RADIO_RADIAL + SIGILO_RADIAL * 0.9 + 34.0)
 	if _trazo.is_empty():
-		_centrado(base, "tocá un sigilo, o tipeá su inicial", 15,
+		_centrado(base, "elige un sigilo, o pulsa su inicial", 15,
 			Color(Paleta.UI_TEXTO_DEBIL, 0.95))
 	else:
 		var partes := _frase(_trazo)
@@ -981,10 +1027,24 @@ func _pintar_radial() -> void:
 		_texto(Vector2(x, base.y), "…", 22, Paleta.UI_TEXTO_DEBIL)
 
 	# Y adónde va. El cauce se lee al lado del cursor porque el cursor es el que
-	# lo elige: soltás sobre el bicho, sobre alguien, sobre vos o sobre el suelo.
-	var hacia := str(_blanco_actual.get("nombre", "el suelo de acá"))
-	_texto(_cursor + Vector2(20.0, -14.0), "sobre " + hacia, 15, Paleta.UI_ACENTO)
+	# lo elige: sueltas sobre el bicho, sobre alguien, sobre ti o sobre el suelo.
+	#
+	# **El renglón dice "suelta", no "sobre".** Es la mitad del gesto que no se
+	# anunciaba en ningún lado: que haya que MANTENER R y SOLTAR encima de algo
+	# no se descubre mirando un radial, y un gesto que nadie te enseñó es un
+	# gesto que no existe. Con un sigilo puesto la frase ya dice qué es, así que
+	# lo que falta acá es cómo se termina.
+	var hacia := str(_blanco_actual.get("nombre", "el suelo de aquí"))
+	var pie := ("suelta [R] sobre " + hacia) if not _trazo.is_empty() \
+		else ("sobre " + hacia)
+	_texto(_cursor + Vector2(20.0, -14.0), pie, 15, Paleta.UI_ACENTO)
 	_lienzo.draw_arc(_cursor, 13.0, 0.0, TAU, 20, Color(Paleta.UI_ACENTO, 0.8), 1.5, true)
+	# Y cómo se sale sin lanzar, mientras el gesto todavía es nuevo. Después
+	# estorba: son dos teclas de escape para una acción que dura un segundo.
+	if _nunca_lanzo:
+		_centrado(base + Vector2(0.0, 26.0),
+			"[retroceso] borrar el último  ·  [Esc] soltar sin lanzar", 12,
+			Color(Paleta.UI_TEXTO_DEBIL, 0.9))
 
 
 func _letra_de(slug: String) -> String:
@@ -1038,7 +1098,7 @@ func _pintar_ritual() -> void:
 
 	_texto(caja.position + Vector2(34, 46), "La mañana", 27, Paleta.UI_TEXTO)
 	_texto(caja.position + Vector2(34, 74),
-		"Lo que te colgás ahora es lo de todo el día. Mañana se cambian.",
+		"Lo que eliges ahora es lo que llevas todo el día. Mañana se cambia.",
 		14, Paleta.UI_TEXTO_TENUE)
 
 	var ranuras: Array = d["ranuras"]
@@ -1087,16 +1147,16 @@ func _pintar_ritual() -> void:
 
 	if _colgadas.size() > 0:
 		_texto(caja.position + Vector2(34, caja.size.y - 28.0),
-			"Ya te colgaste las de hoy; mañana se cambian.", 13, Paleta.UI_TEXTO_DEBIL)
+			"Ya llevas las de hoy; mañana se cambian.", 13, Paleta.UI_TEXTO_DEBIL)
 	else:
 		_texto(caja.position + Vector2(34, caja.size.y - 28.0),
-			"Tocá los sigilos, o tipeá sus iniciales.", 13, Paleta.UI_TEXTO_DEBIL)
+			"Toca los sigilos, o pulsa sus iniciales.", 13, Paleta.UI_TEXTO_DEBIL)
 
 	var b: Rect2 = d["colgar"]
 	var listo := not _eleccion.is_empty()
 	_lienzo.draw_rect(b, Color(Paleta.UI_ACENTO if listo else Paleta.UI_TEXTO_DEBIL, 0.16), true)
 	_lienzo.draw_rect(b, Color(Paleta.UI_ACENTO if listo else Paleta.UI_TEXTO_DEBIL, 0.7), false, 1.5)
-	_centrado(b.position + Vector2(b.size.x * 0.5, 23.0), "Colgármelas  ⏎", 15,
+	_centrado(b.position + Vector2(b.size.x * 0.5, 23.0), "Llevarme éstas  ⏎", 15,
 		Paleta.UI_ACENTO if listo else Paleta.UI_TEXTO_DEBIL)
 	_cruz(d["cerrar"])
 
@@ -1139,7 +1199,7 @@ func _pintar_hoja_de_runas(caja: Rect2) -> void:
 		_texto(caja.position + Vector2(38, 96),
 			"Una hoja en blanco.", 18, Paleta.UI_TEXTO_TENUE)
 		_texto(caja.position + Vector2(38, 126),
-			"Las runas se aprenden de alguien que las sepa. Preguntá por ahí.",
+			"Las runas se aprenden de alguien que las sepa. Pregunta por ahí.",
 			14, Paleta.UI_TEXTO_DEBIL)
 		return
 	var y := caja.position.y + 96.0

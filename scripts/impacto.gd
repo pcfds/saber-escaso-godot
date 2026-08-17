@@ -22,6 +22,23 @@
 ## | 8 | chispa             |   12    | 200 ms: 5 abriendo, 7 apagándose.          |
 ## | 9 | sonido             |    0    | en el cuadro del contacto, no en un timer. |
 ##
+## Y la otra mitad, que faltaba entera: **el golpe que te dan a vos.**
+##
+## | # | qué                 | cuadros | por qué ese número                       |
+## |---|---------------------|---------|------------------------------------------|
+## |10 | amago: el cuerpo se |   10    | 167 ms. Lo que tarda la silueta en pasar |
+## |   | abre                |         | de bicho parado a bicho encabritado.     |
+## |11 | amago: el sostén    |   14    | 233 ms QUIETO en esa pose. El sostén ES  |
+## |   |                     |         | el aviso: una pose que sigue moviéndose  |
+## |   |                     |         | no se lee como "va a pasar algo".        |
+## |12 | amago: se deshace   |    4    | 67 ms. Al comprometerse o al abortar.    |
+## |13 | tambaleo del herido | ciclo de| 1,35 Hz. Más rápido se lee como temblor  |
+## |   |                     |   44    | de motor; más lento, como que flota.     |
+##
+## **De la decisión de zarpazo al zarpazo hay 29 cuadros: 24 de amago y los 5
+## de anticipo del swing. 483 ms.** El reclamo era *"me ataca el monstruo sin
+## decirme nada"*, y medio segundo de cuerpo encabritado es lo que dice algo.
+##
 ## El swing entero son **23 cuadros (0,383 s)**. No hay bloqueo de control en
 ## ningún momento: podés caminar y girar mientras dura, así que los 23 cuadros
 ## no son 23 cuadros de "perdí el control" — son 23 cuadros de animación encima
@@ -102,6 +119,56 @@ const EMPUJE_RECIBE := 8.0
 const EMPUJE_JUGADOR := 4.8
 const EMPUJE_PEGA := 3.2
 const EMPUJE_FRENO := 62.0
+
+
+# ── Anticipación: el amago del bicho ────────────────────────────────────────
+#
+# **El bicho no puede pegarte sin avisar.** Era el reclamo textual —*"me ataca
+# el monstruo sin decirme nada"*— y no se arregla con un cartel: se arregla con
+# una pose que ocupe medio segundo y cambie la silueta entera.
+#
+# Las tres partes están separadas porque hacen cosas distintas. **La del medio
+# es la que avisa**: un cuerpo que se sigue moviendo se lee como que está
+# haciendo algo; un cuerpo que se abrió y se quedó así se lee como que está por
+# hacer algo. El sostén es el aviso.
+
+## 10 cuadros: el cuerpo se encabrita. Con menos el cambio de silueta se
+## confunde con el rebote de la caminata.
+const AMAGO_ALZA := 10.0 * CUADRO
+## 24 cuadros en total, 400 ms: 10 de alza y 14 quieto arriba.
+const AMAGO_DURA := 24.0 * CUADRO
+## 4 cuadros para deshacerlo, y son los mismos 4 en las dos salidas —el zarpazo
+## y el abandono—. Se elige corto a propósito: si tarda, el cuadro del contacto
+## todavía tiene el amago encima y las dos poses se pelean.
+const AMAGO_SUELTA := 4.0 * CUADRO
+
+## Cuánto espera el bicho después de un amago ABANDONADO. Sin esto, el que se
+## queda justo en el borde del alcance ve al bicho encabritándose y bajando
+## veinte veces por segundo, que es peor que no avisar: es ruido.
+const AMAGO_CORTE := 0.45
+
+
+# ── Consecuencia: el que viene perdiendo se mueve como que viene perdiendo ──
+#
+# *"la vida baja en un número y el cuerpo no se entera."* Estos cuatro son la
+# respuesta, y ninguno es un cartel: son **tiempo y postura**, las dos cosas que
+# se leen a 40 m. La fracción que los maneja es `1 - vida/vida_máxima`, o sea
+# que a vida llena valen todos 1,0 y no hacen nada.
+
+## Al 0% de vida se mueve al 55% de la velocidad. Es lo primero que se nota y lo
+## que hace que rematar a uno herido se sienta distinto de empezar a pegarle.
+const HERIDO_VELOCIDAD := 0.55
+## Y pega 1,7 veces más espaciado.
+const HERIDO_ESPERA := 1.7
+## Y el amago le sale más largo: un bicho cansado telegrafía más. Es información
+## a favor del jugador, que es lo que corresponde cuando el bicho está ganado.
+const HERIDO_AMAGO := 1.35
+## El tambaleo: 1,35 Hz —un ciclo cada 44 cuadros— y 17 cm de vaivén lateral,
+## que en un cuerpo de 1,45 m es el 12% de su altura. No se mide por cuánto se
+## mueve en un cuadro (a 40 m eso es medio píxel) sino por que la silueta ENTERA
+## esté yendo y viniendo todo el tiempo: eso se lee, aunque el cuadro no.
+const TAMBALEO_HZ := 1.35
+const TAMBALEO_AMP := 0.17
 
 ## La chispa: 12 cuadros.
 const CHISPA_ABRE := 5.0 * CUADRO
@@ -318,19 +385,86 @@ func _process(dt: float) -> void:
 # es lo contrario, una muestra de 100 ms que se dispara y se olvida. Meterlo
 # ahí sería colgarle un caso especial a una máquina que no es para eso.
 
+## Son TRES muestras y cada una contesta una pregunta distinta del jugador:
+##
+##   · `_impacto()` — «¿conectó?». Cae en el cuadro del contacto.
+##   · `_zumbido()` — «¿tiré el golpe?». Sale con el swing, conecte o no, y por
+##     eso es **la diferencia audible entre errar y acertar**: errar suena a
+##     aire solo; acertar suena a aire y encima el golpe. El jugador se entera
+##     de cuál fue antes de leer un solo cartel, que era el pedido.
+##   · `_gruñido()` — «¿me van a pegar?». Los 400 ms del amago del bicho.
+##     Sirve sobre todo cuando el bicho te queda fuera de encuadre, que a esta
+##     cámara pasa todo el tiempo.
 const SON_HZ := 22050
-static var _wav: AudioStreamWAV
+static var _wav_impacto: AudioStreamWAV
+static var _wav_zumbido: AudioStreamWAV
+static var _wav_grunido: AudioStreamWAV
+
+
+# ── Normalización ───────────────────────────────────────────────────────────
+#
+# La casa ya tiene una convención y estas muestras la usan, porque **ya se pagó
+# el precio de no tenerla**: en `sonido.gd` seis de diez bucles salían
+# recortados y el viento estaba 20 dB por encima de todo, así que la mezcla
+# escrita no era la mezcla que sonaba. Las reglas son las de ahí:
+#
+#   · transitorio (golpe, zumbido) → se normaliza por PICO. De un transitorio lo
+#     que importa es que no recorte.
+#   · sostenido (gruñido) → se normaliza a **-20 dBFS eficaces**, `RMS_VOZ` =
+#     0,10, que es el nivel de trabajo de todas las voces del lecho.
+
+const PICO_IMPACTO := 0.85    ## el mismo que el yunque de `sonido.gd`
+const PICO_ZUMBIDO := 0.55    ## el aire va por debajo del golpe, siempre
+const RMS_GRUNIDO := 0.10     ## -20 dBFS eficaces
+
+
+static func _rms(m: PackedFloat32Array) -> float:
+	if m.is_empty():
+		return 0.0
+	var s := 0.0
+	for i in m.size():
+		s += m[i] * m[i]
+	return sqrt(s / float(m.size()))
+
+
+static func _pico(m: PackedFloat32Array) -> float:
+	var p := 0.0
+	for i in m.size():
+		p = maxf(p, absf(m[i]))
+	return p
+
+
+## Empaqueta a WAV normalizando por pico. `eficaz > 0` pide en cambio nivel
+## eficaz, y aun así se le pone techo al pico: normalizar por RMS sin mirar el
+## pico es exactamente como se recortaba el viento.
+static func _empacar(m: PackedFloat32Array, pico: float, eficaz := 0.0) -> AudioStreamWAV:
+	var pk := maxf(_pico(m), 0.000001)
+	var k := pico / pk
+	if eficaz > 0.0:
+		k = eficaz / maxf(_rms(m), 0.000001)
+		if pk * k > pico:
+			k = pico / pk
+	var datos := PackedByteArray()
+	datos.resize(m.size() * 2)
+	for i in m.size():
+		datos.encode_s16(i * 2, int(clampf(m[i] * k, -1.0, 1.0) * 32000.0))
+	var w := AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_16_BITS
+	w.mix_rate = SON_HZ
+	w.stereo = false
+	w.data = datos
+	return w
 
 
 ## Un golpe seco: un cuerpo grave que cae de 165 a 55 Hz en 40 ms y un
 ## chasquido de ruido encima. Es la misma receta que un tambor sintetizado, que
 ## es lo que un impacto ES.
-static func _muestra() -> AudioStreamWAV:
-	if _wav != null:
-		return _wav
+static func _impacto() -> AudioStreamWAV:
+	if _wav_impacto != null:
+		return _wav_impacto
 	var n := int(SON_HZ * 0.10)
-	var datos := PackedByteArray()
-	datos.resize(n * 2)
+	var m := PackedFloat32Array()
+	m.resize(n)
 	var fase := 0.0
 	var r := RandomNumberGenerator.new()
 	r.seed = 20260817   # determinista: el mismo golpe en todas las máquinas
@@ -346,32 +480,122 @@ static func _muestra() -> AudioStreamWAV:
 		var blanco := r.randf_range(-1.0, 1.0)
 		var chas: float = (blanco - previo) * 0.5 * exp(-t * 95.0)
 		previo = blanco
-		var v: float = clampf(cuerpo * 0.82 + chas * 0.55, -1.0, 1.0)
-		var q := int(v * 32000.0)
-		datos.encode_s16(i * 2, q)
-	var w := AudioStreamWAV.new()
-	w.format = AudioStreamWAV.FORMAT_16_BITS
-	w.mix_rate = SON_HZ
-	w.stereo = false
-	w.data = datos
-	_wav = w
-	return w
+		m[i] = cuerpo * 0.82 + chas * 0.55
+	_wav_impacto = _empacar(m, PICO_IMPACTO)
+	return _wav_impacto
+
+
+## El aire del swing. 180 ms de ruido pasado por un pasa-banda que sube de tono
+## —de 500 a 1.900 Hz— mientras el brazo acelera.
+##
+## **El pico está puesto en el cuadro 5, no en el cero.** Un zumbido que
+## arranca fuerte suena al botón; uno que crece y revienta cuando el arma pasa
+## suena al arma. Los 83 ms del anticipo son justamente el tramo en que sube.
+static func _zumbido() -> AudioStreamWAV:
+	if _wav_zumbido != null:
+		return _wav_zumbido
+	var n := int(SON_HZ * 0.18)
+	var m := PackedFloat32Array()
+	m.resize(n)
+	var r := RandomNumberGenerator.new()
+	r.seed = 20260818
+	# Pasa-banda barato: un pasa-bajos de un polo restado de otro más rápido.
+	var lento := 0.0
+	var rapido := 0.0
+	var cima := float(SWING_ANTICIPO)   # 83 ms: el cuadro del contacto
+	for i: int in n:
+		var t := float(i) / float(SON_HZ)
+		var u: float = clampf(t / 0.18, 0.0, 1.0)
+		var hz: float = lerpf(500.0, 1900.0, u)
+		var a: float = clampf(TAU * hz / float(SON_HZ), 0.0, 1.0)
+		var blanco := r.randf_range(-1.0, 1.0)
+		rapido += (blanco - rapido) * a
+		lento += (blanco - lento) * a * 0.25
+		# Envolvente en dos tramos: sube hasta el cuadro 5 y cae después.
+		var env: float = (t / cima) if t < cima else exp(-(t - cima) * 21.0)
+		m[i] = (rapido - lento) * env
+	_wav_zumbido = _empacar(m, PICO_ZUMBIDO)
+	return _wav_zumbido
+
+
+## El gruñido del amago: 400 ms, exactamente lo que dura la pose.
+##
+## Sube de 62 a 96 Hz y de volumen hacia el final: **el sonido tiene la misma
+## forma que la pose**, se abre y se sostiene, y se corta en el cuadro en que el
+## brazo sale. Es grave a propósito — a 40 m lo agudo se pierde en el lecho y lo
+## grave llega igual, y encima grave lee como cuerpo grande.
+static func _grunido() -> AudioStreamWAV:
+	if _wav_grunido != null:
+		return _wav_grunido
+	var n := int(SON_HZ * float(AMAGO_DURA))
+	var m := PackedFloat32Array()
+	m.resize(n)
+	var r := RandomNumberGenerator.new()
+	r.seed = 20260819
+	var fase := 0.0
+	var aspero := 0.0
+	for i: int in n:
+		var t := float(i) / float(SON_HZ)
+		var u := t / float(AMAGO_DURA)
+		var hz: float = lerpf(62.0, 96.0, u * u)
+		fase += TAU * hz / float(SON_HZ)
+		# Diente de sierra suavizado: más armónicos que un seno, que es lo que
+		# hace que un gruñido sea un gruñido y no un zumbido de heladera.
+		var s := sin(fase) + sin(fase * 2.0) * 0.42 + sin(fase * 3.0) * 0.21
+		# Aspereza: ruido filtrado bajo, modulado por la misma onda. Es la
+		# garganta.
+		aspero += (r.randf_range(-1.0, 1.0) - aspero) * 0.06
+		# Ataque de 60 ms, y de ahí crece hasta el final. No se apaga: lo corta
+		# el zarpazo.
+		var env: float = minf(1.0, t / 0.06) * (0.55 + u * 0.45)
+		m[i] = (s * 0.55 + aspero * s * 0.9) * env
+	_wav_grunido = _empacar(m, 0.90, RMS_GRUNIDO)
+	return _wav_grunido
+
+
+# ── Reproducción ────────────────────────────────────────────────────────────
+#
+# Todo sale de la misma función que la pose que lo acompaña, nunca de un
+# temporizador: un impacto que suena tarde se siente desconectado aunque sea el
+# mismo sonido.
+
+## `unit_size` grande y no el metro por defecto: el valle es grande y la cámara
+## está a 40 m. Con la unidad en 1 m un golpe a 40 m no se oiría.
+static func sonar(donde: Node3D, wav: AudioStreamWAV, db: float,
+		unidad: float, maximo: float, tono := Vector2(0.92, 1.10)) -> void:
+	if donde == null or not donde.is_inside_tree() or wav == null:
+		return   # sin árbol no hay reproducción, y el motor lo grita en rojo
+	var p := AudioStreamPlayer3D.new()
+	p.stream = wav
+	p.volume_db = db
+	p.unit_size = unidad
+	p.max_distance = maximo
+	# Variación de tono para que diez seguidos no suenen a metralleta. Es el
+	# mismo truco del yunque en `sonido.gd`.
+	p.pitch_scale = randf_range(tono.x, tono.y)
+	# **Se borra solo al terminar.** La chispa se lleva su reproductor puesto
+	# cuando se libera a los 12 cuadros, pero el zumbido y el gruñido cuelgan de
+	# un cuerpo que vive para siempre: sin esto, cada golpe deja un nodo tirado
+	# en la figura y a los cinco minutos de pelea hay cientos.
+	p.finished.connect(p.queue_free)
+	donde.add_child(p)
+	p.play()
+
+
+## El aire del swing. Lo dispara `Figura.atacar()`, o sea que suena para el
+## jugador y para el bicho con el mismo código.
+static func zumbar(quien: Node3D) -> void:
+	# 14 dB por debajo del golpe: el aire acompaña, no anuncia.
+	sonar(quien, _zumbido(), -14.0, 11.0, 55.0, Vector2(0.88, 1.14))
+
+
+## El gruñido del amago. Lo dispara `monstruo.gd` al encabritarse.
+static func grunir(quien: Node3D) -> void:
+	# Alcance largo y unidad grande: el punto es enterarte del bicho que NO
+	# estás mirando, y a esta cámara ése es casi siempre.
+	sonar(quien, _grunido(), -9.0, 20.0, 75.0, Vector2(0.86, 1.12))
 
 
 func _sonar() -> void:
-	if not is_inside_tree():
-		return   # sin árbol no hay reproducción, y el motor lo grita en rojo
-	var p := AudioStreamPlayer3D.new()
-	p.stream = _muestra()
 	# Un golpe no compite con el lecho: entra 6 dB por debajo del pico y se va.
-	p.volume_db = -6.0
-	# El valle es grande y la cámara está a 40 m. Con la unidad por defecto (1 m)
-	# un golpe a 40 m no se oiría; con 14 m se oye desde donde se juega y se
-	# apaga si el choque fue en la otra punta.
-	p.unit_size = 14.0
-	p.max_distance = 90.0
-	# Un poco de variación de tono para que diez golpes seguidos no suenen a
-	# metralleta. Es el mismo truco del yunque en `sonido.gd`.
-	p.pitch_scale = randf_range(0.92, 1.10)
-	add_child(p)
-	p.play()
+	sonar(self, _impacto(), -6.0, 14.0, 90.0)

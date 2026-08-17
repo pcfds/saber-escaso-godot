@@ -595,6 +595,10 @@ func _campo(x: float, z: float, r: float) -> Dictionary:
 	d *= smoothstep(4.6, 7.4, d_cam)            # el camino queda libre
 	d *= smoothstep(11.0, 22.0, p.distance_to(VADO))   # el vado
 	d *= smoothstep(36.0, 54.0, d_ruina)        # el páramo de la Casa Quemada
+	# La Puerta del Norte. Adentro de una mole de roca no crece nada, y al pie
+	# tampoco: es pedrero. Se pregunta a `Hitos` en vez de copiar acá las
+	# coordenadas porque el día que la puerta se mueva un metro, se mueve sola.
+	d *= Hitos.despeje(x, z)
 
 	# --- la tala del Sotobosque ---------------------------------------------
 	# Una cuña del lado que mira a la aldea. El bosque no se termina así solo.

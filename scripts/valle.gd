@@ -97,6 +97,10 @@ var _mi_nombre := ""
 var _monstruos: Array[Monstruo] = []
 var ciclo: Ciclo
 var vegetacion: Vegetacion
+## Los hitos: la Puerta del Norte, la lastra caída y el mojón del camino. Es lo
+## único del valle que no está a escala de casa, y por eso es lo que le da
+## tamaño al resto. Ver `hitos.gd`.
+var hitos: Hitos
 var sonido: Sonido
 var dibujado: Dibujado
 var _lugar_actual := ""
@@ -105,6 +109,13 @@ var _monstruos_por_id: Dictionary = {}
 var _actitudes: Dictionary = {}
 var _ya_saludo: Dictionary = {}
 var mapa: Mapa
+## Lo que hay adentro de las casas. Ver `interiores.gd`: las casas se abren, la
+## gente que el servidor manda a dormir a su casa está de verdad adentro, y el
+## cuarto en el que estás parado se recorta para que la cámara pueda mirarlo.
+var interiores: Interiores
+## La cámara del jugador, guardada para no buscarla en cada cuadro. La necesita
+## el recorte: qué muro tapa depende de dónde está mirando, no de dónde estás.
+var _camara: Camera3D
 var _ya_pedimos_cronica := false
 ## La magia: el ritual de la mañana, el trazo, el grimorio y las marcas que
 ## quedan en el suelo. Todo el sistema vivía en el servidor y no había forma de
@@ -142,6 +153,11 @@ func _ready() -> void:
 	_armar_terreno()
 	_armar_cordillera()
 	_armar_rio()
+	# Va ANTES de las casas y en un miembro, no en una variable local: cada casa
+	# se registra al construirse, que es el único momento en que su geometría
+	# está en la mano sin tener que ir a buscarla al árbol.
+	interiores = Interiores.new()
+	add_child(interiores)
 	for slug: String in LUGARES:
 		_armar_lugar(slug, LUGARES[slug])
 
@@ -151,6 +167,12 @@ func _ready() -> void:
 	vegetacion = Vegetacion.new()
 	add_child(vegetacion)
 	vegetacion.poblar(altura_en, LUGARES)
+	# Después de la vegetación y no antes: `Vegetacion` consulta
+	# `Hitos.despeje()`, que es estática, así que no hay dependencia de orden —
+	# pero plantar la roca después deja el árbol en el orden en que se lee.
+	hitos = Hitos.new()
+	add_child(hitos)
+	hitos.plantar(altura_en)
 
 	Detalles.pasto(self, altura_en, 26000, 130.0)
 	Detalles.piedras(self, altura_en, 320, 145.0)
@@ -219,6 +241,9 @@ func _ready() -> void:
 		cam.add_child(dibujado)
 	else:
 		add_child(dibujado)
+	# Guardada para el recorte de los interiores: buscarla en cada cuadro sería
+	# recorrer el árbol del jugador sesenta veces por segundo para nada.
+	_camara = cam
 
 	# La magia. Va al final y en un miembro, nunca en una variable local: es la
 	# trampa que ya costó una tarde en este archivo —un módulo instanciado sin
@@ -441,55 +466,37 @@ func _armar_lugar(slug: String, def: Dictionary) -> void:
 	var huellas: Array[Vector3] = []
 	_casas[slug] = huellas
 	for i in n:
-		var a := TAU * i / float(n) + 0.4
-		# El radio tiene que crecer con la cantidad, o las casas se encaraman
-		# unas sobre otras — que es exactamente lo que pasaba con siete en un
-		# círculo de 5 metros. Una casa mide 2,7 de ancho, así que la cuerda
-		# entre dos vecinas tiene que ser mayor que eso con aire.
-		var r: float = maxf(8.0, 4.4 * n / TAU + 7.0)
-		# Miran hacia afuera del círculo, como un caserío alrededor de una
-		# plaza. Antes rotaban con el ángulo Y con azar encima, y quedaban
-		# cruzadas entre sí.
-		var px := cos(a) * r
-		var pz := sin(a) * r
-		var py := altura_en(base.x + px, base.z + pz) - base.y
-		var giro := a + rng.randf_range(-0.2, 0.2)
+		# Dónde se apoya de verdad. Antes era el punto del círculo y la altura
+		# del centro de la casa; ahora es el rellano más parejo cerca de ahí, y
+		# la altura es la del punto MÁS ALTO de la planta. Ver `_sitio_de_casa()`.
+		var sitio := _sitio_de_casa(base, i, n, huellas)
+		var pos: Vector3 = sitio["pos"]
+		var giro: float = sitio["giro"]
 
 		# La familia de muro es del LUGAR, no de la casa: las siete de Vado
 		# Bajo son de tabla y las dos de la fragua de piedra. Un caserío donde
 		# cada casa es de otro material se lee como muestrario.
 		var quemada := slug == "ruina"
-		var alero := Detalles.casa(g, Vector3(px, py, pz), giro, rng,
-			slug == "fragua", quemada)
+		var casa := Detalles.casa(g, sitio, rng, slug == "fragua", quemada)
+		var alero: float = casa["alero"]
 
 		# Para la ronda de la gente: dónde hay una casa y cómo está girada. Se
 		# anota acá, que es el único momento en que el dato existe sin tener que
 		# ir a buscarlo al árbol.
-		huellas.append(Vector3(base.x + px, base.z + pz, giro))
+		huellas.append(Vector3(base.x + pos.x, base.z + pos.z, giro))
 
-		# La colisión sigue siendo una caja, y está bien que lo sea: es la
-		# planta de la casa, que no cambió (ver `CASA_MEDIA`). Cobrar la
-		# silueta real del kit en el motor de física para que no se pueda
-		# caminar entre dos postigos no le agrega nada a nadie.
-		var col := StaticBody3D.new()
-		var cf := CollisionShape3D.new()
-		var bs := BoxShape3D.new()
-		# La planta real del kit, NO `CASA_MEDIA`. Los dos números están cerca a
-		# propósito, pero `CASA_MEDIA` lleva un margen de holgura para empujar a
-		# la gente antes de que roce la pared; usarlo acá pondría la pared
-		# invisible medio metro afuera de la casa que se ve.
-		var lado := Detalles.CASA_CELDA * 2.0
-		bs.size = Vector3(lado, alero, lado)
-		cf.shape = bs
-		col.add_child(cf)
-		col.position = Vector3(px, py + alero / 2.0, pz)
-		col.rotation.y = giro
-		g.add_child(col)
+		# LA COLISIÓN YA NO ES UNA CAJA MACIZA, y ése era el bug entero: la
+		# puerta estaba dibujada y una pared invisible pasaba por delante. Ahora
+		# la pone `Detalles.casa()`, tabique por tabique y con el hueco de la
+		# puerta abierto. Acá no queda nada que hacer.
+		var clave := "%s/%d" % [slug, i]
+		interiores.amueblar(clave, casa, quemada, rng)
 
 		if not quemada:
-			Detalles.chimenea(g, Vector3(px + 0.85, py + alero + 1.25, pz - 0.65), 2.7)
+			interiores.anotar_chimenea(clave, Detalles.chimenea(g,
+				Vector3(pos.x + 0.85, pos.y + alero + 1.25, pos.z - 0.65), 2.7))
 
-		_enseres(g, base, Vector3(px, py, pz), giro, slug, rng)
+		_enseres(g, base, pos, giro, slug, rng)
 
 	_anillos[slug] = _anillo_de(Vector2(base.x, base.z), huellas)
 
@@ -497,6 +504,124 @@ func _armar_lugar(slug: String, def: Dictionary) -> void:
 		_armar_fuego(g)
 	if slug == "aldea":
 		_armar_faroles(g)
+
+
+# ---------------------------------------------------------------------------
+# DÓNDE SE APOYA UNA CASA
+# ---------------------------------------------------------------------------
+#
+# Esto no existía y hacía falta desde el día que la casa creció a 5,4 m de
+# planta. **Medido sobre las doce casas del valle**: bajo la planta de una casa
+# el terreno sube y baja hasta 1,53 m, y la casa se apoyaba en la altura de su
+# CENTRO. O sea que a media docena de casas les entraba medio metro de loma
+# adentro, y a las otras les quedaba medio metro de aire bajo la pared. Con la
+# casa cerrada casi no se veía; con la puerta abierta es un cuarto con una
+# colina adentro, y eso es peor que no tener interiores.
+#
+# Se ataca por los tres lados, y el orden importa porque cada paso le deja
+# menos trabajo al siguiente:
+#
+#   1. **Buscarle el rellano.** El ángulo y el radio se dejan mover un poco y
+#      se elige el punto más parejo. Sale gratis y es lo que más rinde: el
+#      desnivel peor pasa de 1,53 a 1,03 m.
+#   2. **Apoyarla en el punto más alto** y tapar lo que quede en el aire con el
+#      zócalo de piedra de `Detalles`.
+#   3. **Elegir la puerta por el lado del acceso más bajo.** Las dos celdas del
+#      frente sirven igual, así que esto es gratis y le saca hasta medio metro
+#      al escalón: el umbral peor queda en 0,94 m.
+#
+# El costo es de arranque y se midió: 35 candidatos × 49 muestras × 12 casas son
+# unas 20.000 evaluaciones de ruido, que es menos de lo que cuesta una baldosa
+# de pasto.
+
+## Cuánto se le deja mover a una casa la posición que le tocó, buscando rellano.
+## Media casa de radio y un cuarto de radián de ángulo: alcanza para esquivar
+## una loma y no alcanza para deshacer el círculo alrededor de la plaza.
+const SITIO_ANGULO := 0.44
+const SITIO_RADIO := 5.0
+const SITIO_ANGULOS := 7
+const SITIO_RADIOS := 5
+## Con cuántos puntos se mide la planta. 7×7 sobre 5,4 m son muestras cada 90
+## cm, y el ruido del terreno tiene 36 m de longitud de onda: sobra.
+const SITIO_MUESTRAS := 7
+
+## Cuánto tiene que haber entre los centros de dos casas.
+##
+## **Esto no estaba y la búsqueda del rellano metió dos casas de Vado Bajo a 6,3
+## m una de otra**, o sea con las plantas de 5,4 m superpuestas: se entraba a una
+## y el juego decía que estabas en la otra. Se descubrió con el andamio que
+## camina hasta la puerta —dos de nueve casas no se podían entrar— y no mirando,
+## porque desde arriba dos casas encimadas parecen una casa grande.
+##
+## 5,4 de planta más 2,6 de calle. Nunca es una prohibición sino una multa muy
+## cara: un candidato siempre tiene que quedar, aunque el terreno sea horrible.
+const SITIO_SEPARACION := 9.0
+const SITIO_MULTA := 6.0
+
+
+## `puestas` son las casas que ya se colocaron en este lugar, como
+## `Vector3(x, z, giro)` en coordenadas del mundo. Ver `SITIO_SEPARACION`.
+func _sitio_de_casa(base: Vector3, i: int, n: int, puestas: Array[Vector3]) -> Dictionary:
+	var a0 := TAU * i / float(n) + 0.4
+	# El radio tiene que crecer con la cantidad, o las casas se encaraman unas
+	# sobre otras — que es exactamente lo que pasaba con siete en un círculo de
+	# 5 metros. La cuerda entre dos vecinas tiene que superar los 5,4 m de la
+	# planta con aire.
+	var r0: float = maxf(8.0, 4.4 * n / TAU + 7.0)
+	var mejor := INF
+	var salida := {}
+
+	for ka in SITIO_ANGULOS:
+		for kr in SITIO_RADIOS:
+			# Miran hacia afuera del círculo, como un caserío alrededor de una
+			# plaza: el giro ES el ángulo, sin azar encima. Antes llevaba un
+			# ±0,2 sorteado y las casas quedaban cruzadas entre sí; ahora la
+			# variedad la da la búsqueda del rellano, que además significa algo.
+			var a := a0 + (ka / float(SITIO_ANGULOS - 1) - 0.5) * SITIO_ANGULO
+			var r := r0 + (kr / float(SITIO_RADIOS - 1) - 0.5) * SITIO_RADIO
+			var px := base.x + cos(a) * r
+			var pz := base.z + sin(a) * r
+
+			var lo := INF
+			var hi := -INF
+			for u in SITIO_MUESTRAS:
+				for v in SITIO_MUESTRAS:
+					var d := Vector3(
+						(u / float(SITIO_MUESTRAS - 1) - 0.5) * Detalles.CASA_LADO, 0.0,
+						(v / float(SITIO_MUESTRAS - 1) - 0.5) * Detalles.CASA_LADO
+					).rotated(Vector3.UP, a)
+					var h := altura_en(px + d.x, pz + d.z)
+					lo = minf(lo, h)
+					hi = maxf(hi, h)
+
+			# Cuál de las dos celdas del frente tiene el acceso más bajo. Se
+			# mide dos metros afuera de la pared, que es donde de verdad pisás
+			# antes de subir.
+			var lado := 0
+			var umbral := INF
+			for k in Detalles.CASA_FRENTE.size():
+				var celda: Vector2 = Detalles.CASA_CARAS[Detalles.CASA_FRENTE[k]][0]
+				var d2 := Vector3(celda.x * Detalles.CASA_CELDA, 0.0,
+					Detalles.CASA_LADO / 2.0 + 2.0).rotated(Vector3.UP, a)
+				var u2 := hi - altura_en(px + d2.x, pz + d2.z)
+				if u2 < umbral:
+					umbral = u2
+					lado = k
+
+			var costo := (hi - lo) + maxf(0.0, umbral)
+			for otra: Vector3 in puestas:
+				var sep := Vector2(px, pz).distance_to(Vector2(otra.x, otra.y))
+				costo += maxf(0.0, SITIO_SEPARACION - sep) * SITIO_MULTA
+			if costo < mejor:
+				mejor = costo
+				salida = {
+					"pos": Vector3(px - base.x, hi - base.y, pz - base.z),
+					"giro": a,
+					"zocalo": hi - lo,
+					"umbral": maxf(0.0, umbral),
+					"puerta": lado,
+				}
+	return salida
 
 
 # ---------------------------------------------------------------------------
@@ -525,13 +650,22 @@ const ENSERES := {
 	"ruina": ["utiles/box", "utiles/barrel"],
 }
 
-## Los cuatro lugares donde puede haber algo, en el marco de la casa. La casa
-## mide 2,6 de lado, así que 1,7 la deja apoyada contra la pared por afuera.
+## Los cuatro lugares donde puede haber algo, en el marco de la casa.
+##
+## **Estaban a 1,7 m del centro y eso era estar ADENTRO.** El número venía de
+## cuando la celda medía 1,3 y la casa 2,6 de lado; con la celda en 2,7 la casa
+## mide 5,4 y su zócalo llega a 2,82, así que los barriles del valle entero
+## estaban plantados dentro de las paredes, hundidos en el terreno. No se veía
+## porque no se podía entrar. Ahora sí, y por eso salen a 3,3 — al pie de la
+## pared, del lado de afuera, que es donde el comentario decía que estaban.
+##
+## Ninguno da al frente: la cara +Z es la de la puerta y sus escalones, y un
+## barril en la escalera es un barril en la escalera.
 const ENSERES_SITIOS: Array[Vector3] = [
-	Vector3( 1.72, 0.0,  0.55),
-	Vector3(-1.72, 0.0, -0.55),
-	Vector3( 0.80, 0.0,  1.78),
-	Vector3(-0.95, 0.0, -1.78),
+	Vector3( 3.30, 0.0,  0.80),
+	Vector3(-3.30, 0.0, -0.80),
+	Vector3( 3.20, 0.0, -1.90),
+	Vector3(-2.20, 0.0, -3.30),
 ]
 
 ## Las tres escalas del kit. Los packs de Kenney NO comparten unidad: la celda
@@ -1034,6 +1168,8 @@ func _sincronizar_gente(gente: Array, lugares: Array) -> void:
 	if jugador != null:
 		yo = Vector2(jugador.global_position.x, jugador.global_position.z)
 
+	var adentro := _repartir_casas(gente, slug_por_id)
+
 	var vistos := {}
 	for slug: String in por_lugar:
 		var lista: Array = por_lugar[slug]
@@ -1060,6 +1196,17 @@ func _sincronizar_gente(gente: Array, lugares: Array) -> void:
 			nodo.set_meta("angulo", a)
 			nodo.set_meta("ancla", Vector2(
 				centro.x + cos(a) * anillo, centro.z + sin(a) * anillo))
+			# ¿Está en su casa a esta hora? Lo decide el servidor con
+			# `rutinaDe()`, no este archivo. Con el metadato puesto, la ronda de
+			# más abajo lo planta adentro y no la toca ni el límite del lugar.
+			var casa: Array = adentro.get(nombre, [])
+			if casa.is_empty():
+				if nodo.has_meta("adentro"):
+					nodo.remove_meta("adentro")
+					nodo.remove_meta("casa")
+			else:
+				nodo.set_meta("adentro", casa[1])
+				nodo.set_meta("casa", casa[0])
 			if recien:
 				# Que aparezca ya en el punto que le toca de su ronda, sin la
 				# zancada de llegar desde el origen del mundo.
@@ -1073,6 +1220,57 @@ func _sincronizar_gente(gente: Array, lugares: Array) -> void:
 		_rondas.erase(nombre)
 		if is_instance_valid(viejo):
 			viejo.queue_free()
+
+
+## Quién vive en qué casa, y quién está adentro AHORA.
+##
+## Las dos cosas salen de datos que `/mundo` ya manda y que este cliente venía
+## tirando a la basura:
+##
+##   · `home_place_id` — de qué lugar es su casa. Existe en la base desde la
+##     migración de la rutina y acá no lo leía nadie.
+##   · `durmiendo` y `durmiendo_afuera` — los calcula `rutinaDe()` en el
+##     servidor con la hora del valle. `durmiendo` sin `durmiendo_afuera`
+##     significa "está en su casa"; con las dos, se quedó en el monte y de ahí
+##     no se vuelve al oscurecer. **No se inventa nada acá.**
+##
+## Qué casa le toca a cada uno sale del ORDEN ALFABÉTICO dentro de su lugar, y
+## eso no es capricho: tiene que dar lo mismo en todas las pantallas, y el
+## orden en que el servidor devuelve las filas no está garantizado. Con más
+## gente que casas, se comparte techo — que es lo que pasa en un pueblo.
+##
+## Devuelve nombre -> `[clave de la casa, punto del mundo]`, sólo para los que
+## están adentro. A los demás igual se les registra la casa: **el yunque del
+## cuarto de Ilde tiene que estar ahí también de día**, cuando ella está afuera
+## martillando. Una fragua que sólo existe de noche no es una fragua.
+func _repartir_casas(gente: Array, slug_por_id: Dictionary) -> Dictionary:
+	interiores.olvidar_gente()
+
+	var por_lugar := {}
+	for p in gente:
+		var d: Dictionary = p
+		var slug: String = slug_por_id.get(str(d.get("home_place_id", "")), "")
+		var huellas: Array = _casas.get(slug, [])
+		if huellas.is_empty():
+			continue          # su lugar no tiene casas dibujadas (el bosque, el camino)
+		if not por_lugar.has(slug):
+			por_lugar[slug] = []
+		por_lugar[slug].append(d)
+
+	var salida := {}
+	for slug: String in por_lugar:
+		var lista: Array = por_lugar[slug]
+		lista.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return str(a.get("name", "")) < str(b.get("name", "")))
+		var cuantas: int = (_casas[slug] as Array).size()
+		for i in lista.size():
+			var d: Dictionary = lista[i]
+			var nombre := str(d.get("name", "?"))
+			var clave := "%s/%d" % [slug, i % cuantas]
+			var punto := interiores.habitar(clave, nombre, str(d.get("trade", "")))
+			if bool(d.get("durmiendo", false)) and not bool(d.get("durmiendo_afuera", false)):
+				salida[nombre] = [clave, punto]
+	return salida
 
 
 func _armar_vecino(nombre: String, oficio: String) -> Node3D:
@@ -1134,6 +1332,28 @@ func _mover_gente(dt: float) -> void:
 func _ubicar_vecino(nombre: String, nodo: Node3D, t: float, dt: float, yo: Vector2) -> void:
 	var slug := str(nodo.get_meta("lugar", ""))
 	if not LUGARES.has(slug):
+		return
+
+	# EN SU CASA. Es la mitad de para qué existen los interiores: hasta hoy el
+	# servidor mandaba a la gente a dormir a su casa —`rutinaDe()`— y el cliente
+	# la plantaba en la plaza igual, a la intemperie, con la ventana encendida
+	# mintiendo. Ahora está adentro.
+	#
+	# No hace ronda, no la empuja ninguna pared y **no la clava el límite del
+	# lugar**: las casas están a doce metros del centro y `RONDA_LIMITE` son
+	# 7,3, así que pasar por los clamps de abajo la sacaría de su propia casa.
+	# Sigue respirando y parpadeando, que es lo que la distingue de un mueble.
+	if nodo.has_meta("adentro"):
+		var p3: Vector3 = nodo.get_meta("adentro")
+		nodo.position = p3
+		var quieto := nodo.get_node_or_null(^"Cuerpo") as Figura
+		if quieto == null:
+			return
+		quieto.rotation.y = interiores.mirando_al_fuego(
+			str(nodo.get_meta("casa", "")), p3)
+		if dt > 0.0 and Vector2(p3.x, p3.z).distance_squared_to(yo) \
+				< _ANIMAR_HASTA[Rendimiento.nivel]:
+			quieto.animar(dt, 0.0, true)
 		return
 	var centro3: Vector3 = LUGARES[slug]["pos"]
 	var centro := Vector2(centro3.x, centro3.z)
@@ -1680,6 +1900,13 @@ func _process(dt: float) -> void:
 	# `figura.gd` estaba entero y sin usar, y por eso eran maniquíes.
 	_mover_gente(dt)
 
+	# ¿Estás adentro de una casa? Si sí, a esa casa se le sacan el techo, la
+	# planta alta y los muros que la cámara tiene delante. Necesita la cámara y
+	# no sólo tu posición: qué muro tapa depende de desde dónde se mira.
+	if interiores != null:
+		interiores.actualizar(jugador.global_position,
+			_camara.global_position if _camara != null else jugador.global_position)
+
 	# ¿A quién tengo al lado? Es lo que habilita hablar con E.
 	var mas_cerca := ""
 	var d_min := 4.5
@@ -1690,6 +1917,24 @@ func _process(dt: float) -> void:
 			d_min = d
 			mas_cerca = nombre
 	interfaz.mostrar_cercano(mas_cerca, _npcs.get(mas_cerca, null))
+
+	# Y qué bicho. En la base las amenazas tienen nombre propio y pueblo
+	# —"Kerrak el que quedó", de "Los del Sotobosque"— y en pantalla eran bultos
+	# genéricos: el dato ya viajaba en `/mundo` y moría en `nombre_servidor`.
+	# Diez metros y no los 4,5 de la gente: al bicho no te le acercás a hablar,
+	# lo ves venir. `interfaz.mostrar_amenaza()` ya estaba escrito y sin llamar.
+	var bicho := ""
+	var nodo_bicho: Node3D = null
+	var d_bicho := ALCANCE_CARTEL_AMENAZA
+	for m in _monstruos:
+		if not is_instance_valid(m) or m.vida <= 0:
+			continue
+		var d := m.global_position.distance_to(jugador.global_position)
+		if d < d_bicho:
+			d_bicho = d
+			bicho = m.nombre_servidor
+			nodo_bicho = m
+	interfaz.mostrar_amenaza(bicho, nodo_bicho)
 
 	# Que te reconozcan al pasar. Una sola vez por acercamiento: si se
 	# disparara cada cuadro sería un cartel, y si no se reseteara al alejarte
@@ -1769,6 +2014,11 @@ func _al_interactuar() -> void:
 ## Lo que cuenta como arma. Espeja la lista del servidor, que es quien decide
 ## el daño; acá sólo sirve para elegir qué se te ve en la mano.
 const ARMAS := ["hoja templada", "filo de agua"]
+
+## Hasta dónde se le pone el cartel a una amenaza. Más que el alcance del golpe
+## a propósito: el cartel tiene que aparecer ANTES de que puedas pegarle, o te
+## enterás de a quién estás matando después de haberlo matado.
+const ALCANCE_CARTEL_AMENAZA := 10.0
 
 const ALCANCE_JUGADOR := 6.5
 const DANIO_JUGADOR := 14
@@ -1923,3 +2173,6 @@ func _unhandled_input(evento: InputEvent) -> void:
 		if k == KEY_M and not interfaz.escribiendo():
 			mapa.alternar()
 			get_viewport().set_input_as_handled()
+
+
+

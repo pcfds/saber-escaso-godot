@@ -3,12 +3,14 @@
 ##
 ## Cuatro decisiones que hacen el look, en orden de impacto:
 ##
-##  1. PROFUNDIDAD DE CAMPO en vista isométrica. Es el truco central: desenfocar
-##     lo lejano hace que el cerebro lea la escena como una MAQUETA, no como un
-##     paisaje. Es el efecto tilt-shift, y es lo que va a hacer que la gente
-##     diga "qué lindo" antes de entender qué está mirando.
+##  1. ~~PROFUNDIDAD DE CAMPO~~. **Dado de baja el 17 de agosto y el renglón se
+##     deja tachado a propósito**, porque el argumento por el que estuvo acá
+##     meses era bueno y hay que saber por qué se cayó: buscaba que la escena se
+##     leyera como una MAQUETA, y una maqueta es un juguete. Es el reclamo, no
+##     el look. Ver el bloque largo en `_construir_camara()`, con números.
 ##  2. NIEBLA VOLUMÉTRICA con luz atravesándola. Rayos de sol entre los árboles
-##     por casi nada de costo.
+##     por casi nada de costo. **Y la niebla de DISTANCIA, que ahora no toca el
+##     cielo** — ver `fog_sky_affect`, que era por qué no había cielo.
 ##  3. SDFGI: iluminación global en tiempo real. El rebote de luz cálida en las
 ##     paredes es lo que separa "3D de asset store" de algo que parece pensado.
 ##  4. AgX como tonemapper. Filmic, no revienta los altos. Es lo que usan los
@@ -21,42 +23,43 @@
 ## pueden leer juntas y discutir juntas.
 ##
 ## ===========================================================================
-## SEIS PROPIEDADES DE ESTE ARCHIVO NO LLEGAN A LA PANTALLA. LEÉ ESTO ANTES DE
-## TOCAR UN NÚMERO.
+## TRES DE LAS SEIS PROPIEDADES QUE NO LLEGABAN A LA PANTALLA YA LLEGAN.
 ## ===========================================================================
 ##
-## La frase de arriba —"la identidad visual se define en UN lugar, éste"— es una
-## intención, no lo que pasa. `_ready()` termina llamando a
+## La frase de arriba —"la identidad visual se define en UN lugar, éste"— era
+## una intención y no lo que pasaba. `_ready()` termina llamando a
 ## `Rendimiento.registrar_entorno()`, y `rendimiento.gd::_aplicar_entorno()`
-## vuelve a escribir varias de estas propiedades **en los tres niveles de
+## volvía a escribir varias de estas propiedades **en los tres niveles de
 ## calidad, sin preguntar**. Aparte, `ciclo.gd::_process()` reescribe otras
 ## **en cada cuadro**.
 ##
-## Medido con una sonda que imprime los valores del `Environment` vivo a los
-## 3,4 segundos de arrancar, con `--captura` (o sea en ALTO):
+## Estado al 17 de agosto, tarde:
 ##
-##   | propiedad                | dice este archivo | llega a la pantalla | quién |
-##   |--------------------------|-------------------|---------------------|-------|
-##   | `adjustment_enabled`     | `true`            | **`false`**         | rendimiento |
-##   | `tonemap_exposure`       | 1.02              | **0.95**            | rendimiento |
-##   | `ambient_light_energy`   | 0.62              | lo pisa el ciclo    | ciclo |
-##   | `ssao_enabled`           | true              | lo redecide         | rendimiento |
-##   | `ssr_enabled`            | true              | lo redecide         | rendimiento |
-##   | `volumetric_fog_enabled` | true              | lo redecide         | rendimiento |
+##   | propiedad                | dice este archivo | llega | quién |
+##   |--------------------------|-------------------|-------|-------|
+##   | `adjustment_enabled`     | `true`            | SÍ ahora, salvo en BAJO | — |
+##   | `tonemap_exposure`       | 1.02              | SÍ ahora, salvo en BAJO | — |
+##   | `dof_blur_far_enabled`   | `false`           | SÍ ahora              | — |
+##   | `ambient_light_energy`   | 0.62              | lo pisa el ciclo      | ciclo |
+##   | `ssao_enabled`           | true              | lo redecide           | rendimiento |
+##   | `ssr_enabled`            | true              | lo redecide           | rendimiento |
+##   | `volumetric_fog_enabled` | true              | lo redecide           | rendimiento |
 ##
-## La consecuencia práctica, y ya costó una tarde: **el bloque de corrección de
-## color de este archivo es código muerto.** `adjustment_saturation` se movió de
-## 1,38 a 1,10 a 1,00 y a 0,85 y las cuatro capturas salieron **idénticas píxel
-## a píxel** en las trece zonas medidas. Lo mismo `adjustment_contrast` (1,12 →
-## 1,30) y `tonemap_exposure` (1,02 → 0,90). Si querés que el grade exista, hay
-## que sacarle el `adjustment_enabled = false` a `rendimiento.gd`; desde acá no
-## se puede, y subirle el número tampoco.
+## Las tres primeras se arreglaron aplicando la regla que ya estaba escrita:
+## **`rendimiento.gd` decide CÓMO se calcula un efecto, no si existe.** Ahora
+## esas tres van condicionadas a `nivel == BAJO`, que es el único nivel donde
+## hay un costo que justifique la excepción.
 ##
-## Y una trampa de método que sale de lo mismo: **apagar algo desde acá no lo
-## apaga si `rendimiento.gd` lo vuelve a prender.** Para medir si la niebla
-## volumétrica hacía algo hubo que ir por `volumetric_fog_density = 0.0`, que sí
-## es de este archivo; `volumetric_fog_enabled = false` lo revierte rendimiento
-## y el experimento da un falso "no cambia nada" por el motivo equivocado.
+## Las cuatro que quedan son legítimas y conviene decir por qué: SSAO, SSR y la
+## niebla volumétrica se apagan **por presupuesto de máquina**, que es
+## exactamente para lo que existe ese archivo. La luz ambiente la pisa el ciclo
+## porque cambia con la hora del valle, que la manda el servidor.
+##
+## Y una trampa de método que sobrevive: **apagar algo desde acá no lo apaga si
+## `rendimiento.gd` lo vuelve a prender.** Para medir si la niebla volumétrica
+## hacía algo hubo que ir por `volumetric_fog_density = 0.0`, que sí es de este
+## archivo; `volumetric_fog_enabled = false` lo revierte rendimiento y el
+## experimento da un falso "no cambia nada" por el motivo equivocado.
 ##
 ## ===========================================================================
 ## QUÉ SE MIDIÓ Y NO ERA LA CAUSA (17 de agosto)
@@ -150,8 +153,16 @@ func _construir_entorno() -> Environment:
 	# Y el albedo casi blanco era la otra mitad del problema: la bruma sumaba
 	# luz clara encima de todo. Más oscuro y más frío, para que reste contraste
 	# sólo donde debe.
-	e.volumetric_fog_albedo = Color(0.46, 0.48, 0.52)
-	e.volumetric_fog_emission = Color(0.05, 0.06, 0.08)
+	# Y EL ALBEDO SALE DE LA PALETA, QUE ES QUIEN DECIDE UN COLOR. Estaba a mano
+	# en (0.46, 0.48, 0.52) —gris frío— y `paleta.gd` tiene el suyo escrito con
+	# el motivo al lado: **`NIEBLA_VOL` es cálida** (h32 s0.15 v0.78). No es un
+	# detalle de coherencia: la bruma volumétrica es lo que se ve atravesada por
+	# el sol al amanecer y al anochecer, o sea el rayo de luz, y un rayo de luz
+	# gris azulado a las siete de la mañana es lo contrario del amanecer. Con la
+	# cálida, la misma niebla que de día resta contraste, de mañana y de tarde
+	# suma oro.
+	e.volumetric_fog_albedo = Paleta.NIEBLA_VOL
+	e.volumetric_fog_emission = Paleta.NIEBLA_VOL_EMISION
 	# Inyectar la GI en la niebla es una lectura de SDFGI por vóxel de humo. A
 	# 1,0 el rayo de sol sigue estando; de 1,0 a 1,4 no se distinguía.
 	e.volumetric_fog_gi_inject = 1.0
@@ -164,12 +175,66 @@ func _construir_entorno() -> Environment:
 	# hay —un lerp en el shader de superficie— y se queda en los tres niveles.
 	e.fog_enabled = true
 	e.fog_mode = Environment.FOG_MODE_DEPTH
-	e.fog_light_color = Color(0.52, 0.58, 0.62)
+	# ==========================================================================
+	# ESTA LÍNEA ES POR QUÉ NO HABÍA CIELO. Medido, no deducido.
+	# ==========================================================================
+	#
+	# El jugador dijo *"no hay eso de estrellas, un sol, un cielo azul"*, y tenía
+	# razón literal: **el cielo se dibujaba y después la niebla lo tapaba
+	# entero.** `fog_sky_affect` vale 1,0 por defecto en Godot y este archivo
+	# nunca lo escribió; en `FOG_MODE_DEPTH` el cielo cuenta como si estuviera en
+	# el plano lejano, así que le entra el 100% de la niebla y queda pintado de
+	# `fog_light_color` de punta a punta.
+	#
+	# Aislado con una sonda que arma este mismo Environment y saca capturas
+	# mirando arriba, una variable por corrida, el sol congelado a mediodía:
+	#
+	#   | corrida                     | cenit RGB       | saturación |
+	#   |-----------------------------|-----------------|------------|
+	#   | como estaba                 | (133, 140, 145) | **0,08**   |
+	#   | `fog_sky_affect = 0`        | (139, 165, 189) | **0,26**   |
+	#   | `fog_enabled = false`       | (139, 165, 189) | 0,26       |
+	#   | `volumetric_fog_density=0`  | (135, 142, 146) | 0,08       |
+	#
+	# O sea: el gris era de la niebla de DISTANCIA, no de la volumétrica, y no
+	# del tonemapper. Y de noche era peor — la sonda a medianoche daba un cielo
+	# **plano en luma 104,0 exacto, mínimo igual a máximo**: cero estrellas, cero
+	# vía láctea, cero lunas. La luna en fase y la vía láctea que dice tener
+	# `cielo.gd` **existen y están bien hechas**; se las estaba comiendo esto.
+	#
+	# Va en 0,0 y no en un valor chico: la perspectiva aérea del horizonte ya la
+	# hace el propio degradé de `cielo.gd`, que va de `horiz_dia` claro a
+	# `cenit_dia` oscuro. Y la niebla sigue actuando entera sobre la GEOMETRÍA
+	# —la cordillera se sigue lavando con la distancia, que es para lo que está—
+	# porque esta propiedad sólo habla del cielo.
+	e.fog_sky_affect = 0.0
+	e.fog_light_color = Paleta.NIEBLA_DIA
 	e.fog_light_energy = 0.55
 	e.fog_sun_scatter = 0.35
 	e.fog_density = 0.0
 	# Llega hasta la cordillera: las montañas tienen que verse como siluetas
 	# azuladas, no desaparecer en una pared de niebla a los 190 metros.
+	#
+	# ESTOS TRES NÚMEROS SE INTENTARON MOVER Y SE VOLVIERON ATRÁS. Queda escrito
+	# porque el que venga va a tener la misma idea.
+	#
+	# El síntoma era real: en una captura del juego, el horizonte tenía una
+	# franja pálida de borde duro cruzando la cordillera de lado a lado, y ahí
+	# la montaña medía **luma 196 contra un cielo de 184** — la cosa más lejana
+	# del cuadro más clara que el cielo, o sea la perspectiva aérea al revés. El
+	# diagnóstico obvio era éste: poca niebla a esa distancia. Se bajó el final
+	# de 780 a 560 m, que lleva a un pico de 400 m del 22% al 50% de niebla.
+	#
+	# **No cambió nada, y estaba midiendo la cosa equivocada.** La franja no era
+	# la niebla: era el `floor()` de los escalones de luz de `dibujado.gd`
+	# posterizando el degradé del cielo (arreglado allá). Con eso corregido, la
+	# cordillera ya mide **22,9 de luma POR DEBAJO del cielo**, que es lo que
+	# tiene que ser, y las dos corridas —560 y 780— dan el mismo número con una
+	# décima de diferencia. El final vuelve a 780.
+	#
+	# Y el principio arranca en 210 y no se mueve por otro motivo: La Puerta
+	# (`hitos.gd`) está a 162 m y se ve desde la aldea a ~206. Acercar el
+	# principio de la niebla lavaría justo el hito que existe para dar escala.
 	e.fog_depth_begin = 210.0
 	e.fog_depth_end = 780.0
 	e.fog_depth_curve = 1.4
@@ -202,25 +267,23 @@ func _construir_entorno() -> Environment:
 	e.tonemap_exposure = 1.02
 	e.tonemap_white = 6.0
 
-	# CORRECCIÓN DE COLOR — HOY ESTO NO CORRE. Ver la tabla del encabezado.
+	# CORRECCIÓN DE COLOR — YA CORRE. Antes era código muerto: `rendimiento.gd`
+	# hacía `adjustment_enabled = false` en los tres niveles después de que este
+	# archivo lo prendía, y alguien perdió una tarde moviendo la saturación de
+	# 1,38 a 0,85 y midiendo capturas idénticas píxel a píxel. Hoy esa línea de
+	# allá sólo corre en BAJO.
 	#
-	# El razonamiento por el que existe sigue siendo bueno y por eso queda
-	# escrito: AgX desatura fuerte por diseño —es un tonemapper filmic, pensado
-	# para material fotográfico que después se colorea— y un mundo estilizado
-	# sin nada que lo compense sale pastel.
+	# El razonamiento por el que existe: AgX desatura fuerte por diseño —es un
+	# tonemapper filmic, pensado para material fotográfico que después se
+	# colorea— y un mundo estilizado sin nada que lo compense sale pastel.
 	#
-	# Lo que NO es cierto es que estos tres números hagan algo. `rendimiento.gd`
-	# hace `e.adjustment_enabled = false` en los tres niveles, después de que
-	# este archivo lo prende. Medido moviendo la saturación a 1,38 / 1,10 / 1,00
-	# / 0,85: las cuatro capturas dieron los mismos números en las trece zonas.
-	# Antes de volver a tocar esto, sacale la línea a `rendimiento.gd` o no
-	# estás cambiando nada.
-	#
-	# Y si algún día corre: los techos de saturación de `paleta.gd` se miden
-	# DESPUÉS del grade, así que un `adjustment_saturation` por encima de 1,0
-	# empuja al mundo entero arriba del techo de 0,35. Con la aduana del kit ya
-	# puesta, lo medido en pantalla da 0,22–0,35 sin ninguna corrección: el
-	# grade que hacía falta era la aduana, no un multiplicador global.
+	# **La saturación se queda en 1,0 y eso es una decisión, no una omisión.**
+	# Los techos de saturación de `paleta.gd` se miden DESPUÉS del grade, así que
+	# cualquier número arriba de 1,0 empuja al valle entero por encima del techo
+	# de 0,35 que fija la paleta, y ésa es la autoridad. Lo que se corrige acá es
+	# el CONTRASTE, que es el eje donde el problema estaba medido: el valle vivía
+	# en una banda de gris angosta. Contraste sí, saturación no — que es la misma
+	# frase que el proyecto viene repitiendo, "el valor antes que el matiz".
 	e.adjustment_enabled = true
 	e.adjustment_saturation = 1.0
 	e.adjustment_contrast = 1.12
@@ -238,14 +301,53 @@ func _construir_camara() -> CameraAttributesPractical:
 	# 0,09 la forma no se distingue ni con lupa, así que el efecto queda
 	# intacto y la pasada cuesta una fracción.
 	var c := CameraAttributesPractical.new()
-	c.dof_blur_far_enabled = true
-	# 40 metros era el desenfoque de cuando la cámara estaba a 27. Ahora la
-	# cámara ARRANCA en 40 y llega a 68, así que el mundo entero caía detrás
-	# del corte y salía borroso de punta a punta — el efecto maqueta se había
-	# convertido en una mancha. Empieza más allá de donde la cámara puede
-	# llegar, y así vuelve a desenfocar sólo la lejanía de verdad.
-	c.dof_blur_far_distance = 95.0
-	c.dof_blur_far_transition = 55.0
+	# ==========================================================================
+	# EL DESENFOQUE DE LEJANÍA SE APAGA, Y NO ES UN AJUSTE: ES DAR DE BAJA (1).
+	# ==========================================================================
+	#
+	# Este archivo lo tenía como "el truco central" y decía, con todas las
+	# letras, que servía para que **el cerebro lea la escena como una MAQUETA**.
+	# Ése era el objetivo y se cumplía. El problema es que ése es exactamente el
+	# reclamo más viejo y más repetido del proyecto:
+	#
+	#   > *"parece un mundo de disney"*, *"muy de torta o de bebés"*,
+	#   > *"falta escala, mapas grandes, castillos"*
+	#
+	# **Una maqueta es literalmente un juguete.** El tilt-shift es la técnica que
+	# la fotografía usa para hacer que una ciudad de verdad parezca de plástico;
+	# acá se estaba aplicando a un valle que necesita parecer grande y viejo.
+	# No se puede pedir escala épica y desenfocar la distancia: la nitidez EN la
+	# distancia es la señal con la que el ojo mide que algo está lejos y por lo
+	# tanto que es grande.
+	#
+	# Y el costo estaba medido, con una variable por corrida sobre la misma
+	# escena y el sol congelado (sonda `hitos.gd` en `modo_prueba`, un peñón de
+	# 62 m a 160 metros de la cámara):
+	#
+	#   | corrida        | gradiente medio en el hito | p99  |
+	#   |----------------|----------------------------|------|
+	#   | como estaba    | 0,43                       |  4,9 |
+	#   | apagado        | **0,77**                   | 10,9 |
+	#
+	# O sea que el desenfoque se estaba comiendo **el 44% del detalle** de lo
+	# único grande que hay en el encuadre.
+	#
+	# Y (2): el cielo está en el plano lejano, así que le entraba el desenfoque
+	# entero. Contando puntos con un filtro de paso alto sobre el cielo nocturno,
+	# los puntos nítidos (hp>25) pasan de **196 a CERO** con el desenfoque
+	# prendido. Las estrellas de `cielo.gd` no se veían en parte por esto.
+	#
+	# Lo que hacía el desenfoque de verdad —separar el plano del jugador del
+	# fondo— ya lo hace mejor y más barato la niebla de distancia, que arranca a
+	# 210 m y es honesta: eso es aire, no una lente.
+	c.dof_blur_far_enabled = false
+	# La distancia queda escrita igual, con el mismo criterio que el desenfoque
+	# de cerca dos bloques más abajo: un efecto apagado sin número deja el
+	# default del motor esperando al próximo que lo prenda. Si algún día se
+	# quiere una bruma de lente en el horizonte de verdad, que arranque más allá
+	# de la cordillera cercana (300 m) y no a 95, que es dentro del valle.
+	c.dof_blur_far_distance = 340.0
+	c.dof_blur_far_transition = 220.0
 	# El desenfoque de cerca se apaga: con la cámara a 40 metros no hay nada
 	# entre ella y el jugador que valga la pena desenfocar, y lo único que hacía
 	# era ensuciar los árboles que quedan en el borde de la pantalla.
