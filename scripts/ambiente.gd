@@ -25,19 +25,14 @@ func _ready() -> void:
 func _construir_entorno() -> Environment:
 	var e := Environment.new()
 
-	# Cielo del atardecer. La hora dorada no es capricho: sombras largas que
-	# dan volumen, y una temperatura cálida que hace acogedor cualquier lugar.
-	var cielo := ProceduralSkyMaterial.new()
-	cielo.sky_top_color = Color(0.18, 0.26, 0.38)
-	cielo.sky_horizon_color = Color(0.72, 0.55, 0.42)
-	cielo.sky_curve = 0.18
-	cielo.ground_bottom_color = Color(0.09, 0.10, 0.09)
-	cielo.ground_horizon_color = Color(0.42, 0.36, 0.28)
-	cielo.sun_angle_max = 22.0
-	cielo.energy_multiplier = 0.8
-
+	# Cielo propio con shader (ver cielo.gd). El ProceduralSkyMaterial de Godot
+	# no tiene noche: da un degradé y listo, así que a las tres de la mañana el
+	# mundo queda adentro de una caja azul. Acá hay estrellas, dos lunas y un
+	# planeta, y los mueve el reloj del valle (ciclo.gd).
 	var s := Sky.new()
-	s.sky_material = cielo
+	s.sky_material = Cielo.material()
+	s.radiance_size = Sky.RADIANCE_SIZE_128
+	s.process_mode = Sky.PROCESS_MODE_INCREMENTAL
 	e.background_mode = Environment.BG_SKY
 	e.sky = s
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
@@ -71,8 +66,10 @@ func _construir_entorno() -> Environment:
 	e.fog_light_energy = 0.9
 	e.fog_sun_scatter = 0.35
 	e.fog_density = 0.0
-	e.fog_depth_begin = 70.0
-	e.fog_depth_end = 190.0
+	# Llega hasta la cordillera: las montañas tienen que verse como siluetas
+	# azuladas, no desaparecer en una pared de niebla a los 190 metros.
+	e.fog_depth_begin = 95.0
+	e.fog_depth_end = 440.0
 	e.fog_depth_curve = 1.4
 
 	# Brillo: sólo lo que de verdad emite (la fragua, las brasas).

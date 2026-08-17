@@ -24,6 +24,7 @@ var interfaz: CanvasLayer
 var _ruido := FastNoiseLite.new()
 var _npcs: Dictionary = {}
 var _monstruos: Array[Monstruo] = []
+var ciclo: Ciclo
 var vida_jugador := 100
 
 
@@ -34,14 +35,19 @@ func _ready() -> void:
 
 	_armar_ambiente()
 	_armar_terreno()
+	_armar_cordillera()
 	_armar_rio()
 	for slug: String in LUGARES:
 		_armar_lugar(slug, LUGARES[slug])
 
 	Detalles.pasto(self, altura_en, 9000, 48.0)
 	Detalles.piedras(self, altura_en, 90, 52.0)
-	Detalles.luciernagas(self, Vector3(0, 2.5, 0), 40, 16.0)
-	Detalles.luciernagas(self, LUGARES['bosque']['pos'] + Vector3(0, 2.0, 0), 55, 13.0)
+	var bichos: Array[GPUParticles3D] = [
+		Detalles.luciernagas(self, Vector3(0, 2.5, 0), 40, 16.0),
+		Detalles.luciernagas(self, LUGARES['bosque']['pos'] + Vector3(0, 2.0, 0), 55, 13.0),
+		Detalles.luciernagas(self, LUGARES['ruina']['pos'] + Vector3(0, 2.0, 0), 35, 11.0),
+	]
+	ciclo.bichos_de_luz = bichos
 
 	api = Api.new()
 	add_child(api)
@@ -80,14 +86,15 @@ func _armar_ambiente() -> void:
 	amb.set_script(preload("res://scripts/ambiente.gd"))
 	add_child(amb)
 
-	# Sol bajo del atardecer: sombras largas, que es lo que da volumen.
+	# El sol ya no está fijo en el atardecer: lo mueve el reloj del valle. Una
+	# hora real es un día del valle, así que en una sesión ves amanecer y
+	# anochecer, y los ves a la misma hora que cualquier otro conectado.
 	var sol := DirectionalLight3D.new()
-	sol.rotation_degrees = Vector3(-44, 132, 0)
 	sol.light_color = Color(1.0, 0.82, 0.62)
 	sol.light_energy = 2.0
 	sol.shadow_enabled = true
 	sol.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	sol.directional_shadow_max_distance = 120.0
+	sol.directional_shadow_max_distance = 140.0
 	sol.directional_shadow_blend_splits = true
 	sol.light_angular_distance = 1.2   # sombras que se ablandan con la distancia
 	sol.shadow_blur = 1.3
@@ -100,6 +107,13 @@ func _armar_ambiente() -> void:
 	relleno.light_energy = 0.22
 	relleno.shadow_enabled = false
 	add_child(relleno)
+
+	ciclo = Ciclo.new()
+	ciclo.set_script(preload("res://scripts/ciclo.gd"))
+	ciclo.sol = sol
+	ciclo.relleno = relleno
+	ciclo.entorno = amb.environment
+	add_child(ciclo)
 
 
 func _armar_terreno() -> void:
@@ -449,7 +463,13 @@ func _caer_jugador() -> void:
 
 
 func _al_recibir_mundo(datos: Dictionary) -> void:
-	interfaz.mostrar_region(datos.get("region", {}), datos.get("player", {}))
+	var region: Dictionary = datos.get("region", {})
+	interfaz.mostrar_region(region, datos.get("player", {}))
+
+	# El reloj del valle. Viene del servidor, no de esta máquina: es lo que
+	# hace que el atardecer sea el mismo para todos los que estén conectados.
+	if ciclo != null:
+		ciclo.sincronizar(int(region.get("tick", 0)), float(region.get("momento_del_dia", 0.0)))
 
 	var lugares_por_id := {}
 	for p: Dictionary in datos.get("places", []):
@@ -548,3 +568,66 @@ func _captura_si_corresponde() -> void:
 	img.save_png("res://captura.png")
 	print("captura guardada")
 	get_tree().quit()
+
+
+## La cordillera del horizonte, con una abertura al norte.
+##
+## No es adorno: es lo que contesta "¿y más allá qué hay?". Un valle que se
+## termina en niebla se siente un nivel; un valle cercado por montañas con UNA
+## salida se siente un lugar, y esa salida es El Camino del Norte, que ya
+## existe en el servidor. Cuando el mundo crezca, crece por ahí.
+func _armar_cordillera() -> void:
+	var cresta := FastNoiseLite.new()
+	cresta.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	cresta.frequency = 0.9
+	cresta.fractal_octaves = 4
+
+	var vueltas := 190
+	var anillos := 7
+	var r0 := 150.0
+	var r1 := 330.0
+
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	# Devuelve el punto de la montaña para un ángulo y un anillo.
+	var punto := func(i: int, j: int) -> Vector3:
+		var a := float(i) / vueltas * TAU
+		var t := float(j) / anillos
+		var r: float = lerp(r0, r1, t)
+		# La abertura: al norte (+Z) la montaña se hunde hasta el suelo.
+		var hacia_norte := (Vector2(sin(a), cos(a)).dot(Vector2(0.12, 1.0).normalized()) + 1.0) * 0.5
+		var portal: float = smoothstep(0.86, 0.995, hacia_norte)
+		# Cresta: valor absoluto del ruido invertido, que es lo que hace filos
+		# en vez de lomas. Una montaña con lomas parece un almohadón.
+		var n: float = 1.0 - absf(cresta.get_noise_2d(cos(a) * 24.0, sin(a) * 24.0))
+		var n2: float = 1.0 - absf(cresta.get_noise_2d(cos(a) * 61.0 + 90.0, sin(a) * 61.0))
+		var alto: float = (n * 46.0 + n2 * 17.0) * (0.35 + t * 1.25) * (1.0 - portal * 0.97)
+		return Vector3(sin(a) * r, alto - 6.0, cos(a) * r)
+
+	for j in anillos:
+		for i in vueltas:
+			var i2 := (i + 1) % vueltas
+			var p := [punto.call(i, j), punto.call(i2, j),
+				punto.call(i2, j + 1), punto.call(i, j + 1)]
+			for tri: Array in [[0, 1, 2], [0, 2, 3]]:
+				for k: int in tri:
+					var v: Vector3 = p[k]
+					# Más alto = más pelado y más frío. Abajo, bosque oscuro.
+					var h: float = clampf(v.y / 48.0, 0.0, 1.0)
+					var c := Color(0.13, 0.17, 0.17).lerp(Color(0.62, 0.66, 0.74), h * h)
+					st.set_color(c.lerp(Color(0.36, 0.44, 0.56), 0.45))
+					st.add_vertex(v)
+
+	st.generate_normals()
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 1.0
+	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = mat
+	# Sin colisión y sin sombras: está detrás de la niebla, nadie la pisa y
+	# proyectar sombras desde 300 metros sólo cuesta.
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)

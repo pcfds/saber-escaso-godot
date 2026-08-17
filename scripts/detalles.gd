@@ -32,6 +32,8 @@ static func ventanas_y_puerta(casa: MeshInstance3D, ancho: float, alto: float) -
 		var mi := MeshInstance3D.new()
 		mi.mesh = v
 		mi.position = Vector3(ancho * lado, alto * 0.12, ancho * 0.46)
+		# Al grupo: el ciclo del día las enciende de noche y las baja de día.
+		mi.add_to_group("ventanas")
 		casa.add_child(mi)
 
 	var p := BoxMesh.new()
@@ -183,7 +185,7 @@ static func piedras(padre: Node3D, alturas: Callable, cantidad: int, radio: floa
 
 ## Bichos de luz. Movimiento chico y disperso: es lo que el ojo lee como
 ## "acá pasa algo" incluso cuando no pasa nada.
-static func luciernagas(padre: Node3D, pos: Vector3, cantidad: int, radio: float) -> void:
+static func luciernagas(padre: Node3D, pos: Vector3, cantidad: int, radio: float) -> GPUParticles3D:
 	var p := GPUParticles3D.new()
 	p.position = pos
 	p.amount = cantidad
@@ -227,3 +229,4 @@ static func luciernagas(padre: Node3D, pos: Vector3, cantidad: int, radio: float
 	q.material = qm
 	p.draw_pass_1 = q
 	padre.add_child(p)
+	return p
