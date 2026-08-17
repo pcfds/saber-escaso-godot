@@ -129,6 +129,33 @@ extends Node3D
 ## baldosa de tipo sino por baldosa a secas.
 ##
 ## ─────────────────────────────────────────────────────────────────────────
+## LO QUE LA TÉCNICA **NO** PUEDE DAR, Y CONVIENE SABERLO ANTES
+## ─────────────────────────────────────────────────────────────────────────
+##
+## La referencia que se pidió es **pixel art isométrico**. Una tarjeta no puede
+## ser isométrica, y no es un detalle: **el arte isométrico está dibujado desde
+## un ángulo y sólo desde ése.** Un árbol isométrico girado 90° muestra la cara
+## que el dibujante nunca dibujó. Y la cámara de este juego gira.
+##
+## O sea que hay que elegir una de dos, y son incompatibles:
+##
+##  · **Cámara que gira** (lo que hay hoy) → el arte tiene que ser **de frente
+##    y plano**, tipo Don't Starve u Octopath. Se consigue la densidad, la
+##    mugre y el dibujo a mano de la referencia; **no** se consigue el volumen
+##    isométrico, porque el sprite no tiene lados.
+##  · **Arte isométrico de verdad** → hay que **fijar la cámara a 4 u 8 giros**
+##    y dibujar cada cosa desde cada uno. Es el camino de los tácticos de
+##    Steam, y multiplica el trabajo de arte por cuatro u ocho.
+##
+## Este prototipo probó la primera. La segunda no se probó porque cambia el
+## juego, no el material: sacar el giro libre de cámara es una decisión de
+## diseño, no de arte.
+##
+## Lo mismo vale para la gente: **una tarjeta no tiene espalda.** Si un vecino
+## camina hacia el norte, o se lo ve siempre de frente (Octopath) o hay que
+## dibujarle las cuatro vistas.
+##
+## ─────────────────────────────────────────────────────────────────────────
 ## LO QUE SE MIDIÓ DE VERDAD, Y LO QUE NO
 ## ─────────────────────────────────────────────────────────────────────────
 ##
@@ -140,19 +167,21 @@ extends Node3D
 ## Medido, 640×360, `-- --medir`:
 ##
 ##     qué             cuántas   armar ms   cuadro ms   primitivas   llamadas
-##     tarjeta            1000        0.6       15.94        22 760         23
-##     tarjeta            4000        2.3       19.36        34 760         23
-##     tarjeta           16000        9.0       40.00        82 760         23
-##     tarjeta           64000       34.0      101.62       274 760         23
-##     malla Kenney       4000        2.7       63.28       930 760         25
+##     tarjeta            1000        0.8       12.93        22 760         23
+##     tarjeta            4000        1.8       17.32        34 760         23
+##     tarjeta           16000        8.3       35.21        82 760         23
+##     tarjeta           64000       28.7      122.89       274 760         23
+##     malla Kenney       4000        2.0       71.11       930 760         25
 ##
 ##  · **Las llamadas de dibujo no se mueven**: 64 000 tarjetas son UNA llamada,
-##    igual que 1000. Eso es el MultiMesh, y ya lo hace la vegetación de hoy.
-##  · **La misma cantidad cuesta 3,3× menos en tarjetas que en mallas** (19,4
-##    contra 63,3 ms) con **27× menos primitivas** (34 760 contra 930 760).
-##    Las primitivas son un número exacto y no dependen del hardware.
-##  · **Escala lineal**: cada tarjeta cuesta ~1,3 µs; cada árbol de Kenney,
-##    ~12 µs. 16 000 tarjetas todavía salen más baratas que 4000 mallas.
+##    igual que 1000 (las 23 de la tabla son el banco entero, terreno y filas
+##    de prueba incluidos). Eso es el MultiMesh, y ya lo hace la vegetación.
+##  · **La misma cantidad cuesta ~4× menos en tarjetas que en mallas** (17,3
+##    contra 71,1 ms; en tres corridas la razón dio 3,3×, 4,1× y 4,6×) con
+##    **27× menos primitivas** (34 760 contra 930 760). Las primitivas son un
+##    número exacto y no dependen del hardware; los milisegundos no.
+##  · **Escala lineal hasta 16 000**: cada tarjeta cuesta ~1,4 µs; cada árbol
+##    de Kenney, ~13 µs. **16 000 tarjetas salen más baratas que 4000 mallas.**
 ##  · El valle de hoy tiene 4945 plantas y 235 594 triángulos
 ##    (`prueba_vegetacion.tscn`). Las mismas 4945 en tarjetas son 9890.
 ##
@@ -211,7 +240,8 @@ extends Node3D
 ##
 ## Con pantalla: arrastrar con el botón izquierdo gira, la rueda acerca, las
 ## teclas 1 a 6 saltan a los presets de cámara, `F` imprime el informe,
-## `B` cicla la corrección de inclinación, `A` cicla el modo de alfa.
+## `B` cicla la corrección de inclinación y `P` prende y apaga el
+## ajuste a grilla de píxel.
 
 # ══════════════════════════════════════════════════════════════════════════
 #  BIBLIOTECA. Esto es lo único que se copiaría al valle.
@@ -254,7 +284,7 @@ const UMBRAL := 0.4
 ## instancia, normal mezclada hacia arriba y ajuste a grilla de píxel.
 const CODIGO := """
 shader_type spatial;
-render_mode cull_disabled, diffuse_lambert, specular_disabled, shadows_disabled_off;
+render_mode cull_disabled, diffuse_lambert, specular_disabled;
 
 uniform sampler2DArray hojas : source_color, filter_nearest_mipmap, repeat_disable;
 uniform float correccion : hint_range(0.0, 1.0) = 0.55;
@@ -265,7 +295,8 @@ uniform float capa_fija = 0.0;
 uniform bool por_instancia = false;
 uniform vec4 tinte : source_color = vec4(1.0);
 
-varying float capa;
+// `flat`: la capa es la misma en los tres vértices y no hay que interpolarla.
+varying flat float capa;
 
 void vertex() {
 	capa = por_instancia ? round(INSTANCE_CUSTOM.x * 255.0) : capa_fija;
@@ -298,6 +329,20 @@ void vertex() {
 	vec3 n = normalize(mix(frente, vec3(0.0, 1.0, 0.0), normal_arriba));
 	MODELVIEW_NORMAL_MATRIX = mat3(VIEW_MATRIX);
 	NORMAL = n;
+
+	// Ajuste a la grilla de píxel: redondea el vértice al píxel de pantalla.
+	// Apagado por defecto; en este juego sirve poco (punto 4 del comentario
+	// de arriba) y queda para poder verlo prendido.
+	//
+	// **POSITION se escribe SIEMPRE, no adentro del `if`.** Escribirlo sólo
+	// en una rama deja la otra con basura y los sprites desaparecen. Me pasó
+	// y tardé una captura en darme cuenta.
+	vec4 rec = PROJECTION_MATRIX * MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+	if (ajuste_pixel > 0.5) {
+		vec2 medio = VIEWPORT_SIZE * 0.5;
+		rec.xy = round(rec.xy / rec.w * medio) / medio * rec.w;
+	}
+	POSITION = rec;
 }
 
 void fragment() {
@@ -568,6 +613,7 @@ var _sprites := 4000
 
 var _medir := false
 var _mezcla := false
+var _ajuste := false
 var _capturar := false
 var _cuadro := 0
 var _paso := 0
@@ -597,6 +643,8 @@ func _ready() -> void:
 	_armar_fila_filtro()
 	_armar_comparacion()
 	_rehacer_campo(_sprites)
+	if _ajuste:
+		_aplicar_ajuste()
 
 	if not _medir:
 		informe()
@@ -608,6 +656,8 @@ func _leer_argumentos() -> void:
 			_medir = true
 		elif a == "--capturas":
 			_capturar = true
+		elif a == "--ajuste":
+			_ajuste = true
 		elif a == "--mezcla":
 			_mezcla = true
 		elif a.begins_with("--sprites="):
@@ -1040,6 +1090,9 @@ func _unhandled_input(e: InputEvent) -> void:
 			informe()
 		elif k == KEY_B:
 			_ciclar_correccion()
+		elif k == KEY_P:
+			_ajuste = not _ajuste
+			_aplicar_ajuste()
 		elif k == KEY_ESCAPE:
 			get_tree().quit()
 
@@ -1056,6 +1109,16 @@ func _ciclar_correccion() -> void:
 	if sm != null:
 		sm.set_shader_parameter("correccion", CORRS[_corr_i])
 	print("corrección de inclinación = %.2f" % CORRS[_corr_i])
+
+
+func _aplicar_ajuste() -> void:
+	var v := 1.0 if _ajuste else 0.0
+	for m in _materiales_shader:
+		m.set_shader_parameter("ajuste_pixel", v)
+	var sm := _malla_campo()
+	if sm != null:
+		sm.set_shader_parameter("ajuste_pixel", v)
+	print("ajuste a grilla de píxel = %s" % ("sí" if _ajuste else "no"))
 
 
 func _malla_campo() -> ShaderMaterial:

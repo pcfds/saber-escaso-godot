@@ -31,6 +31,18 @@ const LUGARES := {
 	"camino": {"pos": Vector3(11, 0, 74),    "color": Paleta.LOSA_CAMINO, "casas": 0, "nombre": "El Camino del Norte"},
 }
 
+## Lo más común que se junta en cada lugar. Espeja la tabla del servidor —
+## sólo para poder NOMBRARLO en la pista: "[B] buscar" no significa nada,
+## "[B] juntar raíz del Sotobosque" sí. Lo que salga de verdad lo decide el
+## servidor, que es el que tiene los pesos.
+const LO_QUE_SE_JUNTA := {
+	"bosque": "raíz del Sotobosque",
+	"ruina": "carbón",
+	"camino": "piedra de afilar",
+	"aldea": "caña de la orilla",
+	"fragua": "",
+}
+
 const RADIO_VALLE := 165.0
 
 ## El color de la gente de carne y hueso: vos y los otros jugadores. Estaba
@@ -1574,6 +1586,7 @@ func _avisar_donde_estoy() -> void:
 	if cerca != "" and cerca != _lugar_actual:
 		_lugar_actual = cerca
 		api.estoy_en(cerca)
+		interfaz.lugar_da = LO_QUE_SE_JUNTA.get(cerca, "")
 		interfaz.avisar("Llegaste a %s." % LUGARES[cerca].get("nombre", cerca))
 
 

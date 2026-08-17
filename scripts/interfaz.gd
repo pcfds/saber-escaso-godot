@@ -36,6 +36,8 @@ const AMBAR       := Color(0.85, 0.78, 0.55)
 const ROJO        := Color(0.81, 0.55, 0.52)
 const FONDO       := Color(0.06, 0.08, 0.09, 0.92)
 
+## Qué se puede juntar donde estás parado. Lo setea el valle.
+var lugar_da := ""
 var npc_cercano := ""
 
 var _api: Api
@@ -438,7 +440,16 @@ func mostrar_region(region: Dictionary, jugador: Dictionary) -> void:
 func mostrar_cercano(nombre: String, _nodo: Node3D) -> void:
 	var cambio := nombre != npc_cercano
 	npc_cercano = nombre
-	_pista.text = "" if nombre == "" or _caja.visible else "[E] hablar con %s" % nombre
+	# La pista dice qué podés hacer ACÁ, y nombra la cosa. "[B] buscar" no
+	# significa nada; "[B] juntar raíz del Sotobosque" es una acción.
+	if _caja.visible:
+		_pista.text = ""
+	elif nombre != "":
+		_pista.text = "[E] hablar con %s" % nombre
+	elif lugar_da != "":
+		_pista.text = "[B] juntar %s" % lugar_da
+	else:
+		_pista.text = ""
 	# Los botones de dar son de quien tengas al lado, así que se rehacen cuando
 	# cambia — pero sólo si la bolsa está abierta: rehacer una lista de nodos
 	# cada vez que pasás cerca de alguien, con el panel cerrado, es trabajo

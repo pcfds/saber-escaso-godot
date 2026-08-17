@@ -91,7 +91,13 @@ func _tecleando() -> bool:
 func _unhandled_input(evento: InputEvent) -> void:
 	if _tecleando() and not (evento is InputEventMouseMotion or evento is InputEventMouseButton):
 		return
-	if evento is InputEventMouseButton:
+	# OJO CON ESTE `if`. Estuvo como `if evento is InputEventMouseButton` seguido
+	# de `elif`, y eso hacía que **el ataque no se disparara nunca**: golpear
+	# está en el clic izquierdo, el clic entraba en esta rama, no coincidía con
+	# derecho ni con rueda, y la cadena terminaba ahí. El botón parecía muerto y
+	# lo era. Por eso ahora la rama sólo agarra lo que de verdad maneja.
+	if evento is InputEventMouseButton and (evento as InputEventMouseButton).button_index \
+			in [MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 		var e := evento as InputEventMouseButton
 		if e.button_index == MOUSE_BUTTON_RIGHT:
 			_arrastrando = e.pressed
@@ -126,13 +132,17 @@ func _esquivar() -> void:
 		return
 	var eje := Input.get_vector("izquierda", "derecha", "adelante", "atras")
 	var dir := (Basis(Vector3.UP, _yaw) * Vector3(eje.x, 0.0, eje.y))
-	# Con dirección, rodás hacia donde apuntás y el cuerpo se da vuelta. Parado,
-	# te tirás para atrás **sin girar**: es de donde viene el que te está
-	# pegando, y darle la espalda para esquivarlo se lee como huir, no como
-	# defenderse. Además te deja mirándolo para el contragolpe.
+	# Con dirección, rodás hacia donde apuntás y el cuerpo se da vuelta.
+	#
+	# Parado, **te apartás de costado, no para atrás.** Ir para atrás se probó y
+	# se siente raro: en vista de arriba el retroceso se lee como que el juego
+	# te empujó, no como que te sacaste. Un paso al costado deja al que te pega
+	# donde estaba, te mantiene mirándolo para el contragolpe, y es lo que hace
+	# cualquier juego con esta cámara.
 	_esquive_gira = dir.length_squared() >= 0.01
 	if not _esquive_gira:
-		dir = -Vector3(sin(_malla.rotation.y), 0.0, cos(_malla.rotation.y))
+		var frente := Vector3(sin(_malla.rotation.y), 0.0, cos(_malla.rotation.y))
+		dir = frente.cross(Vector3.UP) * (1.0 if randf() < 0.5 else -1.0)
 	_dir_esquive = dir.normalized()
 	_esquive = ESQUIVE_DURA
 	_espera_esquive = ESQUIVE_ESPERA
@@ -170,8 +180,12 @@ func _physics_process(dt: float) -> void:
 		# que la escribe `valle.gd` cuando ya no se puede rodar).
 		# El signo sigue al sentido: rodando hacia adelante da la vuelta de
 		# campana para adelante, y tirándote para atrás, para atrás.
-		_malla.rotation.x = (-1.0 if _esquive_gira else 1.0) \
-			* sin((1.0 - _esquive / ESQUIVE_DURA) * PI) * 1.15
+		if _esquive_gira:
+			_malla.rotation.x = -sin((1.0 - _esquive / ESQUIVE_DURA) * PI) * 0.68
+		else:
+			# De costado el cuerpo se LADEA, no da la vuelta de campana. Rodar
+			# hacia adelante mientras te movés al costado se ve a error.
+			_malla.rotation.z = sin((1.0 - _esquive / ESQUIVE_DURA) * PI) * 0.55
 	else:
 		var corriendo := Input.is_key_pressed(KEY_SHIFT) and not mudo
 		var deseada := dir * (VELOCIDAD_CORRIENDO if corriendo else VELOCIDAD)
