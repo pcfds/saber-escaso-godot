@@ -54,7 +54,7 @@ func _construir_entorno() -> Environment:
 	e.volumetric_fog_albedo = Color(0.78, 0.72, 0.66)
 	e.volumetric_fog_emission = Color(0.05, 0.06, 0.08)
 	e.volumetric_fog_gi_inject = 1.4
-	e.volumetric_fog_length = 130.0
+	e.volumetric_fog_length = 190.0
 	e.volumetric_fog_detail_spread = 2.0
 	e.volumetric_fog_ambient_inject = 0.7
 
@@ -68,8 +68,8 @@ func _construir_entorno() -> Environment:
 	e.fog_density = 0.0
 	# Llega hasta la cordillera: las montañas tienen que verse como siluetas
 	# azuladas, no desaparecer en una pared de niebla a los 190 metros.
-	e.fog_depth_begin = 95.0
-	e.fog_depth_end = 440.0
+	e.fog_depth_begin = 130.0
+	e.fog_depth_end = 780.0
 	e.fog_depth_curve = 1.4
 
 	# Brillo: sólo lo que de verdad emite (la fragua, las brasas).

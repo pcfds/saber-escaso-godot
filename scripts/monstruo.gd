@@ -24,6 +24,12 @@ const DUDA := 0.55   ## lo que tarda en decidirse a atacar. Sin esto no asusta.
 var vida := 40
 var objetivo: Node3D
 var casa: Vector3         ## a dónde vuelve si te perdés de vista
+## El id de la fila en `threats`. Sin esto el bicho es decorado: no se le puede
+## avisar al servidor que le pegaste, y matarlo no le pasa a nadie más.
+var id_servidor := ""
+## Cómo se llama. Los que no son humanos tienen nombre: no son mobs, son
+## pueblos, y matar a alguien con nombre pesa distinto.
+var nombre_servidor := ""
 
 var _estado := Estado.RONDA
 var _figura: Figura
@@ -156,6 +162,16 @@ func _mirar_a(punto: Vector3, dt: float, rapidez: float) -> void:
 	if d.length_squared() < 0.01:
 		return
 	_figura.rotation.y = lerp_angle(_figura.rotation.y, atan2(d.x, d.z), rapidez * dt)
+
+
+## Reacción inmediata al golpe, sin tocar la vida: la vida la decide el
+## servidor. Esto es para que el clic se sienta en el mismo cuadro.
+func doler_ahora() -> void:
+	if _estado == Estado.MUERTO:
+		return
+	_figura.doler()
+	if _estado == Estado.RONDA:
+		_estado = Estado.PERSIGUE
 
 
 func recibir(danio: int) -> void:

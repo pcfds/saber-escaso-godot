@@ -16,6 +16,10 @@ signal quiere_interactuar
 signal quiere_golpear
 
 const VELOCIDAD := 7.5
+## Correr con shift. El valle se agrandó a propósito —que haya distancia es
+## parte del diseño— pero cruzarlo entero a paso de caminata es tedio, no
+## distancia. Correr no es más rápido gratis: no podés pegar mientras corrés.
+const VELOCIDAD_CORRIENDO := 13.5
 const ACELERACION := 14.0
 const FUERZA_SALTO := 6.2
 const GRAVEDAD := 18.0
@@ -84,7 +88,8 @@ func _physics_process(dt: float) -> void:
 	var base := Basis(Vector3.UP, _yaw)
 	var dir := (base * Vector3(eje.x, 0.0, eje.y)).normalized()
 
-	var deseada := dir * VELOCIDAD
+	var corriendo := Input.is_key_pressed(KEY_SHIFT) and not mudo
+	var deseada := dir * (VELOCIDAD_CORRIENDO if corriendo else VELOCIDAD)
 	velocity.x = move_toward(velocity.x, deseada.x, ACELERACION * dt)
 	velocity.z = move_toward(velocity.z, deseada.z, ACELERACION * dt)
 

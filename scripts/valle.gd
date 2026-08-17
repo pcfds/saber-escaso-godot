@@ -7,15 +7,24 @@
 ## sombras largas y niebla volumétrica no.
 extends Node3D
 
+## Los lugares del valle, y cuánto hay entre uno y otro.
+##
+## Estaban todos encima: de la aldea a la fragua había veinte metros y el valle
+## entero se veía de un vistazo. Un mundo así no tiene lugares, tiene zonas de
+## un mapa. **Si viajar no cuesta nada, un pueblo deja de ser un pueblo.**
+##
+## Ahora hay minuto y pico de caminata entre puntas. Es a propósito: que la
+## fragua quede lejos es lo que hace que ir hasta ahí sea una decisión, que el
+## Sotobosque dé cosa de noche, y que valga tener una casa cerca de algo.
 const LUGARES := {
-	"aldea":  {"pos": Vector3(0, 0, 0),     "color": Color(0.55, 0.48, 0.37), "casas": 7},
-	"fragua": {"pos": Vector3(17, 0, -5),   "color": Color(0.49, 0.33, 0.26), "casas": 2},
-	"bosque": {"pos": Vector3(-16, 0, -15), "color": Color(0.18, 0.29, 0.20), "casas": 0},
-	"ruina":  {"pos": Vector3(-7, 0, -30),  "color": Color(0.29, 0.28, 0.25), "casas": 3},
-	"camino": {"pos": Vector3(3, 0, 20),    "color": Color(0.42, 0.38, 0.32), "casas": 0},
+	"aldea":  {"pos": Vector3(0, 0, 0),      "color": Color(0.55, 0.48, 0.37), "casas": 7, "nombre": "Vado Bajo"},
+	"fragua": {"pos": Vector3(62, 0, -18),   "color": Color(0.49, 0.33, 0.26), "casas": 2, "nombre": "La Fragua de Ilde"},
+	"bosque": {"pos": Vector3(-58, 0, -54),  "color": Color(0.18, 0.29, 0.20), "casas": 0, "nombre": "El Sotobosque"},
+	"ruina":  {"pos": Vector3(-26, 0, -108), "color": Color(0.29, 0.28, 0.25), "casas": 3, "nombre": "La Casa Quemada"},
+	"camino": {"pos": Vector3(11, 0, 74),    "color": Color(0.42, 0.38, 0.32), "casas": 0, "nombre": "El Camino del Norte"},
 }
 
-const RADIO_VALLE := 62.0
+const RADIO_VALLE := 165.0
 
 var api: Api
 var jugador: Jugador
@@ -25,6 +34,10 @@ var _ruido := FastNoiseLite.new()
 var _npcs: Dictionary = {}
 var _monstruos: Array[Monstruo] = []
 var ciclo: Ciclo
+var _lugar_actual := ""
+var _monstruos_por_id: Dictionary = {}
+var mapa: Mapa
+var _ya_pedimos_cronica := false
 var vida_jugador := 100
 
 
@@ -40,8 +53,8 @@ func _ready() -> void:
 	for slug: String in LUGARES:
 		_armar_lugar(slug, LUGARES[slug])
 
-	Detalles.pasto(self, altura_en, 9000, 48.0)
-	Detalles.piedras(self, altura_en, 90, 52.0)
+	Detalles.pasto(self, altura_en, 26000, 130.0)
+	Detalles.piedras(self, altura_en, 320, 145.0)
 	var bichos: Array[GPUParticles3D] = [
 		Detalles.luciernagas(self, Vector3(0, 2.5, 0), 40, 16.0),
 		Detalles.luciernagas(self, LUGARES['bosque']['pos'] + Vector3(0, 2.0, 0), 55, 13.0),
@@ -52,13 +65,13 @@ func _ready() -> void:
 	api = Api.new()
 	add_child(api)
 	api.mundo_recibido.connect(_al_recibir_mundo)
+	api.peleado.connect(_al_resultado_de_pelea)
 
 	jugador = _armar_jugador()
 	add_child(jugador)
 	jugador.quiere_interactuar.connect(_al_interactuar)
 	jugador.quiere_golpear.connect(_al_golpear)
 
-	_poblar_sotobosque()
 
 	interfaz = preload("res://escenas/interfaz.tscn").instantiate()
 	add_child(interfaz)
@@ -66,6 +79,12 @@ func _ready() -> void:
 	# Va acá y no arriba: la interfaz recién existe en esta línea.
 	jugador.tecleando = interfaz.escribiendo
 
+	mapa = Mapa.new()
+	mapa.lugares = LUGARES
+	mapa.jugador = jugador
+	interfaz.add_child(mapa)
+
+	_refrescar_cada_tanto()
 	_captura_si_corresponde()
 
 	if api.token == "":
@@ -94,7 +113,7 @@ func _armar_ambiente() -> void:
 	sol.light_energy = 2.0
 	sol.shadow_enabled = true
 	sol.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	sol.directional_shadow_max_distance = 140.0
+	sol.directional_shadow_max_distance = 260.0
 	sol.directional_shadow_blend_splits = true
 	sol.light_angular_distance = 1.2   # sombras que se ablandan con la distancia
 	sol.shadow_blur = 1.3
@@ -121,8 +140,8 @@ func _armar_terreno() -> void:
 	# (crear un PlaneMesh y deformarlo con commit_to_arrays) y los colores de
 	# vértice no entraban: el terreno salía color arena. Confiable le gana a
 	# ingenioso.
-	var lado := 132.0
-	var pasos := 120
+	var lado := 360.0
+	var pasos := 180
 	var paso := lado / pasos
 
 	var st := SurfaceTool.new()
@@ -192,7 +211,7 @@ func _color_terreno(p: Vector3, n: Vector3) -> Color:
 
 func _armar_rio() -> void:
 	var agua := PlaneMesh.new()
-	agua.size = Vector2(190, 7.5)
+	agua.size = Vector2(430, 15.0)
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.10, 0.20, 0.24, 0.86)
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -205,7 +224,7 @@ func _armar_rio() -> void:
 
 	var mi := MeshInstance3D.new()
 	mi.mesh = agua
-	mi.position = Vector3(0, -1.7, 9)
+	mi.position = Vector3(0, -1.7, 26)
 	mi.rotation_degrees = Vector3(0, 9, 0)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
@@ -424,21 +443,61 @@ func _figura(color: Color, altura: float, es_jugador: bool) -> Figura:
 
 ## Los monstruos viven en el Sotobosque. Fuera de la aldea el valle muerde:
 ## esa es la razón de que la gente se quede junta y de que salir cueste algo.
-func _poblar_sotobosque() -> void:
-	var centro: Vector3 = LUGARES['bosque']['pos']
-	for i in 5:
-		var a := TAU * i / 5.0 + randf()
-		var r := randf_range(5.0, 12.0)
-		var px := centro.x + cos(a) * r
-		var pz := centro.z + sin(a) * r
+## Los monstruos del valle son las amenazas de la base. No se inventan acá.
+##
+## Antes se creaban cinco locales al arrancar y era mentira: los matabas y el
+## mundo no se enteraba, no los veía nadie más, y los bichos que de verdad te
+## mordían —los del servidor— eran otros. Esa brecha era la razón de que te
+## atacaran y no pudieras hacer nada.
+##
+## La posición sí es local: la base guarda EN QUÉ LUGAR está el bicho, no sus
+## coordenadas. Se derivan del id para que sea el mismo punto en la pantalla de
+## todos los que estén conectados.
+func _sincronizar_amenazas(amenazas: Array) -> void:
+	var vistos := {}
+	for a in amenazas:
+		var d: Dictionary = a
+		var id: String = str(d.get("id", ""))
+		vistos[id] = true
+		if _monstruos_por_id.has(id):
+			# Ya está en la escena: sólo se le actualiza la vida, que puede
+			# haber bajado porque le pegó otro jugador.
+			var existente: Monstruo = _monstruos_por_id[id]
+			if is_instance_valid(existente):
+				existente.vida = int(d.get("health", existente.vida))
+			continue
+
+		var slug: String = str(d.get("place_slug", "bosque"))
+		var centro: Vector3 = LUGARES.get(slug, LUGARES['bosque'])['pos']
+		# Del id sale siempre el mismo desvío: mismo bicho, mismo lugar, para
+		# todos. Si fuera al azar cada uno lo vería en otro lado.
+		var h := id.hash()
+		var ang := float(h % 1000) / 1000.0 * TAU
+		var rad := 4.0 + float((h / 1000) % 800) / 100.0
+		var px := centro.x + cos(ang) * rad
+		var pz := centro.z + sin(ang) * rad
+
 		var m := Monstruo.new()
 		m.set_script(preload('res://scripts/monstruo.gd'))
 		add_child(m)
 		m.preparar(Vector3(px, altura_en(px, pz) + 0.6, pz), altura_en)
+		m.id_servidor = id
+		m.nombre_servidor = str(d.get("nombre", "")) if d.get("nombre") != null else str(d.get("kind", ""))
+		m.vida = int(d.get("health", 40))
 		m.objetivo = jugador
 		m.pego.connect(_al_recibir_danio)
 		m.murio.connect(_al_morir_monstruo)
 		_monstruos.append(m)
+		_monstruos_por_id[id] = m
+
+	# Lo que ya no está en la base, se fue del mundo: lo mató otro.
+	for id: String in _monstruos_por_id.keys():
+		if vistos.has(id):
+			continue
+		var viejo_m: Monstruo = _monstruos_por_id[id]
+		_monstruos_por_id.erase(id)
+		if is_instance_valid(viejo_m) and viejo_m.vida > 0:
+			viejo_m.recibir(9999)   # que caiga en pantalla, no que desaparezca
 
 
 func _al_recibir_danio(danio: int) -> void:
@@ -470,6 +529,20 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 	# hace que el atardecer sea el mismo para todos los que estén conectados.
 	if ciclo != null:
 		ciclo.sincronizar(int(region.get("tick", 0)), float(region.get("momento_del_dia", 0.0)))
+
+	_sincronizar_amenazas(datos.get("amenazas", []))
+	interfaz.mostrar_inventario(datos.get("objetos", []))
+	interfaz.mostrar_pasos(datos.get("primeros_pasos", []))
+	if mapa != null:
+		var marcas: Array = []
+		for m in _monstruos:
+			if is_instance_valid(m):
+				marcas.append({"pos": m.global_position, "nombre": m.nombre_servidor})
+		mapa.amenazas = marcas
+	# La bienvenida necesita la crónica: se pide una sola vez, al entrar.
+	if not _ya_pedimos_cronica:
+		_ya_pedimos_cronica = true
+		api.pedir_cronica()
 
 	var lugares_por_id := {}
 	for p: Dictionary in datos.get("places", []):
@@ -536,6 +609,28 @@ func _process(_dt: float) -> void:
 			d_min = d
 			mas_cerca = nombre
 	interfaz.mostrar_cercano(mas_cerca, _npcs.get(mas_cerca, null))
+	_avisar_donde_estoy()
+
+
+## En qué lugar estás parado, según a cuál estés más cerca.
+##
+## Se manda al servidor SÓLO cuando cambia. Sin esto el mundo no se entera de
+## que caminaste: aprender y enseñar exigen que el otro esté en tu lugar, los
+## bichos muerden a quien está ahí, y los testigos de lo que hacés son los que
+## están ahí. Caminar sin reportar es caminar en una postal.
+func _avisar_donde_estoy() -> void:
+	var cerca := ""
+	var d_min := 34.0
+	for slug: String in LUGARES:
+		var d: float = Vector2(jugador.global_position.x, jugador.global_position.z).distance_to(
+			Vector2(LUGARES[slug]['pos'].x, LUGARES[slug]['pos'].z))
+		if d < d_min:
+			d_min = d
+			cerca = slug
+	if cerca != "" and cerca != _lugar_actual:
+		_lugar_actual = cerca
+		api.estoy_en(cerca)
+		interfaz.avisar("Llegaste a %s." % LUGARES[cerca].get("nombre", cerca))
 
 
 func _al_interactuar() -> void:
@@ -552,9 +647,16 @@ func _al_golpear() -> void:
 	for m in _monstruos:
 		if not is_instance_valid(m):
 			continue
-		if m.global_position.distance_to(jugador.global_position) < ALCANCE_JUGADOR:
-			m.recibir(DANIO_JUGADOR)
-			break
+		if m.global_position.distance_to(jugador.global_position) >= ALCANCE_JUGADOR:
+			continue
+		# Se muestra el golpe YA y se le avisa al servidor en paralelo. Esperar
+		# la respuesta para reaccionar mete 200 ms entre el clic y el efecto, y
+		# eso alcanza para que se sienta roto. Cuando llega la respuesta se
+		# corrige la vida con la del servidor, que es la que vale.
+		m.doler_ahora()
+		if m.id_servidor != "":
+			api.pelear(m.id_servidor)
+		return
 
 
 ## Captura de verificación: `--captura` guarda un PNG y sale. Sirve para
@@ -584,8 +686,8 @@ func _armar_cordillera() -> void:
 
 	var vueltas := 190
 	var anillos := 7
-	var r0 := 150.0
-	var r1 := 330.0
+	var r0 := 300.0
+	var r1 := 620.0
 
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -631,3 +733,32 @@ func _armar_cordillera() -> void:
 	# proyectar sombras desde 300 metros sólo cuesta.
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
+
+
+## Lo que dijo el servidor del golpe. La vida que vale es la de él.
+func _al_resultado_de_pelea(d: Dictionary) -> void:
+	if not d.get("ok", false):
+		return
+	if d.get("muerta", false):
+		interfaz.avisar("Cayó uno.")
+	# Volvemos a pedir el mundo: puede haber cambiado más de lo que sabemos —
+	# otro jugador pudo haber matado algo mientras tanto.
+	api.pedir_mundo()
+
+
+## El mundo se refresca solo cada tanto: es multijugador, pasan cosas que no
+## hiciste vos. Cada 12 segundos alcanza y no castiga al servidor.
+func _refrescar_cada_tanto() -> void:
+	while true:
+		await get_tree().create_timer(12.0).timeout
+		if api != null and api.token != "":
+			api.pedir_mundo()
+
+
+## M abre el mapa. Hizo falta apenas el valle dejó de verse de un vistazo.
+func _unhandled_input(evento: InputEvent) -> void:
+	if evento is InputEventKey and evento.pressed and not evento.echo:
+		var k := (evento as InputEventKey).keycode
+		if k == KEY_M and not interfaz.escribiendo():
+			mapa.alternar()
+			get_viewport().set_input_as_handled()

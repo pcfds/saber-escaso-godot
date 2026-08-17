@@ -6,6 +6,11 @@ var npc_cercano := ""
 
 var _api: Api
 var _decir: LineEdit
+var _bolsa: RichTextLabel
+var _pasos: RichTextLabel
+var _ya_saludamos := false
+var _ultima_region: Dictionary = {}
+var _ultimos_pasos: Array = []
 var _titulo: Label
 var _sub: Label
 var _pista: Label
@@ -147,6 +152,13 @@ func _armar_caja() -> void:
 	_decir = LineEdit.new()
 	_decir.placeholder_text = "decile algo…  (Enter)"
 	_decir.max_length = 300
+	# Escape cierra. Sin esto quedás atrapado tecleando y el juego se siente
+	# roto en el primer minuto.
+	_decir.gui_input.connect(func(e: InputEvent) -> void:
+		if e is InputEventKey and e.pressed and (e as InputEventKey).keycode == KEY_ESCAPE:
+			_caja.visible = false
+			_decir.release_focus()
+			_decir.accept_event())
 	_decir.text_submitted.connect(func(t: String) -> void:
 		if t.strip_edges() == "":
 			return
@@ -172,6 +184,7 @@ func conectar_api(api: Api) -> void:
 
 
 func mostrar_region(region: Dictionary, jugador: Dictionary) -> void:
+	_ultima_region = region
 	_titulo.text = region.get("name", "El valle")
 	_sub.text = "día %s · sos %s" % [region.get("tick", 0), jugador.get("name", "?")]
 
@@ -221,6 +234,11 @@ func _al_dialogo(d: Dictionary) -> void:
 
 
 func _al_cronica(texto: String) -> void:
+	# La primera crónica de la sesión no va a la cajita de diálogo: es la
+	# bienvenida. Es lo que contesta "¿hay una historia que debo conocer?".
+	if not _ya_saludamos:
+		dar_bienvenida(_ultima_region, texto, _ultimos_pasos)
+		return
 	_texto.text = texto
 	for hijo in _opciones.get_children():
 		hijo.queue_free()
@@ -263,3 +281,115 @@ func pedir_token() -> void:
 ## mientras uno escribe — sin esto, "hola" te manda a saltar y a atacar.
 func escribiendo() -> bool:
 	return _decir != null and _decir.has_focus()
+
+
+## Lo que llevás encima, y quién lo hizo.
+##
+## El nombre del que lo forjó es la mitad del punto: un objeto que dice "lo
+## hizo Ilde" veinte días después de que Ilde no está es el juego entero en una
+## línea.
+func mostrar_inventario(objetos: Array) -> void:
+	if _bolsa == null:
+		_bolsa = RichTextLabel.new()
+		_bolsa.bbcode_enabled = true
+		_bolsa.fit_content = true
+		_bolsa.scroll_active = false
+		_bolsa.anchor_left = 1.0
+		_bolsa.anchor_right = 1.0
+		_bolsa.offset_left = -290
+		_bolsa.offset_right = -16
+		_bolsa.offset_top = 92
+		_bolsa.add_theme_color_override("default_color", Color(0.87, 0.89, 0.86))
+		add_child(_bolsa)
+
+	if objetos.is_empty():
+		_bolsa.text = "[color=#7d867f]no llevás nada[/color]"
+		return
+
+	var lineas: Array[String] = ["[color=#98a29c]LLEVÁS[/color]"]
+	for o in objetos:
+		var d: Dictionary = o
+		var quien: String = str(d.get("made_by", ""))
+		var cal := int(d.get("quality", 0))
+		# La calidad en palabras: un número sin escala no dice nada.
+		var como := "una porquería" if cal < 25 else \
+			"pasable" if cal < 50 else \
+			"buena" if cal < 75 else "muy buena"
+		lineas.append("· %s [color=#7d867f](%s%s)[/color]" % [
+			d.get("kind", "algo"), como,
+			", la hizo " + quien if quien != "" else ""])
+	_bolsa.text = "\n".join(lineas)
+
+
+## Qué hacer ahora. Lo manda el servidor y sale del estado del mundo, así que
+## nunca te pide algo imposible.
+##
+## Es lo que le faltaba al primer minuto: llegabas a un valle, no conocías a
+## nadie, no sabías qué había, y el juego te dejaba parado en un campo.
+func mostrar_pasos(lista: Array) -> void:
+	if _pasos == null:
+		_pasos = RichTextLabel.new()
+		_pasos.bbcode_enabled = true
+		_pasos.fit_content = true
+		_pasos.scroll_active = false
+		_pasos.anchor_top = 1.0
+		_pasos.anchor_bottom = 1.0
+		_pasos.offset_left = 16
+		_pasos.offset_right = 480
+		_pasos.offset_top = -108
+		_pasos.offset_bottom = -16
+		add_child(_pasos)
+
+	_ultimos_pasos = lista
+	if lista.is_empty():
+		_pasos.text = ""
+		return
+	var lineas: Array[String] = ["[color=#98a29c]QUÉ HACER AHORA[/color]"]
+	for p in lista:
+		var d: Dictionary = p
+		lineas.append("· %s" % d.get("texto", ""))
+	_pasos.text = "\n".join(lineas)
+
+
+## La bienvenida. Una sola vez, al entrar: dónde estás y qué pasó acá.
+func dar_bienvenida(region: Dictionary, cronica: String, pasos: Array) -> void:
+	if _ya_saludamos:
+		return
+	_ya_saludamos = true
+
+	var panel := PanelContainer.new()
+	panel.anchor_left = 0.5; panel.anchor_right = 0.5
+	panel.anchor_top = 0.5; panel.anchor_bottom = 0.5
+	panel.offset_left = -340; panel.offset_right = 340
+	panel.offset_top = -210; panel.offset_bottom = 210
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 14)
+	panel.add_child(col)
+
+	var t := RichTextLabel.new()
+	t.bbcode_enabled = true
+	t.fit_content = true
+	t.custom_minimum_size = Vector2(640, 300)
+	var partes: Array[String] = [
+		"[b]%s[/b]  [color=#7d867f]· día %s[/color]" % [
+			region.get("name", "El valle"), region.get("tick", 0)],
+		"",
+		"[color=#98a29c]Lo que pasó acá[/color]",
+		cronica if cronica != "" else "[color=#7d867f]Todavía nadie contó nada de este lugar.[/color]",
+	]
+	if not pasos.is_empty():
+		partes.append("")
+		partes.append("[color=#98a29c]Por dónde empezar[/color]")
+		for p in pasos:
+			partes.append("· %s" % (p as Dictionary).get("texto", ""))
+	partes.append("")
+	partes.append("[color=#7d867f]WASD caminar · shift correr · E hablar · clic pegar · M mapa · botón derecho girar[/color]")
+	t.text = "\n".join(partes)
+	col.add_child(t)
+
+	var b := Button.new()
+	b.text = "entrar al valle"
+	b.pressed.connect(func() -> void: panel.queue_free())
+	col.add_child(b)
+	add_child(panel)

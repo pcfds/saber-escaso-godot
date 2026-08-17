@@ -8,6 +8,7 @@ extends Node
 
 signal mundo_recibido(datos: Dictionary)
 signal dialogo_recibido(datos: Dictionary)
+signal peleado(datos: Dictionary)
 signal cronica_recibida(texto: String)
 
 ## Se sobreescriben desde la línea de comandos o el archivo de config.
@@ -61,6 +62,23 @@ func hablar(npc: String, dice: String = "") -> void:
 		cuerpo += "&dice=" + dice.uri_encode()
 	_hacer_post("/j/%s/hablar" % token, cuerpo,
 		func(d: Dictionary) -> void: dialogo_recibido.emit(d))
+
+
+## Avisar dónde estamos parados.
+##
+## En el 3D caminás libre y el servidor no se enteraba: para el mundo seguías
+## donde entraste. Eso rompía aprender, enseñar, y que los bichos te
+## encuentren. Se manda sólo cuando CAMBIA de lugar, no cada cuadro.
+func estoy_en(slug: String) -> void:
+	_hacer_post("/j/%s/estoy" % token, "lugar=" + slug.uri_encode(),
+		func(_d: Dictionary) -> void: pass)
+
+
+## Pegarle a una amenaza del servidor. Se resuelve en el momento, no en el
+## tick: un golpe que tarda una hora no es un golpe.
+func pelear(id: String) -> void:
+	_hacer_post("/j/%s/pelear" % token, "id=" + id.uri_encode(),
+		func(d: Dictionary) -> void: peleado.emit(d))
 
 
 func actuar(verbo: String, objetivo: String = "") -> void:
