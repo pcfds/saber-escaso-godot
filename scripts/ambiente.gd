@@ -19,6 +19,66 @@
 ## La división vale la pena: la identidad visual se define en UN lugar —éste—
 ## y las concesiones para que ande en cualquier máquina viven en otro, donde se
 ## pueden leer juntas y discutir juntas.
+##
+## ===========================================================================
+## SEIS PROPIEDADES DE ESTE ARCHIVO NO LLEGAN A LA PANTALLA. LEÉ ESTO ANTES DE
+## TOCAR UN NÚMERO.
+## ===========================================================================
+##
+## La frase de arriba —"la identidad visual se define en UN lugar, éste"— es una
+## intención, no lo que pasa. `_ready()` termina llamando a
+## `Rendimiento.registrar_entorno()`, y `rendimiento.gd::_aplicar_entorno()`
+## vuelve a escribir varias de estas propiedades **en los tres niveles de
+## calidad, sin preguntar**. Aparte, `ciclo.gd::_process()` reescribe otras
+## **en cada cuadro**.
+##
+## Medido con una sonda que imprime los valores del `Environment` vivo a los
+## 3,4 segundos de arrancar, con `--captura` (o sea en ALTO):
+##
+##   | propiedad                | dice este archivo | llega a la pantalla | quién |
+##   |--------------------------|-------------------|---------------------|-------|
+##   | `adjustment_enabled`     | `true`            | **`false`**         | rendimiento |
+##   | `tonemap_exposure`       | 1.02              | **0.95**            | rendimiento |
+##   | `ambient_light_energy`   | 0.62              | lo pisa el ciclo    | ciclo |
+##   | `ssao_enabled`           | true              | lo redecide         | rendimiento |
+##   | `ssr_enabled`            | true              | lo redecide         | rendimiento |
+##   | `volumetric_fog_enabled` | true              | lo redecide         | rendimiento |
+##
+## La consecuencia práctica, y ya costó una tarde: **el bloque de corrección de
+## color de este archivo es código muerto.** `adjustment_saturation` se movió de
+## 1,38 a 1,10 a 1,00 y a 0,85 y las cuatro capturas salieron **idénticas píxel
+## a píxel** en las trece zonas medidas. Lo mismo `adjustment_contrast` (1,12 →
+## 1,30) y `tonemap_exposure` (1,02 → 0,90). Si querés que el grade exista, hay
+## que sacarle el `adjustment_enabled = false` a `rendimiento.gd`; desde acá no
+## se puede, y subirle el número tampoco.
+##
+## Y una trampa de método que sale de lo mismo: **apagar algo desde acá no lo
+## apaga si `rendimiento.gd` lo vuelve a prender.** Para medir si la niebla
+## volumétrica hacía algo hubo que ir por `volumetric_fog_density = 0.0`, que sí
+## es de este archivo; `volumetric_fog_enabled = false` lo revierte rendimiento
+## y el experimento da un falso "no cambia nada" por el motivo equivocado.
+##
+## ===========================================================================
+## QUÉ SE MIDIÓ Y NO ERA LA CAUSA (17 de agosto)
+## ===========================================================================
+##
+## La pregunta era por qué el valle vivía en una banda de gris angosta y la
+## aldea no se separaba del suelo. Con el sol congelado y cambiando UNA cosa por
+## vez sobre la misma escena, ninguna de estas cuatro movió la aguja:
+##
+##   · `sdfgi_energy = 0.0` (o sea, la GI sin aportar luz): las trece zonas
+##     dieron el mismo número ±1. Ojo: es una medición **bajo llvmpipe**, donde
+##     SDFGI ya sale basura — no es motivo para apagarlo en el `.exe`.
+##   · `volumetric_fog_density = 0.0`: sin cambio.
+##   · `fog_enabled = false`: sin cambio, y tiene sentido — la niebla de
+##     distancia arranca a 210 m y la aldea está a 40.
+##   · El tonemapper: AgX / Filmic / Lineal dieron un rango p5–p95 de 81, 81 y
+##     78. **AgX no es el que comprime.** Y de paso quedó medido a favor de AgX:
+##     con Lineal la saturación de los muros salta de 0,46 a 0,57, o sea que
+##     Lineal empeora el otro problema.
+##
+## La causa estaba en los materiales del kit de Kenney, que no pasaban por la
+## paleta. Está resuelto en `paleta.gd`, sección "LA ADUANA".
 class_name Ambiente
 extends WorldEnvironment
 
@@ -27,24 +87,6 @@ func _ready() -> void:
 	environment = _construir_entorno()
 	camera_attributes = _construir_camara()
 	Rendimiento.registrar_entorno(environment, camera_attributes)
-	_sonda()
-
-
-# SONDA TEMPORAL — BORRAR
-func _sonda() -> void:
-	await get_tree().create_timer(3.4).timeout
-	var soles: Array = []
-	for n in get_tree().root.find_children("*", "DirectionalLight3D", true, false):
-		var l := n as DirectionalLight3D
-		soles.append("%s e=%.2f rotx=%.1f c=%s sh=%s" % [l.name, l.light_energy,
-			rad_to_deg(l.rotation.x), l.light_color, l.shadow_enabled])
-	print("SONDA cuadros=%d fps=%.1f amb=%.3f sdfgi=%s vol=%s fog=%s tone=%d sat=%.2f grade=%s expo=%.2f volden=%.4f skyc=%.2f | %s" % [
-		Engine.get_frames_drawn(), Engine.get_frames_per_second(),
-		environment.ambient_light_energy, environment.sdfgi_enabled,
-		environment.volumetric_fog_enabled, environment.fog_enabled,
-		environment.tonemap_mode, environment.adjustment_saturation,
-		environment.adjustment_enabled, environment.tonemap_exposure, environment.volumetric_fog_density, environment.ambient_light_sky_contribution,
-		", ".join(PackedStringArray(soles))])
 
 
 func _construir_entorno() -> Environment:
@@ -160,20 +202,27 @@ func _construir_entorno() -> Environment:
 	e.tonemap_exposure = 1.02
 	e.tonemap_white = 6.0
 
-	# Los ajustes de color estaban en +2% de saturación y +4% de contraste. Eso
-	# está por debajo de lo que el ojo distingue y prende una variante más del
-	# shader de tonemapping. Si algún día hace falta una corrección de color,
-	# que sea una que se vea.
-	# La corrección de color estaba APAGADA, y AgX desatura fuerte por diseño:
-	# es un tonemapper filmic, pensado para material fotográfico que después se
-	# colorea. Sin nada que lo compense, un mundo estilizado sale pastel — que
-	# es exactamente lo que pasó. Acá el color es una decisión de diseño, no una
-	# aproximación a lo real, así que se recupera a mano.
+	# CORRECCIÓN DE COLOR — HOY ESTO NO CORRE. Ver la tabla del encabezado.
+	#
+	# El razonamiento por el que existe sigue siendo bueno y por eso queda
+	# escrito: AgX desatura fuerte por diseño —es un tonemapper filmic, pensado
+	# para material fotográfico que después se colorea— y un mundo estilizado
+	# sin nada que lo compense sale pastel.
+	#
+	# Lo que NO es cierto es que estos tres números hagan algo. `rendimiento.gd`
+	# hace `e.adjustment_enabled = false` en los tres niveles, después de que
+	# este archivo lo prende. Medido moviendo la saturación a 1,38 / 1,10 / 1,00
+	# / 0,85: las cuatro capturas dieron los mismos números en las trece zonas.
+	# Antes de volver a tocar esto, sacale la línea a `rendimiento.gd` o no
+	# estás cambiando nada.
+	#
+	# Y si algún día corre: los techos de saturación de `paleta.gd` se miden
+	# DESPUÉS del grade, así que un `adjustment_saturation` por encima de 1,0
+	# empuja al mundo entero arriba del techo de 0,35. Con la aduana del kit ya
+	# puesta, lo medido en pantalla da 0,22–0,35 sin ninguna corrección: el
+	# grade que hacía falta era la aduana, no un multiplicador global.
 	e.adjustment_enabled = true
-	# 1,38 fue una sobrecorrección mía y se vio en la primera captura: techos
-	# rosa chicle, árboles cian, suelo rosado. AgX desatura y hay que compensar,
-	# pero la compensación tiene que devolver color, no inventarlo.
-	e.adjustment_saturation = 1.10
+	e.adjustment_saturation = 1.0
 	e.adjustment_contrast = 1.12
 	e.adjustment_brightness = 1.0
 	return e

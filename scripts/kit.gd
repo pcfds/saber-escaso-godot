@@ -2,13 +2,6 @@ extends RefCounted
 
 class_name Kit
 
-## El follaje y la corteza que se le imponen a las mallas del kit. Salen de la
-## paleta pero aclarados: los de `Paleta` se calibraron contra conos verdes en
-## una escena sin niebla, y acá hay que leerlos a cuarenta metros con AgX
-## desaturando por encima.
-const COPA_VIVA := Color(0.271, 0.396, 0.216)
-const CORTEZA := Color(0.322, 0.243, 0.184)
-
 # ===========================================================================
 # EL KIT — las mallas hechas por alguien
 #
@@ -37,13 +30,23 @@ const CORTEZA := Color(0.322, 0.243, 0.184)
 # vinimos a buscar. Es al revés que con la geometría primitiva, donde el
 # material era lo único que había.
 #
-# La consecuencia para `paleta.gd`: **la paleta sigue mandando sobre lo que
-# generamos nosotros** —terreno, agua, cielo, luces, la ropa de la gente— y no
-# manda sobre las mallas del kit, que ya vienen con una paleta coherente de
-# fábrica. Mezclar las dos autoridades sobre el mismo objeto es lo que produce
-# el "indeciso" que la dirección de arte nombró. Donde hace falta empujar una
-# malla del kit hacia la paleta, se hace con `tinte()`, que multiplica y no
-# reemplaza.
+# LA PALETA MANDA ACÁ TAMBIÉN. Esto decía lo contrario y hay que dejarlo
+# escrito, porque la frase que estaba mandó a saltearse medio kit:
+#
+#   > "la paleta no manda sobre las mallas del kit, que ya vienen con una
+#   >  paleta coherente de fábrica"
+#
+# Es falso por donde se lo mire. Contradice `DISENO.md` §6.1 —*el color es una
+# decisión de diseño, y eso le da a la paleta autoridad sobre todo lo demás*— y
+# además el remedio que proponía es peor que la enfermedad: **dos paletas
+# coherentes en un mismo cuadro no son dos aciertos, son la indecisión que se
+# lee como Playmobil.** Que la de Kenney sea buena es justamente lo que la hace
+# competir de igual a igual con la nuestra.
+#
+# Lo que sí sigue en pie: no se aplana con `material_override`. La geometría se
+# respeta entera y lo único que se cambia es el color, muestra por muestra, en
+# `Paleta.domar_material()`. `tinte()` sigue existiendo para lo otro: empujar
+# UNA pieza suelta —una casa quemada— sin tocar a las demás.
 # ===========================================================================
 
 const RAIZ := "res://assets/kenney/"
@@ -81,43 +84,46 @@ static func malla(ruta: String) -> Mesh:
 	var m := _primera_malla(raiz)
 	raiz.queue_free()
 	if m != null:
-		_arreglar_color(m)
+		_domar_color(m)
 
 	_mallas[ruta] = m
 	return m
 
 
-## Le pone a la malla los colores de la paleta cuando no trae textura.
+## Pasa la malla por la aduana de `paleta.gd`. Es el ÚNICO lugar donde el color
+## del kit se decide, y por eso no hay ramas acá: las dos clases de material del
+## kit las distingue `Paleta.domar_material()`, que es donde vive el criterio.
 ##
-## **Los colores del Nature Kit llegan corrompidos.** Se consultaron las mallas
+## **Los colores del Nature Kit llegan corrompidos.** Se leyeron los `.glb`
 ## directo, sin pasar por nuestro código: todas las copas salen en
-## (0.44, 0.90, 0.84) y todos los troncos en (0.95, 0.74, 0.62) — cian y
-## salmón. En pantalla el bosque era turquesa y no había ajuste de luz que lo
-## arreglara, porque el color estaba en el archivo. Kenney no vende árboles
-## cian; se rompe en la importación, y el zip no trae textura, así que no hay
-## mapa de color que recuperar.
+## (0.44, 0.90, 0.84) y todos los troncos en (0.95, 0.74, 0.62) — cian y salmón.
+## En pantalla el bosque era turquesa y no había ajuste de luz que lo arreglara,
+## porque el color estaba en el archivo.
 ##
-## Los packs de pueblo y útiles SÍ traen textura y se ven bien: por eso sólo se
-## tocan las superficies sin textura.
+## **Y los packs con textura NO "se ven bien".** Esto decía que sí, y esa frase
+## es la que hizo que se saltearan la mitad de las mallas del valle: el filtro
+## era `if base.albedo_texture != null: continue`. Está medido sobre píxeles de
+## una captura, luma 0–255 y saturación HSV:
 ##
-## Y no es un parche: es la decisión que ya estaba escrita —**el color lo
-## decide la paleta, no lo imita el material**— aplicada donde hacía falta.
-## Copa y tronco se distinguen por cuál de las dos es más verde: aunque el
-## color esté corrido, el orden entre ellos se mantiene.
-static func _arreglar_color(m: Mesh) -> void:
+##   · Los dos atlas de `pueblo/` y `utiles/` son 24 muestras planas entre
+##     s0,17 y s0,73 — una paleta de dibujo animado, ajena a la nuestra.
+##   · Los techos salían a luma 122, 105, 145 y 153 contra un suelo de 122.
+##     O sea que **la tapa era más clara que la caja y que el prado**, que es
+##     exactamente al revés de lo que la escalera de `paleta.gd` construye.
+##   · Y con saturación 0,49 · 0,56 · 0,36 · 0,30, contra un techo de 0,35.
+##
+## Con la aduana puesta, esos cuatro techos dan 34, 26, 33 y 36, y su saturación
+## 0,29 · 0,19 · 0,26 · 0,22. Se ven bien AHORA.
+##
+## Se trabaja sobre una copia del material: el recurso importado no se toca, así
+## que reimportar el `.glb` no arrastra nada nuestro.
+static func _domar_color(m: Mesh) -> void:
 	for i in m.get_surface_count():
 		var base := m.surface_get_material(i) as StandardMaterial3D
-		if base == null or base.albedo_texture != null:
+		if base == null:
 			continue
-		var c := base.albedo_color
 		var nuevo := base.duplicate() as StandardMaterial3D
-		# No se usa Paleta.COPA directo: ese color se eligió para la mancha
-		# oscura del Sotobosque hecha con conos, y aplicado a TODOS los árboles
-		# del valle deja siluetas negras. Se aclara para el follaje suelto y el
-		# Sotobosque vuelve a oscurecerse por su cuenta, con la variación por
-		# instancia que ya hace `vegetacion.gd`.
-		nuevo.albedo_color = COPA_VIVA if c.g > c.r * 1.15 else CORTEZA
-		nuevo.roughness = 0.97
+		Paleta.domar_material(nuevo)
 		m.surface_set_material(i, nuevo)
 
 

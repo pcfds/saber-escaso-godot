@@ -229,10 +229,33 @@ const MURO_RUINA := Color(0.279, 0.289, 0.300)      ## h210 s0.07 v0.30 (V3) —
 const LOSA_CAMINO := Color(0.530, 0.509, 0.482)     ## h34  s0.09 v0.53 (V5) — un peldaño arriba del suelo: se ve la línea, no grita
 
 const TECHO := Color(0.210, 0.166, 0.147)           ## h18 s0.30 v0.21 (V2)
+## El segundo techo. Mismo peldaño que `TECHO` —V2, la tapa oscura— y frío en
+## vez de cálido, que es toda la diferencia que puede haber entre dos techos sin
+## romper la lectura de "caja clara, tapa oscura". Existe porque el kit trae dos
+## familias de techo y colapsarlas en una sola dejaba siete casas idénticas: la
+## variedad se paga en MATIZ, nunca en valor.
+const TECHO_PIZARRA := Color(0.164, 0.195, 0.210)   ## h200 s0.22 v0.21 (V2)
 const MADERA := Color(0.130, 0.103, 0.086)          ## h24 s0.34 v0.13 (V1) — una puerta tiene que leerse como un agujero
 const LADRILLO := Color(0.300, 0.241, 0.216)        ## h18 s0.28 v0.30 (V3)
 const TRONCO := Color(0.210, 0.172, 0.147)          ## h24 s0.30 v0.21 (V2)
 const COPA := Color(0.172, 0.210, 0.147)            ## h96 s0.30 v0.21 (V2) — el Sotobosque es UNA mancha oscura
+
+## El árbol suelto, que NO es el Sotobosque. Dos peldaños arriba de `COPA`.
+##
+## `COPA` se eligió para una cosa concreta: la mancha oscura del bosque, hecha
+## con conos, mirada como un bloque. Puesta en cada árbol del valle —y con el
+## kit hay 1.600— deja siluetas negras, y eso se vio en pantalla antes de que
+## esto existiera. La copa suelta necesita valor propio: **V4**, o sea el mismo
+## peldaño que el suelo, porque lo que separa un árbol del prado no es el valor
+## sino la silueta y el matiz, y lo que separa al BOSQUE es que muchos V4 juntos
+## con sombra propia leen como una mancha.
+##
+## Vivían como `COPA_VIVA` y `CORTEZA` adentro de `kit.gd`, con saturación 0,46
+## y 0,43 y con el valor entre dos peldaños. Están acá y en la escalera por la
+## regla de siempre: un color suelto en otro script es deuda, y el techo de
+## saturación no tiene excepciones que no estén nombradas.
+const COPA_CLARA := Color(0.324, 0.410, 0.267)      ## h96 s0.35 v0.41 (V4)
+const TRONCO_CLARO := Color(0.300, 0.241, 0.195)    ## h26 s0.35 v0.30 (V3) — el tronco del árbol suelto
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +446,7 @@ static func terreno() -> StandardMaterial3D:
 	var m := _base(TERRENO_TINTE, 0.97)
 	m.vertex_color_use_as_albedo = true
 	m.vertex_color_is_srgb = true
-	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	#m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	return m
 
 
@@ -440,14 +463,14 @@ static func monte() -> StandardMaterial3D:
 	var m := _base(Color.WHITE, 1.0)
 	m.vertex_color_use_as_albedo = true
 	m.vertex_color_is_srgb = true
-	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	#m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	return m
 
 
 ## Follaje: copas, arbustos, cualquier verde vertical.
 static func follaje(c: Color = COPA) -> StandardMaterial3D:
 	var m := _base(c, 0.98)
-	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	#m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	return m
 
 
@@ -471,7 +494,7 @@ static func pasto_hoja() -> StandardMaterial3D:
 	var m := _base(Color.WHITE, 1.0)
 	m.vertex_color_use_as_albedo = true
 	m.vertex_color_is_srgb = true
-	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	#m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	m.cull_mode = BaseMaterial3D.CULL_BACK
 	return m
 
@@ -502,7 +525,7 @@ static func muro(c: Color = MURO_ALDEA) -> StandardMaterial3D:
 ## sea una casa, y un techo que brilla deja de ser una mancha.
 static func techo(c: Color = TECHO) -> StandardMaterial3D:
 	var m := _base(c, 0.98)
-	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	#m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	return m
 
 
@@ -510,7 +533,7 @@ static func techo(c: Color = TECHO) -> StandardMaterial3D:
 ## una mancha de valor y nada más, y cualquier reflejo la vuelve satén.
 static func tela(c: Color = ROPA_LINO) -> StandardMaterial3D:
 	var m := _base(c, 0.96)
-	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	#m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	return m
 
 
@@ -653,6 +676,317 @@ static func _base(c: Color, rugosidad: float) -> StandardMaterial3D:
 	m.albedo_color = c
 	m.roughness = rugosidad
 	return m
+
+
+# ===========================================================================
+# LA ADUANA — POR DÓNDE ENTRA EL ARTE QUE NO ESCRIBIMOS NOSOTROS
+#
+# Hasta el 17 de agosto había DOS direcciones de arte en el mismo cuadro, y está
+# medido sobre píxeles de una captura del juego real:
+#
+#   · Los techos del kit salían a **saturación 0,47 y 0,53** (matiz 3° y 359°:
+#     rosa chicle) y **0,35 / 0,37** en cian, contra un techo de 0,35 que este
+#     archivo le fija a todo lo que se mide en metros cuadrados.
+#   · Los muros del kit, a **saturación 0,46**, naranja h18.
+#   · Y peor que la saturación, el VALOR: el techo cian medía **luma 145** y el
+#     suelo **122**. O sea que la tapa era más clara que la caja y que el prado.
+#     Esa es exactamente la lectura que la escalera de esta paleta existe para
+#     producir al revés — "caja clara, tapa oscura" es lo único que hace que una
+#     casa se lea como una casa a 27 metros.
+#
+# No era un bug del motor. Se descartó, midiendo de a una cosa por vez sobre la
+# misma escena con el sol congelado: SDFGI a energía 0 (sin cambio), la niebla
+# volumétrica a densidad 0 (sin cambio), la niebla de distancia apagada (sin
+# cambio: arranca a 210 m y la aldea está a 40), y el tonemapper AgX cambiado
+# por Filmic y por Lineal (el rango p5–p95 se movía de 81 a 81 y a 78). **El
+# entorno no tenía la culpa: los colores del kit son literalmente ésos.**
+#
+# La fuente, verificada leyendo los `.glb` y los dos atlas:
+#
+#   · `naturaleza/` no tiene texturas: cada material trae su color. El material
+#     que Kenney llama `leafsGreen` es **h169 s0.80** — o sea turquesa, no
+#     verde. `woodBark` es h19 s0.62, salmón.
+#   · `pueblo/` y `utiles/` comparten un atlas de 24 muestras planas, todas
+#     entre s0.17 y s0.73. Es una paleta de dibujo animado, coherente consigo
+#     misma y ajena a ésta.
+#
+# `kit.gd` decía que "la paleta no manda sobre las mallas del kit, que ya vienen
+# con una paleta coherente de fábrica". **Esa frase es el bug.** DISENO.md §6
+# dice lo contrario con todas las letras: *el color es una decisión de diseño y
+# eso le da a la paleta autoridad sobre todo lo demás*. Dos paletas coherentes
+# en un mismo cuadro no son dos aciertos, son la indecisión que se lee como
+# Playmobil.
+#
+# Quién la llama: `Kit._domar_color()`, una vez por malla —los `Mesh` del kit
+# están cacheados por ruta— y sobre una COPIA del material, así que el recurso
+# importado no se toca. Los dos atlas se traducen una sola vez cada uno y
+# cuestan 48 ms entre los dos.
+#
+# Así que el kit entra, y entra por acá. Lo que NO cambia: las mallas siguen sin
+# `material_override` —aplanarlas a un color tira la razón por la que se
+# trajeron, que es la geometría—, y el atlas sigue siendo un atlas. Lo único que
+# pasa es que cada muestra se cambia por la de esta paleta que ocupa su lugar.
+#
+# MEDIDO, dos capturas seguidas de la misma escena con el sol congelado, luma
+# 0–255 (la única diferencia entre las dos es que la aduana corra o no):
+#
+#   |                            | antes | después |
+#   |----------------------------|-------|---------|
+#   | techo rojo, cara al sol    |  122  |    34   |
+#   | techo rojo, cara en sombra |  103  |    26   |
+#   | techo turquesa             |  145  |    33   |
+#   | muro, cara al sol          |  146  |   124   |
+#   | suelo abierto              |  122  |   122   |
+#   | saturación de los techos   | 0,50 0,56 0,37 0,30 | 0,29 0,23 0,26 0,22 |
+#   | saturación de los muros    | 0,46  |  0,35   |
+#
+# Lo que compra: **ninguna superficie grande pasa el techo de 0,35**, y los
+# techos pasan de estar 23 puntos ARRIBA del suelo a estar 92 abajo. Antes la
+# tapa era lo más claro de la casa; ahora es lo más oscuro, que es la lectura
+# que esta paleta describe desde el primer día.
+#
+# Lo que NO alcanza a arreglar, y hay que decirlo: **el muro pierde 22 puntos**
+# (146 → 124) y queda a dos del suelo. No es la aduana: es que el suelo alrededor
+# de la aldea no está en V4 como supone la composición de arriba, está en V5. Se
+# midió por los dos lados — el píxel del suelo da h44 s0,28, que es `PASTO_SECO`
+# clavado, y `valle.gd::_color_terreno()` satura su interpolación en pasto seco
+# a partir de y = 2, que es la altura a la que está el pueblo. Contra un lienzo
+# V5, un muro V6 empata: no hay ningún color de esta escalera que separe, porque
+# V7 es la piel y V8 no lo pisa nada del mundo. **El peldaño que falta es del
+# terreno, no del muro.**
+# ===========================================================================
+
+## Las 24 muestras del atlas de Kenney (`pueblo/` y `utiles/` comparten las
+## mismas), y a qué color de esta paleta va cada una. La clave es el hex tal
+## cual está en `Textures/colormap.png`.
+##
+## **El criterio es el peldaño, no el parecido.** Una muestra no va al color de
+## esta paleta que más se le parece: va al que le corresponde por el trabajo que
+## hace en el cuadro. Por eso los dos rojos de techo (`c3495c`, `cf534f`) y el
+## turquesa de techo (`51b296`) caen a V2 aunque vengan de V0.76–0.81: un techo
+## es la tapa oscura, y si el color "correcto" no separa, el correcto está mal.
+##
+## Las dos muestras de fuego (`ff7e44`, `ffc044`) son la excepción 1 y se van
+## saturadas a propósito: son el farol y la fragua del kit, y son cuatro píxeles.
+const KIT_ATLAS := {
+	# los techos — todos a V2, la tapa oscura. Cálido y frío, mismo peldaño.
+	"c3495c": TECHO,            # rojo teja      h351 s0.63 v0.76
+	"cf534f": TECHO,            # rojo claro     h  2 s0.62 v0.81
+	"51b296": TECHO_PIZARRA,    # turquesa       h163 s0.54 v0.70
+	# los muros — a V6, que es la mancha clara del pueblo
+	"c58262": MURO_ALDEA,       # revoque        h 19 s0.50 v0.77
+	"eeba88": MURO_ALDEA,       # revoque claro  h 29 s0.43 v0.93
+	"f2bf99": ROCA,             # piedra clara   h 26 s0.37 v0.95
+	"fde4c7": ROCA,             # cal            h 32 s0.21 v0.99
+	"ffffff": ROCA,             # blanco
+	"f1976c": MURO_FRAGUA,      # madera clara   h 19 s0.55 v0.95
+	# la madera y el ladrillo — abajo del suelo, para que las vigas se lean
+	"b06041": LADRILLO,         # madera         h 17 s0.63 v0.69
+	"9a5942": TRONCO,           # madera oscura  h 16 s0.57 v0.60
+	# lo verde del kit, al mismo lugar que el bosque
+	"51b985": PASTO,            # verde claro    h150 s0.56 v0.73
+	"61cb8b": COPA,             # verde          h144 s0.52 v0.80
+	# lo frío: metal, vidrio, agua
+	"6794d9": MONTE_AIRE,       # azul fuerte    h216 s0.53 v0.85
+	"a0a8c9": MONTE_ALTO,       # gris azul      h228 s0.20 v0.79
+	"d0e8ff": MONTE_ALTO,       # vidrio         h209 s0.18 v1.00
+	"868ba1": ROPA_METAL,       # hierro claro   h229 s0.17 v0.63
+	"4f5260": MURO_RUINA,       # hierro         h229 s0.18 v0.38
+	"38383d": MADERA,           # hierro oscuro  h240 s0.08 v0.24
+	"42424a": MADERA,           # hierro oscuro  h240 s0.11 v0.29
+	# excepción 1 — el fuego. Se quedan saturadas y por eso están nombradas.
+	"ff7e44": BRASA,            # llama          h 19 s0.73 v1.00
+	"ffc044": VENTANA,          # farol          h 40 s0.73 v1.00
+}
+
+## Los materiales del Nature Kit, que no tienen textura: el color va en el
+## material y Kenney los deja nombrados, así que se mapean por NOMBRE, que es
+## más firme que por color.
+##
+## Las flores y los hongos (`color*`) no están acá: son manchas de centímetros y
+## caen en el techo de gente (S ≤ 0.50) por la regla general de `domar()`. Es la
+## misma decisión que el pelo — un valle donde la flor roja es gris no se cree.
+## El follaje va a `COPA_CLARA` y NO a `COPA`, y no es un descuido: es una
+## medición ajena que conviene no perder. `COPA` es V2 y está pensado para el
+## bloque del Sotobosque; aplicado a los 1.600 árboles del kit deja siluetas
+## negras a cuarenta metros. Si alguna vez alguien "corrige" esto a `COPA`, el
+## bosque se vuelve un agujero.
+const KIT_MATERIAL := {
+	"leafsGreen": COPA_CLARA,   # h169 s0.80 v0.79 — turquesa en el original
+	"leafsDark": COPA_CLARA,    # h182 s0.75 v0.67
+	"grass": COPA_CLARA,        # h169 s0.80 v0.85
+	"woodBark": TRONCO_CLARO,   # h 19 s0.62 v0.89
+	"woodBarkDark": TRONCO_CLARO,   # h 13 s0.54 v0.80
+	"wood": LADRILLO,           # h 17 s0.62 v1.00
+	"woodDark": MADERA,         # h 17 s0.62 v0.77
+	"woodInner": PASTO_SECO,    # h 29 s0.24 v0.96
+	"dirt": TIERRA,             # h 19 s0.62 v0.89
+	"dirtDark": LADRILLO,       # h 19 s0.62 v0.71
+	"stone": ROCA,              # h188 s0.21 v0.91
+	"_defaultMat": PASTO_SECO,  # el trigo: blanco puro en el original, y nada
+	                            # del mundo llega a V8
+}
+
+## Los nueve peldaños, como lista, para poder buscar el más cercano.
+const ESCALERA: Array[float] = [V0_TINTA, V1_CARBON, V2_TURBA, V3_CORTEZA,
+	V4_ARCILLA, V5_LINO, V6_TRIGO, V7_CENIZA, V8_CAL]
+
+
+## La regla general para un color que viene de afuera y no está en ninguna
+## tabla: se le respeta el matiz, se le baja la saturación al techo y **se le
+## clava el valor al peldaño más cercano de la escalera.**
+##
+## El clavado del valor no es cosmético: es lo que impide que entre un color a
+## mitad de camino entre dos peldaños, que es justo el que no separa de nada. Un
+## kit plano como éste se banca el clavado sin bandearse porque sus colores ya
+## son planos; no le hagas esto a una textura fotográfica.
+static func domar(c: Color, techo: float = SATURACION_MUNDO) -> Color:
+	var v := c.v
+	var mejor := v
+	var dist := 9.0
+	for p in ESCALERA:
+		var d := absf(p - v)
+		if d < dist:
+			dist = d
+			mejor = p
+	return Color.from_hsv(c.h, minf(c.s, techo), mejor, c.a)
+
+
+## Cache del atlas ya traducido, por ruta del recurso. Es una pasada de 512×512
+## por atlas y hay dos en todo el juego; sin la cache serían 76 pasadas, una por
+## malla del kit.
+static var _atlas_domado: Dictionary = {}
+
+
+## Traduce el atlas de Kenney a esta paleta, muestra por muestra, y devuelve una
+## textura nueva. La original no se toca.
+##
+## Lo que no está en `KIT_ATLAS` pasa por `domar()`, así que si Kenney republica
+## el pack con una muestra más, esa muestra entra igual acotada y no rompe nada:
+## se ve apagada y en un peldaño, que es el peor caso aceptable.
+static func atlas_domado(tex: Texture2D) -> Texture2D:
+	if tex == null:
+		return null
+	var clave := tex.resource_path
+	if clave != "" and _atlas_domado.has(clave):
+		return _atlas_domado[clave]
+
+	var img := tex.get_image()
+	if img == null:
+		return tex
+	img = img.duplicate()
+	if img.is_compressed():
+		img.decompress()
+	img.convert(Image.FORMAT_RGBA8)
+
+	var d := img.get_data()
+	var traducidos := {}          # int rgb -> PackedByteArray de 3
+	var i := 0
+	while i < d.size():
+		var llave := (d[i] << 16) | (d[i + 1] << 8) | d[i + 2]
+		var nuevo: PackedByteArray = traducidos.get(llave, PackedByteArray())
+		if nuevo.is_empty():
+			nuevo = _traducir_muestra(d[i], d[i + 1], d[i + 2])
+			traducidos[llave] = nuevo
+		d[i] = nuevo[0]
+		d[i + 1] = nuevo[1]
+		d[i + 2] = nuevo[2]
+		i += 4
+
+	var salida := Image.create_from_data(img.get_width(), img.get_height(),
+		false, Image.FORMAT_RGBA8, d)
+	salida.generate_mipmaps()
+	var t := ImageTexture.create_from_image(salida)
+	if clave != "":
+		_atlas_domado[clave] = t
+	return t
+
+
+## Las muestras del atlas como colores, para poder buscar la más cercana.
+## Se arma una sola vez: `KIT_ATLAS` está escrito en hexadecimal porque así se
+## lee del archivo de Kenney, pero comparar por hexadecimal NO sirve, y ésa es
+## la trampa de este arreglo. **Godot importa el atlas comprimido a VRAM**, así
+## que los píxeles que devuelve `get_image()` no son los del PNG: `c3495c` sale
+## como algo a un par de unidades de distancia. La primera versión comparaba el
+## hex exacto, no acertaba ni una muestra, y los techos salían por la regla
+## general —saturación 0,36 y **más claros** que antes, medido— en vez de irse
+## a V2. Por eso se busca la más cercana y no la igual.
+static var _muestras: Array = []
+
+
+static func _traducir_muestra(r: int, g: int, b: int) -> PackedByteArray:
+	if _muestras.is_empty():
+		# El fondo del atlas es negro y no es una muestra: se mapea a sí mismo
+		# para que ninguna UV que caiga ahí se pinte de un color del pueblo.
+		_muestras.append([Color(0, 0, 0), Color(0, 0, 0)])
+		for hex in KIT_ATLAS:
+			_muestras.append([Color(hex), KIT_ATLAS[hex]])
+
+	var c := Color8(r, g, b)
+	var mejor: Color = domar(c, SATURACION_GENTE)
+	var dist := 0.045          # radio máximo; más lejos que esto no es la muestra
+	for par in _muestras:
+		var o: Color = par[0]
+		var d: float = (o.r - c.r) * (o.r - c.r) + (o.g - c.g) * (o.g - c.g) \
+			+ (o.b - c.b) * (o.b - c.b)
+		if d < dist:
+			dist = d
+			mejor = par[1]
+	return PackedByteArray([int(round(mejor.r * 255.0)), int(round(mejor.g * 255.0)),
+		int(round(mejor.b * 255.0))])
+
+
+## Pasa un material del kit por la aduana, en su sitio.
+##
+## Los tres caminos, en orden: el nombre que le puso Kenney (Nature Kit), la
+## textura de atlas (Fantasy Town y Survival), y si no es ninguno de los dos, la
+## regla general sobre el albedo.
+##
+## También le saca el especular, que es la otra mitad del aspecto de plástico:
+## el kit viene con `roughness` de fábrica y ocho superficies con el mismo
+## reflejo parejo se leen como ocho piezas del mismo juguete.
+static func domar_material(m: BaseMaterial3D) -> void:
+	if m == null:
+		return
+	if m.albedo_texture != null:
+		m.albedo_texture = atlas_domado(m.albedo_texture)
+		# Con atlas, el albedo es un multiplicador (Kenney lo deja en blanco):
+		# domarlo lo bajaría dos veces.
+		m.albedo_color = Color.WHITE
+	elif KIT_MATERIAL.has(m.resource_name):
+		m.albedo_color = KIT_MATERIAL[m.resource_name]
+	else:
+		m.albedo_color = domar(m.albedo_color)
+	# El agua de la fuente es una de las tres cosas que brillan en este juego
+	# (cuero, metal, agua): se le doma el color y se le deja la rugosidad baja,
+	# que es de donde sale el reflejo.
+	if m.resource_name == "Water":
+		return
+	# La otra mitad del aspecto de plástico no es el color: es que ocho
+	# superficies tengan el mismo reflejo parejo. El kit viene con la rugosidad
+	# de fábrica; acá se la sube al piso de las familias mates de este archivo.
+	m.roughness = maxf(m.roughness, 0.95)
+
+	# **LA ADUANA DECIDE COLOR, NO SOMBREADO. No le pongas `SPECULAR_DISABLED`.**
+	#
+	# Se probó, porque la regla 2 de este archivo dice que el follaje y los
+	# techos van sin especular, y salió mal de una forma que no se ve venir: con
+	# rugosidad 1,0 el lóbulo especular de Godot es tan ancho que no hace brillo,
+	# hace RELLENO, y apagarlo le saca al kit la mitad de su luz. Medido, una
+	# captura contra otra y nada más cambiado:
+	#
+	#   copa del árbol   46 → 22      techo   41 → 34      muro   127 → 124
+	#
+	# O sea que el bosque se volvía una silueta negra —justo el problema que
+	# `COPA_CLARA` existe para evitar— y encima los techos rendían POR DEBAJO de
+	# su peldaño: con el especular puesto el techo da 41 contra un nominal de
+	# 44, que es lo que este archivo promete. Apagarlo compraba cuatro puntos de
+	# rango p5–p95 aplastando los oscuros, y la regla dice lo contrario: nada
+	# grande vive abajo de V2, porque de noche desaparece.
+	#
+	# La regla del especular sigue valiendo para lo que generamos nosotros —ahí
+	# el material es sólo un color plano y apagarlo no le saca luz a nada—, y por
+	# eso está en `_base()` y sus fábricas. Sobre una malla ajena, no.
 
 
 # ===========================================================================
