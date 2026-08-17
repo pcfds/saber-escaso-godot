@@ -1477,7 +1477,21 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 
 	_sincronizar_amenazas(datos.get("amenazas", []))
 	_sincronizar_jugadores(datos.get("jugadores", []))
-	interfaz.mostrar_inventario(datos.get("objetos", []))
+	var bolsa: Array = datos.get("objetos", [])
+	interfaz.mostrar_inventario(bolsa)
+	# Lo mejor que llevás va a la mano. Un arma le gana a cualquier otra cosa:
+	# es lo que cambia el resultado de una pelea y lo que conviene que se vea.
+	var enMano := ""
+	var mejor := -1
+	for o in bolsa:
+		var d: Dictionary = o
+		var k: String = str(d.get("kind", ""))
+		var puntos: int = int(d.get("quality", 0)) + (1000 if k in ARMAS else 0)
+		if puntos > mejor:
+			mejor = puntos
+			enMano = k
+	if jugador != null and jugador.figura != null:
+		jugador.figura.empunar(enMano)
 	interfaz.mostrar_pasos(datos.get("primeros_pasos", []))
 	if mapa != null:
 		var marcas: Array = []
@@ -1626,6 +1640,10 @@ func _al_interactuar() -> void:
 ## metros no ves la diferencia entre 3 y 5, así que el jugador aprieta y no
 ## pasa nada, que es el peor resultado posible. Un juego que se ve de lejos
 ## necesita un alcance generoso o se siente roto.
+## Lo que cuenta como arma. Espeja la lista del servidor, que es quien decide
+## el daño; acá sólo sirve para elegir qué se te ve en la mano.
+const ARMAS := ["hoja templada", "filo de agua"]
+
 const ALCANCE_JUGADOR := 6.5
 const DANIO_JUGADOR := 14
 

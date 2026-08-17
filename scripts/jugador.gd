@@ -50,7 +50,17 @@ const ESQUIVE_VELOCIDAD := 21.0
 const ESQUIVE_ESPERA := 1.15
 
 # Límites de la órbita. La inclinación va de casi cenital a tres cuartos.
-const PITCH_MIN := deg_to_rad(28.0)
+## Hasta dónde se puede bajar la cámara para mirar el horizonte y el cielo.
+##
+## Estaba en 28°, o sea SIEMPRE mirando hacia abajo. Consecuencia que nadie
+## había notado: el cielo entero —las dos lunas, el gigante gaseoso, las
+## estrellas, los amaneceres, la cordillera— **no se veía nunca**. Todo eso
+## estaba construido y era invisible.
+##
+## A 2° la cámara queda casi a la altura de los ojos y el horizonte entra en
+## cuadro. No se permite negativo: mirar desde abajo del piso muestra el mundo
+## por debajo y no hay nada ahí.
+const PITCH_MIN := deg_to_rad(2.0)
 const PITCH_MAX := deg_to_rad(64.0)
 ## La cámara vive LEJOS. Es la vista del juego —Stardew, Baldur's Gate— y es
 ## lo que hace que el valle se lea como un lugar y no como el pasto que tenés

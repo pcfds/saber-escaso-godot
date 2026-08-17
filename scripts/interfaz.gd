@@ -428,6 +428,7 @@ func conectar_api(api: Api) -> void:
 
 func _al_aviso(texto: String) -> void:
 	_buscando = false
+	quiere_juntar.emit(false)
 	avisar(texto)
 
 
@@ -752,21 +753,29 @@ func _alternar_bolsa() -> void:
 ## bucle chico del diseño es *aprendés → buscás o fabricás → das → te ganás a
 ## la gente → te enseñan más*, y el cliente ofrecía el primero y el último.
 ##
-## Se resuelve en el momento —está medido contra producción, ~2,5 s— y lo que
-## encontraste vuelve en el aviso. Ojo con lo que NO hace: no hay animación de
-## agacharse y no la va a haber en esta rama, porque los cuerpos 3D se van a
-## sprites. El "buscando…" es lo que sostiene esos dos segundos.
+## Se resuelve en el momento —medido contra producción, ~2,5 s— y lo que
+## encontraste vuelve en el aviso.
+##
+## Y el personaje SE AGACHA mientras dura. El cartel "buscando…" solo no era
+## una acción, era un cartel: "apretás B y dice buscando, ¿qué es eso, qué
+## estás buscando, hace algo el personaje?". Ahora el cuerpo hace la acción y
+## el texto dice qué se está juntando, no un gerundio suelto.
+signal quiere_juntar(prendido: bool)
+
 func _buscar() -> void:
 	if _api == null or _buscando:
 		return
 	_buscando = true
-	avisar("Buscando…")
+	quiere_juntar.emit(true)
+	avisar("Buscás %s entre el pasto." % (lugar_da if lugar_da != "" else "algo"))
 	_api.actuar("buscar")
 	# Red de seguridad: si la respuesta se pierde, la tecla tiene que volver a
 	# andar. Sin esto un 504 deja `buscar` muerto hasta reiniciar el juego.
 	var t := create_tween()
 	t.tween_interval(12.0)
-	t.tween_callback(func() -> void: _buscando = false)
+	t.tween_callback(func() -> void:
+		_buscando = false
+		quiere_juntar.emit(false))
 
 
 ## Qué hacer ahora. Lo manda el servidor y sale del estado del mundo, así que
@@ -801,6 +810,29 @@ func mostrar_pasos(lista: Array) -> void:
 
 
 ## La bienvenida. Una sola vez, al entrar: dónde estás y qué pasó acá.
+## La puerta de entrada al mundo. Lo que faltaba.
+##
+## El reclamo fue: "el texto, no entendés la historia, ninguno tiene sentido
+## con nada, no se sabe qué pasa en este mundo ni qué hay que hacer". Y era
+## exacto: la bienvenida mostraba la crónica, que da por sabido quién es cada
+## uno y qué está pasando. **A alguien que llega, la crónica no le dice nada.**
+##
+## Esto va antes que todo lo demás y contesta las cuatro preguntas que
+## cualquiera se hace en los primeros diez segundos: dónde estoy, quién soy,
+## qué está en juego, y qué hago ahora. Es texto fijo a propósito: es la
+## premisa del juego, no un suceso, y no tiene que costar una llamada al modelo
+## ni cambiar entre partidas.
+const PREMISA := """[color=#c9a227]EL VALLE[/color]
+
+Acá el saber no está escrito en ningún lado. Vive adentro de la gente, y la gente se muere.
+
+Nadie nace sabiendo forjar, ni destilar, ni leer las sendas del bosque. Alguien tiene que enseñártelo — y para eso tiene que confiar en vos. Cuando el último que sabe algo se va sin haberlo enseñado, ese saber se va del mundo. No vuelve.
+
+[color=#98a29c]Hace veinte días murió la vieja Ren y se llevó las dos únicas runas que había por acá. Nadie las va a poder aprender nunca más.[/color]
+
+Sos alguien que acaba de llegar y no sabe hacer nada. Ganate a la gente, aprendé un oficio, y decidí si se lo pasás a otro."""
+
+
 func dar_bienvenida(region: Dictionary, cronica: String, pasos: Array) -> void:
 	if _ya_saludamos:
 		return
@@ -824,6 +856,8 @@ func dar_bienvenida(region: Dictionary, cronica: String, pasos: Array) -> void:
 	t.fit_content = true
 	t.custom_minimum_size = Vector2(620, 400)
 	var partes: Array[String] = [
+		PREMISA,
+		"",
 		"[b]%s[/b]  [color=#7d867f]· día %s[/color]" % [
 			region.get("name", "El valle"), region.get("tick", 0)],
 		"",

@@ -73,6 +73,9 @@ var _alto := 1.85          ## la altura ya corregida por el hash del nombre
 var _fase := 0.0
 var _intensidad := 0.0     ## 0 quieto, 1 caminando: suaviza el arranque y el freno
 var _golpe := 0.0          ## 0..1 mientras dura el swing
+var _arma: MeshInstance3D
+var _juntando := false
+var _agache := 0.0
 var _dolor := 0.0
 var _vivo := true
 var _reloj := 0.0          ## tiempo propio, para respirar y mirar alrededor
@@ -578,6 +581,17 @@ func animar(dt: float, velocidad: float, en_piso: bool) -> void:
 		_brazo_i.rotation.x = lerp(_brazo_i.rotation.x, -1.9, 10.0 * dt)
 		_brazo_d.rotation.x = lerp(_brazo_d.rotation.x, -1.9, 10.0 * dt)
 
+	# Agachado: el torso baja y se inclina, y el brazo derecho se estira al
+	# suelo. Se entra y se sale suave, que es lo que lo hace leerse como un
+	# movimiento y no como un salto de pose.
+	_agache = lerp(_agache, 1.0 if _juntando else 0.0, 7.0 * dt)
+	if _agache > 0.01:
+		_torso.position.y -= altura * 0.22 * _agache
+		_torso.rotation.x += 0.55 * _agache
+		_brazo_d.rotation.x = lerp(_brazo_d.rotation.x, 1.15, _agache)
+		_pierna_i.rotation.x = lerp(_pierna_i.rotation.x, -0.45, _agache)
+		_pierna_d.rotation.x = lerp(_pierna_d.rotation.x, -0.25, _agache)
+
 	if _golpe > 0.0:
 		_golpe = maxf(0.0, _golpe - dt * 3.6)
 		# Curva de swing: sube rápido, baja lento. Un seno simple se ve blando.
@@ -596,6 +610,59 @@ func animar(dt: float, velocidad: float, en_piso: bool) -> void:
 
 func atacar() -> void:
 	_golpe = 1.0
+
+
+## Lo que llevás en la mano.
+##
+## Hacía falta porque forjar una hoja y que viva en una lista de texto es
+## exactamente el problema de fondo del juego: sistemas que existen y el
+## jugador no puede ver. Si la hiciste vos, tiene que estar en tu mano, y tiene
+## que verse cuando pegás.
+##
+## No es un modelo: es una caja alargada del color que le toque. A cuarenta
+## metros lo que se lee es que TENÉS algo, no qué es — y esa diferencia entre
+## manos vacías y manos con algo es toda la información que el jugador
+## necesita a esta distancia.
+func empunar(cosa: String) -> void:
+	if _arma != null:
+		_arma.queue_free()
+		_arma = null
+	if cosa == "":
+		return
+
+	var largo := 0.95
+	var color := Color(0.62, 0.64, 0.68)   # acero
+	if cosa.begins_with("frasco"):
+		largo = 0.22
+		color = Color(0.42, 0.56, 0.38)
+	elif cosa.begins_with("mapa"):
+		largo = 0.30
+		color = Color(0.78, 0.72, 0.56)
+
+	var m := BoxMesh.new()
+	m.size = Vector3(0.07, largo, 0.07)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 0.55
+	mat.metallic = 0.35 if largo > 0.5 else 0.0
+	m.material = mat
+
+	_arma = MeshInstance3D.new()
+	_arma.mesh = m
+	# Colgando de la mano: al final del brazo derecho, apuntando adelante y
+	# abajo, que es como se lleva algo caminando.
+	_arma.position = Vector3(0.0, -altura * 0.30, 0.04)
+	_arma.rotation = Vector3(deg_to_rad(-24.0), 0.0, deg_to_rad(8.0))
+	_brazo_d.add_child(_arma)
+
+
+## Agacharse a juntar algo. Dura lo que dura el pedido al servidor.
+##
+## Existe porque apretar B y leer "buscando…" no es una acción: es un cartel.
+## Que el cuerpo se agache y estire la mano es lo que convierte una llamada
+## HTTP en algo que pasó en el mundo.
+func juntar(prendido: bool) -> void:
+	_juntando = prendido
 
 
 func doler() -> void:
