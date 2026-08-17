@@ -195,9 +195,28 @@ agosto y están en `DISENO.md` §6.
 > Este bloque estuvo desactualizado varios días y mandó a más de un agente a
 > rehacer algo que ya existía. **Si arreglás algo de acá, borralo de acá.**
 
-- **La paleta existe y casi nadie la usa.** `paleta.gd` está escrito con los 95
-  literales mapeados y varios scripts siguen con sus colores a mano. Hasta que
-  se migren, de a un archivo por vez, el valle se ve igual.
+- **La paleta ya rige en los archivos de arte; falta la mitad de afuera.** Al 18
+  de agosto están migrados `ambiente.gd` y `cielo.gd` —los cinco colores del
+  cielo vivían adentro del shader, que es la misma deuda en otro idioma—. **Lo
+  que queda tiene dueño y no es la rama de arte**, y por eso está acá y no
+  hecho: `interfaz.gd` (18 literales), `figura.gd` (17), `mapa.gd` (16),
+  `tarjeta.gd` (7), `ciclo.gd` (7) y `rendimiento.gd` (2).
+
+  Y el de `ciclo.gd` **no es cosmético, es el único que rompe algo hoy**: las
+  líneas 196–198 escriben a mano `Color(0.09, 0.12, 0.20)` y
+  `Color(0.52, 0.58, 0.62)`, que son `NIEBLA_NOCHE` y `NIEBLA_DIA` copiadas, más
+  una energía de niebla de 0,55. Como esos números los pisa el ciclo en cada
+  cuadro, **la paleta no puede corregir el color del aire aunque quiera** —y con
+  la perspectiva aérea ya prendida, la niebla de día rinde luma 113 contra un
+  horizonte de 197, o sea que lo lejano se va a un gris que no es el del cielo
+  que tiene detrás. La línea existe para reemplazarse por `Paleta.niebla(n)`.
+- **Un `Color` mandado a un `uniform vec3` NO llega con sus números.** Godot lo
+  convierte de sRGB a lineal, y no hace lo mismo con el literal que el shader
+  trae por defecto: `Color(0.274, 0.437, 0.720)` le llega al shader como
+  `(0.062, 0.162, 0.474)`. Se descubrió midiendo (una migración que tenía que
+  aclarar el cielo lo oscureció de 198 a 181 de luma). Se manda `Vector3`. Está
+  documentado en `cielo.gd::_crudo()` y es de la misma familia que
+  `vertex_color_is_srgb`.
 - **Nadie camina de un lugar a otro.** La gente se mueve dentro de su lugar,
   pero cuando el servidor dice que alguien se mudó, se planta en el lugar
   nuevo. Que el viaje se vea es de la tarea del servidor, no de acá.
@@ -207,14 +226,15 @@ agosto y están en `DISENO.md` §6.
   tick sería mentir**, porque un tick es un día del valle y el regalo que
   narra pasó hasta seis horas antes. Lo que hay que animar es lo que pasa
   AHORA, o sea lo que el propio cliente acaba de mandar.
-- **`detalles.gd:piedras()` siembra 320 piedras que no son piedras.** El
-  comentario dice que son *"la puntuación clara del cuadro, lo más claro del
-  paisaje"*, y el `.glb` de Kenney no tiene ninguna superficie de piedra: tiene
-  `grass` y `dirt`. La aduana las manda al mismo peldaño de valor que el suelo,
-  así que no puntúan nada.
-- **La ruina no se ve vieja.** El valle tiene un pasado escrito en la base —un
-  incendio de hace sesenta inviernos con dos versiones irreconciliables— y La
-  Casa Quemada no lo muestra. Es la oportunidad de edad más grande que hay.
+- **El suelo del valle es todo `PASTO_SECO` y nunca aparece el verde.** Una
+  línea de `valle.gd::_color_terreno()`: `t = clampf((p.y + 4.5) / 6.5)`
+  interpola pasto→pasto seco por altura, y el piso del valle vive entre
+  y = −2,4 y y = +2,4, o sea t entre 0,32 y 1,0 y casi todo arriba de 0,7.
+  **Medido: el suelo abierto da `PASTO_SECO` clavado en el 45% de la pantalla**
+  y `PASTO` (V3) no se ve en ningún lado. La rama de arte lo tapó a medias
+  moviéndole el matiz de arena a oliva, pero el arreglo es de acá y es una
+  línea: `var t := clampf((p.y - 0.4) / 4.6, 0.0, 1.0)`, que deja el fondo del
+  cuenco en pasto y sólo seca las lomas.
 
 **Ya está hecho, no lo rehagas:** **se entra a las doce casas** (verificado
 caminando hasta cada puerta, no mirando capturas) y adentro está la persona que

@@ -112,7 +112,13 @@ func _construir_entorno() -> Environment:
 	# baja a 0,45 y el resto lo pone un ambiente propio, cálido, que es la luz
 	# que rebota del suelo. Un valle no está iluminado sólo por el cielo.
 	e.ambient_light_sky_contribution = 0.45
-	e.ambient_light_color = Color(0.42, 0.38, 0.31)
+	# El último color a mano que le quedaba a este archivo. Es `LUZ_REBOTE` y
+	# vale exactamente lo mismo, así que **esta migración no cambió un solo
+	# píxel y hay que decirlo**: acá la paleta no mandó nada, sólo se hizo cargo
+	# de un número que ya estaba bien. Lo que compra es que el día que se
+	# discuta de qué color son las sombras del valle, la discusión pase por el
+	# archivo donde están los otros noventa y cinco colores.
+	e.ambient_light_color = Paleta.LUZ_REBOTE
 	e.ambient_light_energy = 0.62
 	e.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 
@@ -211,7 +217,49 @@ func _construir_entorno() -> Environment:
 	e.fog_light_color = Paleta.NIEBLA_DIA
 	e.fog_light_energy = 0.55
 	e.fog_sun_scatter = 0.35
-	e.fog_density = 0.0
+	# ==========================================================================
+	# ESTA LÍNEA VALÍA 0,0 Y ESO APAGABA LA NIEBLA DE DISTANCIA ENTERA.
+	# Medido, no deducido, el 18 de agosto.
+	# ==========================================================================
+	#
+	# En `FOG_MODE_DEPTH` Godot calcula
+	# `fog = pow(smoothstep(begin, end, dist), curve) * fog_density`.
+	# **`fog_density` MULTIPLICA el resultado de la rampa**, no es un parámetro
+	# del modo exponencial nada más. Con 0,0 no hay `begin`, `end` ni `curve` que
+	# valgan: la niebla de distancia de este archivo **nunca pintó un píxel.**
+	#
+	# Tres corridas, una variable por vez, mismo encuadre y el sol clavado a
+	# mediodía (luma media de un parche de 30 × 30):
+	#
+	#   | corrida                          | copa cercana | ladera lejana | suelo |
+	#   |----------------------------------|--------------|---------------|-------|
+	#   | como estaba (dens 0, 210→780)    |      34      |      78       |  151  |
+	#   | dens **0,6**, 210→780            |      34      |      78       |  151  |
+	#   | dens 1,0, **0→60**               |     104      |     107       |  135  |
+	#   | dens **0,0**, 0→60               |      34      |      78       |  151  |
+	#
+	# La cuarta es la que cierra el caso: con la rampa cubriendo la escena
+	# ENTERA, poner la densidad en cero devuelve la imagen base **píxel a píxel**
+	# (diferencia media 0,33 sobre 255, o sea ruido de compresión). Y la segunda
+	# explica por qué nadie lo notó: con `begin = 210` no hay nada en el encuadre
+	# lo bastante lejos, así que la niebla tampoco se veía cuando la densidad
+	# subía. Dos motivos independientes tapando el mismo agujero.
+	#
+	# Esto además corrige un renglón de más arriba de este mismo archivo, que
+	# decía *"`fog_enabled = false`: sin cambio, y tiene sentido — la niebla
+	# arranca a 210 m y la aldea está a 40"*. La observación era correcta y la
+	# explicación estaba mal: no cambiaba nada porque la niebla estaba apagada
+	# por densidad, no por distancia. Es la trampa de la casa —**la causa obvia
+	# suele ser falsa**— en su versión más barata: un experimento que sale bien
+	# por el motivo equivocado.
+	#
+	# POR QUÉ IMPORTA Y NO ES UN DETALLE DE TUBERÍA. La perspectiva aérea es la
+	# señal con la que el ojo mide distancia en un paisaje, y es la mitad de la
+	# identidad de las referencias que puso la dirección —Valheim, Enshrouded—:
+	# **la niebla ahí es material narrativo, no un velo.** Sin ella el valle es
+	# un decorado plano donde una ladera a 250 metros tiene el mismo contraste
+	# que una casa a 40, y eso se lee como maqueta, que es el reclamo.
+	e.fog_density = 0.62
 	# Llega hasta la cordillera: las montañas tienen que verse como siluetas
 	# azuladas, no desaparecer en una pared de niebla a los 190 metros.
 	#
@@ -235,9 +283,41 @@ func _construir_entorno() -> Environment:
 	# Y el principio arranca en 210 y no se mueve por otro motivo: La Puerta
 	# (`hitos.gd`) está a 162 m y se ve desde la aldea a ~206. Acercar el
 	# principio de la niebla lavaría justo el hito que existe para dar escala.
-	e.fog_depth_begin = 210.0
-	e.fog_depth_end = 780.0
-	e.fog_depth_curve = 1.4
+	# LOS TRES NÚMEROS SE MOVIERON, y con la densidad arreglada ahora sí hacen
+	# algo. El párrafo de arriba —los 560 vs 780 que dieron lo mismo— sigue
+	# siendo cierto y ahora se entiende: **las dos corridas daban lo mismo porque
+	# las dos estaban multiplicadas por cero.**
+	#
+	# El reparto nuevo, contra la escena real (cámara a 27–68 m del jugador, el
+	# valle mide 360 m de punta a punta, la cordillera está detrás):
+	#
+	#   | distancia | qué hay ahí                  | niebla |
+	#   |-----------|------------------------------|--------|
+	#   |    40 m   | la aldea, las casas          |   0%   |
+	#   |   100 m   | el borde del bosque cercano  |   3%   |
+	#   |   162 m   | **La Puerta** (`hitos.gd`)   |  10%   |
+	#   |   250 m   | la otra punta del valle      |  27%   |
+	#   |   400 m   | la cordillera                |  53%   |
+	#   |   520 m + | el fondo                     |  62%   |
+	#
+	# `begin` baja de 210 a 60 y el motivo de que estuviera en 210 se cae solo:
+	# decía *"acercar el principio lavaría justo el hito que existe para dar
+	# escala"*. Es al revés y es la regla que quedó escrita cuando se dio de baja
+	# el desenfoque de lejanía: **la perspectiva aérea es cómo el ojo mide que
+	# algo está lejos, o sea que es grande.** Un hito a 162 m con un 9% de bruma
+	# se lee lejos; el mismo hito con el mismo contraste que la casa de al lado
+	# se lee chico y cerca. Nueve por ciento no lava nada: le quita nueve puntos
+	# de contraste sobre cien.
+	#
+	# `curve` baja de 1,4 a 0,85. Arriba de 1 la rampa se aplana justo en el
+	# tramo del medio, que es donde vive TODO lo que la cámara mira; por debajo
+	# de 1 el aire empieza a contar temprano y se satura tarde, que es como se
+	# comporta el aire de verdad. La derivada en `begin` sigue siendo cero
+	# —`smoothstep` la garantiza— así que no hay borde duro donde arranca, que
+	# era el riesgo real de acercarla.
+	e.fog_depth_begin = 60.0
+	e.fog_depth_end = 520.0
+	e.fog_depth_curve = 0.85
 
 	# Brillo: sólo lo que de verdad emite (la fragua, las brasas).
 	e.glow_enabled = true

@@ -117,7 +117,11 @@ static func malla(ruta: String) -> Mesh:
 	var m := _primera_malla(raiz)
 	raiz.queue_free()
 	if m != null:
-		_domar_color(m)
+		# La ruta va a la aduana porque hay mallas del kit donde el NOMBRE del
+		# material miente y lo único confiable es de qué archivo salió: las
+		# cuatro piedras del Nature Kit no tienen ninguna superficie `stone`,
+		# tienen `grass` y `dirt`. Ver `Paleta.KIT_CONTEXTO`.
+		_domar_color(m, Paleta.SATURACION_MUNDO, ruta)
 
 	_mallas[ruta] = m
 	return m
@@ -150,13 +154,14 @@ static func malla(ruta: String) -> Mesh:
 ##
 ## Se trabaja sobre una copia del material: el recurso importado no se toca, así
 ## que reimportar el `.glb` no arrastra nada nuestro.
-static func _domar_color(m: Mesh, techo: float = Paleta.SATURACION_MUNDO) -> void:
+static func _domar_color(m: Mesh, techo: float = Paleta.SATURACION_MUNDO,
+		ruta: String = "") -> void:
 	for i in m.get_surface_count():
 		var base := m.surface_get_material(i) as StandardMaterial3D
 		if base == null:
 			continue
 		var nuevo := base.duplicate() as StandardMaterial3D
-		Paleta.domar_material(nuevo, techo)
+		Paleta.domar_material(nuevo, techo, ruta)
 		m.surface_set_material(i, nuevo)
 
 
@@ -232,19 +237,19 @@ static func escena(ruta: String, techo: float = Paleta.SATURACION_MUNDO) -> Node
 
 	var n := e.instantiate() as Node3D
 	if n != null:
-		_domar_arbol(n, techo)
+		_domar_arbol(n, techo, ruta)
 	return n
 
 
 ## Pasa por la aduana todas las mallas de un árbol de nodos. Ver `escena()`.
-static func _domar_arbol(n: Node, techo: float) -> void:
+static func _domar_arbol(n: Node, techo: float, ruta: String = "") -> void:
 	if n is MeshInstance3D:
 		var m := (n as MeshInstance3D).mesh
 		if m != null and not _domadas.has(m.get_instance_id()):
 			_domadas[m.get_instance_id()] = true
-			_domar_color(m, techo)
+			_domar_color(m, techo, ruta)
 	for h in n.get_children():
-		_domar_arbol(h, techo)
+		_domar_arbol(h, techo, ruta)
 
 
 ## Cuántos triángulos tiene una malla del kit. Para el censo: el costo del arte

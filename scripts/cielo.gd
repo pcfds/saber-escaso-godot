@@ -190,9 +190,53 @@ void sky() {
 "
 
 
+## **Los cinco colores del cielo salen de `paleta.gd`, no de los `uniform` de
+## arriba.** Los valores por defecto del shader se dejan escritos porque hacen
+## que el archivo se pueda abrir solo en el editor y muestre algo, pero **lo que
+## llega a la pantalla es lo de acá**: un color suelto en otro archivo es deuda,
+## y que la deuda esté en GLSL en vez de en GDScript no la hace menos deuda.
+##
+## No es prolijidad. `ambiente.gd` saca el 45% de la luz ambiente del cielo, así
+## que estos cinco colores pintan el lado en sombra de cada casa del valle, y
+## eso los pone bajo la misma autoridad que un techo o un muro.
 static func material() -> ShaderMaterial:
 	var sh := Shader.new()
 	sh.code = CODIGO
 	var m := ShaderMaterial.new()
 	m.shader = sh
+	m.set_shader_parameter("cenit_dia", _crudo(Paleta.CIELO_CENIT_DIA))
+	m.set_shader_parameter("horiz_dia", _crudo(Paleta.CIELO_HORIZ_DIA))
+	m.set_shader_parameter("cenit_noche", _crudo(Paleta.CIELO_CENIT_NOCHE))
+	m.set_shader_parameter("horiz_noche", _crudo(Paleta.CIELO_HORIZ_NOCHE))
+	m.set_shader_parameter("color_ocaso", _crudo(Paleta.CIELO_OCASO))
 	return m
+
+
+## ===========================================================================
+## UN `Color` MANDADO A UN `uniform vec3` NO LLEGA CON SUS NÚMEROS. Medido.
+## ===========================================================================
+##
+## Godot convierte de sRGB a lineal cuando el valor que le pasás a un `vec3` es
+## un `Color` —y NO lo hace con el literal que el propio shader trae como valor
+## por defecto—. O sea que estas dos líneas, que parecen la misma:
+##
+##     uniform vec3 cenit_dia = vec3(0.274, 0.437, 0.720);   // el shader
+##     m.set_shader_parameter("cenit_dia", Color(0.274, 0.437, 0.720))
+##
+## **le dan al shader dos colores distintos**: la segunda llega como
+## (0.062, 0.162, 0.474), o sea mucho más oscura y mucho más saturada.
+##
+## Se descubrió porque la primera versión de esta migración tenía que dejar el
+## cielo IGUAL o más claro —le bajaba la saturación al cenit— y la captura dio
+## lo contrario: la franja de cielo pasó de luma 198 y saturación 0,06 a **181 y
+## 0,15**. Con el diff espacial encima, el cambio estaba concentrado en los
+## primeros noventa píxeles de alto y se desvanecía hacia abajo, o sea que era
+## el cielo y era la luz que sale de él. La cuenta a mano cerraba sólo si el
+## color había pasado por sRGB→lineal.
+##
+## Es la misma familia de trampa que `vertex_color_is_srgb` en `paleta.gd`:
+## **el mismo número llega distinto según por qué camino viaje.** Por eso se
+## manda `Vector3` y no `Color` — un `Vector3` no tiene idea de gamma y pasa
+## crudo, que es lo que hace falta cuando el destino ya es lineal.
+static func _crudo(c: Color) -> Vector3:
+	return Vector3(c.r, c.g, c.b)

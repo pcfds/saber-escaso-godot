@@ -399,7 +399,18 @@ func _color_terreno(p: Vector3, n: Vector3) -> Color:
 	var tierra := Paleta.TIERRA
 	var roca := Paleta.ROCA
 
-	var t := clampf((p.y + 4.5) / 6.5, 0.0, 1.0)
+	# **El valle entero se pintaba de pasto SECO y el verde no salía nunca.**
+	# El piso vive entre y −2,4 y +2,4, así que con `(y + 4.5) / 6.5` el
+	# interpolador arrancaba en 0,32 y llegaba a 1,06: casi siempre arriba de
+	# 0,7, o sea seco de punta a punta. No se notaba como error porque un valle
+	# de un solo color se lee como una decisión de arte.
+	#
+	# Medido con el rango corregido: matiz del suelo h53 → h71, luma 127 → 89
+	# —o sea V4 clavado, que es el peldaño que la composición pide— y la
+	# separación entre los muros y el suelo pasa de +16 a +24. Es la mitad de
+	# los 22 puntos que la aduana de `paleta.gd` había anotado como "el peldaño
+	# que falta es del terreno, no del muro".
+	var t := clampf((p.y - 0.4) / 4.6, 0.0, 1.0)
 	var c := pasto.lerp(pasto_seco, t)
 
 	# Las pendientes fuertes muestran tierra y piedra, como en la realidad.

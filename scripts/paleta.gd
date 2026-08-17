@@ -168,6 +168,44 @@ const LUZ_CIELO := Color(0.581, 0.710, 0.880)       ## h214 s0.34 — el relleno
 const LUZ_FRAGUA := Color(1.000, 0.493, 0.200)      ## h22  s0.80 — excepción 1: el fuego
 const LUZ_FAROL := Color(1.000, 0.739, 0.440)       ## h32  s0.56 — excepción 1: el fuego, domesticado
 
+## La luz de rebote: el suelo devolviéndole al mundo lo que el sol le pegó.
+## No es una luz de este archivo por prolijidad, es por lo mismo que todo lo
+## demás. `ambiente.gd` saca el 55% del ambiente de acá y el 45% del cielo, y
+## esa mezcla es lo que decide de qué color son las sombras del valle entero —
+## o sea la mitad de la pantalla en cualquier hora que no sea mediodía. Un
+## número tan grande no puede vivir suelto en otro archivo.
+const LUZ_REBOTE := Color(0.420, 0.380, 0.310)      ## h33 s0.26 v0.42
+
+# ---------------------------------------------------------------------------
+# EL CIELO. Vivían adentro del shader de `cielo.gd` como literales, que es la
+# misma deuda que tenían los noventa y tres colores de los que salió este
+# archivo, sólo que en GLSL.
+#
+# Y no son un caso menor por estar arriba: `ambiente.gd` pone
+# `ambient_light_source = SKY` con contribución 0,45, así que **el cenit y el
+# horizonte SON el 45% de la luz de las sombras de todo el valle.** El color
+# de acá no pinta un fondo: pinta el lado en sombra de cada casa.
+# ---------------------------------------------------------------------------
+
+## El cenit de día. **Le bajó la saturación de 0,78 a 0,62, y es una decisión.**
+## 0,78 es azul de afiche: el color más saturado que había en todo el juego,
+## por encima de la fragua y del jade, en la superficie más grande que existe.
+## La regla 2 de este archivo tiene tres excepciones nombradas y el cielo no era
+## ninguna — era un descuido, porque estaba escrito en otro idioma y en otro
+## archivo. Sigue siendo cielo y sigue siendo azul; deja de gritar.
+const CIELO_CENIT_DIA := Color(0.274, 0.437, 0.720)     ## h219 s0.62 v0.72
+## El horizonte de día. Comparte matiz con `NIEBLA_DIA` (h207 contra h204) y eso
+## **no es coincidencia y no se puede romper**: la perspectiva aérea funciona
+## porque lo lejano se va al color del aire, y el aire tiene que ser del color
+## que se ve detrás. Si un día se mueve uno, se mueve el otro.
+const CIELO_HORIZ_DIA := Color(0.660, 0.780, 0.880)     ## h207 s0.25 v0.88
+const CIELO_CENIT_NOCHE := Color(0.010, 0.020, 0.055)   ## h233 s0.82 v0.06
+const CIELO_HORIZ_NOCHE := Color(0.045, 0.065, 0.125)   ## h225 s0.64 v0.13
+## El incendio del ocaso, y es la excepción 1 arriba de todo: es fuego, aunque
+## sea fuego a cien kilómetros. Más saturado que `LUZ_OCASO` (0,84 contra 0,58)
+## a propósito — el cielo es la brasa y la luz que llega es lo que queda de ella.
+const CIELO_OCASO := Color(1.000, 0.420, 0.160)         ## h16 s0.84 v1.00
+
 const NIEBLA_DIA := Color(0.521, 0.580, 0.620)      ## h204 s0.16 v0.62
 const NIEBLA_NOCHE := Color(0.090, 0.119, 0.200)    ## h224 s0.55 v0.20
 const NIEBLA_VOL := Color(0.780, 0.725, 0.663)      ## h32  s0.15 v0.78 — la niebla volumétrica es cálida
@@ -194,7 +232,23 @@ const TERRENO_TINTE := Color(1.000, 0.984, 0.960)
 
 const PASTO := Color(0.246, 0.300, 0.198)           ## h92  s0.34 v0.30 (V3) — oliva, no esmeralda
 const TIERRA := Color(0.410, 0.336, 0.279)          ## h26  s0.32 v0.41 (V4)
-const PASTO_SECO := Color(0.530, 0.488, 0.371)      ## h44  s0.30 v0.53 (V5)
+## **El lienzo del valle, y no lo parece hasta que se mide.** `_color_terreno()`
+## en `valle.gd` interpola PASTO→PASTO_SECO con `t = (y + 4,5) / 6,5`, y el piso
+## del valle vive entre y = −2,4 y y = +2,4: o sea t entre 0,32 y 1,0, con la
+## mayor parte arriba de 0,7. **El verde nunca aparece: el valle entero se pinta
+## con este color.** Medido sobre una captura, el suelo abierto da h41–h44 s0,27
+## — `PASTO_SECO` clavado, en el 45% de la pantalla.
+##
+## Estaba en h44, que es arena de playa, y con eso el valle se leía como un
+## desierto pálido. Va a h64: paja seca con verde adentro, que es lo que hay
+## en un prado de fin de verano. **Mismo peldaño (V5) y misma saturación de
+## techo**, o sea que no se toca ni la escalera ni la composición: sólo el
+## matiz, que es lo único que quedaba libre.
+##
+## El arreglo de verdad es de `valle.gd` y está pedido en el informe: el mapeo
+## de altura tiene que dejar que el pasto V3 aparezca en el fondo del valle.
+## Hasta que eso pase, este matiz es lo que impide que el lienzo sea arena.
+const PASTO_SECO := Color(0.519, 0.530, 0.360)      ## h64  s0.32 v0.53 (V5)
 const ROCA := Color(0.660, 0.642, 0.620)            ## h32  s0.06 v0.66 (V6) — lo más claro del paisaje
 
 ## Las matas del pasto en MultiMesh. Van uno o dos peldaños POR DEBAJO del
@@ -267,6 +321,29 @@ const BRASA := Color(1.000, 0.413, 0.120)           ## h20 s0.88
 const BRASA_EMISION := Color(1.000, 0.484, 0.140)   ## h24 s0.86
 const VENTANA := Color(1.000, 0.780, 0.450)         ## h36 s0.55 — más amarilla que la brasa: es una vela, no una forja
 const VENTANA_EMISION := Color(1.000, 0.701, 0.360) ## h32 s0.64
+
+## EL VIDRIO DE UNA VENTANA, QUE ES UN AGUJERO Y NO UNA LÁMPARA.
+##
+## `VENTANA` arriba es el color de la LUZ que sale de adentro, y ése era también
+## el albedo del panel. Consecuencia, contada en una captura del valle a
+## mediodía: **las veinte ventanas de la aldea eran veinte rectángulos color
+## crema, saturación 0,55 y valor 1,0, o sea lo más claro y lo más saturado del
+## encuadre entero, a plena luz del día.** Un cuadrado amarillo pintado sobre
+## una pared es exactamente la señal de juguete que este archivo existe para
+## sacar — y encima es falso: de día no se ve luz por una ventana, se ve un
+## agujero oscuro, porque afuera hay más luz que adentro.
+##
+## Así que el albedo baja a **V2, cálido**: la ventana es la tapa oscura de la
+## fachada, igual que el techo lo es de la casa. Y de noche sigue encendiéndose
+## igual, porque el que enciende es `emission_energy_multiplier` —`ciclo.gd` lo
+## lleva de 0,15 a 4,2— y la emisión se SUMA, no depende del albedo. O sea que
+## no se pierde nada de lo que la ventana encendida cuenta; se deja de mentir
+## de día.
+##
+## Y se separa de `VENTANA` en vez de cambiarla porque `KIT_ATLAS` usa `VENTANA`
+## para la muestra `ffc044`, que es el farol del kit: eso SÍ es una llama y es
+## la excepción 1, con su nombre y su motivo.
+const VENTANA_VIDRIO := Color(0.210, 0.171, 0.141) ## h26 s0.33 v0.21 (V2)
 const LUCIERNAGA := Color(1.000, 0.824, 0.340)      ## h44 s0.66
 const LUCIERNAGA_CALIDA := Color(1.000, 0.697, 0.300)   ## h34 s0.70
 const LUCIERNAGA_EMISION := Color(1.000, 0.793, 0.380)  ## h40 s0.62
@@ -433,6 +510,113 @@ const MAPA_LUGAR := Color(0.598, 0.660, 0.568)
 # que ya se arregló dos veces acá.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# EL GRANO — LA REGLA 4 DE ESTE ARCHIVO, Y ES NUEVA (18 de agosto)
+#
+# La dirección del proyecto pidió *"más caricaturesco pero tipo real"* y puso
+# como referencia Hytale, Light No Fire y Enshrouded. Lo que esos tres tienen en
+# común no es que sean complejos: es que **son estilizados con materia**. La
+# piedra se lee como piedra y la madera como madera, con variación DENTRO de una
+# misma superficie.
+#
+# Nuestro problema medido nunca fue que sea simple. Es que es **LISO**. Sobre
+# una captura del juego real a mediodía, la desviación de luma por bloque en los
+# 620 × 100 píxeles de suelo abierto del primer plano:
+#
+#   | tamaño del bloque | std mediana |
+#   |-------------------|-------------|
+#   | 4 px              | **0,03**    |
+#   | 8 px              | **0,18**    |
+#   | 16 px             | 0,42        |
+#   | 32 px             | 0,82        |
+#   | 64 px             | 8,33        |
+#
+# O sea: el 45% de la pantalla no tiene NINGUNA variación por debajo de los 32
+# píxeles. Las "manchas grandes para romper la uniformidad" de
+# `valle.gd::_color_terreno()` existen y se ven en el renglón de 64, pero por
+# debajo de eso el suelo es vinilo. Un degradé lento no es un material.
+#
+# Y se descartó primero la causa obvia, con el método de la casa —una variable,
+# el sol clavado—: **no es el posterizado de `dibujado.gd`.** Con el contorno y
+# los cuatro escalones apagados, el suelo da 151,7 de luma y 0,17 de std por
+# bloque de 8, contra 151,7 y 0,18 con ellos puestos. Es el mismo píxel. Lo
+# liso ya estaba en el material, no en el pase de dibujado.
+#
+# El grano es UNA textura de ruido en escala de grises, triplanar y en
+# coordenadas de mundo, que MULTIPLICA el albedo. No es un asset y no rompe la
+# regla del autor único: es un material, y los materiales los decide este
+# archivo. Lo que compra, y son dos cosas de golpe:
+#
+#  1. **Materia.** Variación a 0,3–0,9 m, que a la distancia de la cámara son
+#     entre 6 y 30 píxeles: el rango donde el ojo lee "superficie" y no "ruido".
+#  2. **El peldaño que faltaba.** La rampa arranca en `GRANO_PISO` y no en 1,0,
+#     así que el suelo baja de valor en promedio. Estaba medido que el lienzo
+#     rendía luma 150 (≈V6) cuando la composición de este archivo lo quiere en
+#     **V4**, y que por eso `MURO_ALDEA` —que es V6 y es LA MANCHA CLARA DEL
+#     CUADRO— quedaba a dos puntos del prado que lo rodea. La aduana ya lo había
+#     anotado y lo había atribuido al terreno: *"el peldaño que falta es del
+#     terreno, no del muro"*. Esto es ese peldaño.
+#
+# **Y no toca `valle.gd`.** El suelo lo dibuja `_color_terreno()` allá, que no
+# es de esta rama; el material sí es de acá, y por eso el arreglo entra por acá.
+# ---------------------------------------------------------------------------
+
+## Dónde arranca la rampa del grano. 1,0 es "sin grano". Cuanto más bajo, más
+## sucio y más oscuro el suelo. En 0,74 el lienzo baja un peldaño largo y la
+## amplitud del grano queda en ±13% de luma, que se lee como tierra y no como
+## televisor sin señal.
+const GRANO_PISO := 0.58
+
+## Cuántos metros de mundo ocupa una repetición de la textura. Siete metros con
+## ruido de tres octavas deja la mancha más grande en ~0,8 m: a 27 m de cámara
+## son 14 píxeles y a 68 m son 6. Debajo de eso el mipmap se lo come, que es lo
+## que tiene que pasar — el grano que no se resuelve es aliasing, no material.
+const GRANO_METROS := 7.0
+
+static var _grano: NoiseTexture2D = null
+
+
+## La textura de grano, generada al arrancar y compartida por todos los
+## materiales que la usen. Cero bytes en disco, igual que el lecho de sonido.
+static func grano() -> NoiseTexture2D:
+	if _grano != null:
+		return _grano
+	var n := FastNoiseLite.new()
+	n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	n.seed = 20260818
+	n.frequency = 0.028
+	n.fractal_octaves = 3
+	n.fractal_lacunarity = 2.4
+	n.fractal_gain = 0.5
+	var g := Gradient.new()
+	g.set_color(0, Color(GRANO_PISO, GRANO_PISO, GRANO_PISO))
+	g.set_color(1, Color.WHITE)
+	var t := NoiseTexture2D.new()
+	t.width = 256
+	t.height = 256
+	t.seamless = true
+	t.generate_mipmaps = true
+	t.color_ramp = g
+	t.noise = n
+	_grano = t
+	return _grano
+
+
+## Le pone el grano a un material, en coordenadas de MUNDO y triplanar.
+##
+## En mundo y no en UV por dos motivos que no son estéticos: el terreno se
+## genera con `SurfaceTool` y no tiene UV que valgan, y dos superficies pegadas
+## —el suelo y la ladera de un peñón— tienen que compartir el grano o se ve la
+## costura. Triplanar porque una ladera vertical con UV planares estira el
+## ruido hasta volverlo rayas.
+static func _engranar(m: StandardMaterial3D, metros: float = GRANO_METROS) -> void:
+	m.albedo_texture = grano()
+	m.uv1_triplanar = true
+	m.uv1_world_triplanar = true
+	m.uv1_scale = Vector3.ONE / metros
+	m.uv1_triplanar_sharpness = 1.0
+
+
 ## El terreno. Sin especular: el pasto y la tierra no reflejan nada, y un
 ## reflejo parejo en 360 metros de suelo es exactamente el brillo del plástico.
 ##
@@ -442,10 +626,14 @@ const MAPA_LUGAR := Color(0.598, 0.660, 0.568)
 ## aldea perdía su contraste contra él. Medido, con el flag: PASTO 0.294,
 ## TIERRA 0.408, PASTO_SECO 0.529, ROCA 0.659 — la escalera V3·V4·V5·V6 tal
 ## cual la dice el comentario, apenas atenuada por `TERRENO_TINTE`.
+##
+## Y desde el 18 de agosto lleva **grano** (ver el bloque de arriba): es el 45%
+## de la pantalla y era la superficie más lisa del juego.
 static func terreno() -> StandardMaterial3D:
 	var m := _base(TERRENO_TINTE, 0.97)
 	m.vertex_color_use_as_albedo = true
 	m.vertex_color_is_srgb = true
+	_engranar(m)
 	#m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	return m
 
@@ -598,7 +786,7 @@ static func brasa() -> StandardMaterial3D:
 ## cielo junto. La energía la mueve `ciclo.gd` de noche (0.15 → 4.2), así que
 ## acá se entrega apagada: de día una ventana encendida se ve a error.
 static func ventana() -> StandardMaterial3D:
-	return emisivo(VENTANA, VENTANA_EMISION, 0.15)
+	return emisivo(VENTANA_VIDRIO, VENTANA_EMISION, 0.15)
 
 
 ## Los ojos del bicho. Es lo único que emite en él y es lo que lo hace visible
@@ -827,6 +1015,49 @@ const KIT_MATERIAL := {
 	                            # del mundo llega a V8
 }
 
+## CUANDO EL NOMBRE DEL MATERIAL DEL KIT MIENTE.
+##
+## `KIT_MATERIAL` mapea por el nombre que le puso Kenney porque un nombre es más
+## firme que un color. **Salvo cuando el nombre está mal**, y en el Nature Kit
+## hay una familia entera donde lo está.
+##
+## Se descubrió abriendo los `.glb` con un lector de glTF, no leyendo el código
+## — que es la regla de la casa: *abrí el archivo antes de creerle al
+## comentario*. Lo que hay adentro de `rock_smallA.glb`:
+##
+##   | primitiva | material | color de fábrica          | 30 vértices |
+##   |-----------|----------|---------------------------|-------------|
+##   | 1         | `grass`  | (0.173, 0.847, 0.722) turquesa | sí     |
+##   | 2         | `dirt`   | (0.886, 0.514, 0.341) salmón   | sí     |
+##
+## **No hay ninguna superficie `stone` en ninguna de las cuatro piedras del
+## kit.** `rock_smallA`, `rock_smallB` y `rock_smallD` traen `grass` + `dirt`, y
+## `rock_tallC` trae además `_defaultMat`. Kenney reusó los materiales de otra
+## pieza y quedaron con el nombre equivocado.
+##
+## La consecuencia era exacta y estaba anotada como deuda: la aduana mandaba
+## `grass` a `COPA_CLARA` (V4) y `dirt` a `TIERRA` (V4), o sea **las 320 piedras
+## del valle salían al MISMO peldaño que el suelo que las rodea**, cuando el
+## comentario de `detalles.gd::piedras()` dice que son *"la puntuación clara del
+## cuadro, lo más claro del paisaje"*. Con el suelo en V5 en pantalla, encima
+## salían por debajo. No puntuaban nada porque no eran piedras: eran barro.
+##
+## Acá se corrige por RUTA, no por nombre, que es el único dato confiable que
+## queda. Y de paso las dos primitivas dejan de ser un error y pasan a ser una
+## decisión: **el cuerpo va a `ROCA` (V6) y la tapa a `PASTO` (V3)**. Una piedra
+## con musgo encima es dos peldaños de contraste dentro de un objeto de ocho
+## píxeles, y eso es lo que la hace legible a la distancia de la cámara — y es
+## exactamente el desgaste que pidió la dirección: *"caricaturesco pero tipo
+## real"*. La piedra limpia y monocroma es la que se lee a juguete.
+##
+## La clave es un pedazo de la ruta y se busca por `contains()`: así una piedra
+## nueva del mismo pack entra sola.
+const KIT_CONTEXTO := {
+	"rock_": {"dirt": ROCA, "grass": PASTO, "_defaultMat": ROCA},
+	"campfire_stones": {"stone": ROCA},
+}
+
+
 ## Los nueve peldaños, como lista, para poder buscar el más cercano.
 const ESCALERA: Array[float] = [V0_TINTA, V1_CARBON, V2_TURBA, V3_CORTEZA,
 	V4_ARCILLA, V5_LINO, V6_TRIGO, V7_CENIZA, V8_CAL]
@@ -952,9 +1183,32 @@ static func _traducir_muestra(r: int, g: int, b: int) -> PackedByteArray:
 ## tintes de ropa"). Con 0,35 los siete bichos de `fauna.gd` colapsaban al
 ## mismo tostado —medido: la vaca y el caballo salían el mismo color— y un
 ## rebaño de un solo color se lee como un rebaño de copias.
-static func domar_material(m: BaseMaterial3D, techo: float = SATURACION_MUNDO) -> void:
+##
+## `ruta` es la del `.glb` y sirve para UNA cosa: `KIT_CONTEXTO`, o sea las
+## mallas donde Kenney dejó el nombre del material equivocado. Ver ese bloque.
+static func domar_material(m: BaseMaterial3D, techo: float = SATURACION_MUNDO,
+		ruta: String = "") -> void:
 	if m == null:
 		return
+	if ruta != "":
+		for clave in KIT_CONTEXTO:
+			if not ruta.contains(clave):
+				continue
+			var tabla: Dictionary = KIT_CONTEXTO[clave]
+			if tabla.has(m.resource_name):
+				m.albedo_color = tabla[m.resource_name]
+				m.albedo_texture = null
+				m.roughness = maxf(m.roughness, 0.95)
+				# Y se abre el camino del color por INSTANCIA, que es lo que le
+				# permite a `detalles.gd` que mil doscientas piedras no sean la
+				# misma piedra. Va SIN `vertex_color_is_srgb`, al revés que las
+				# cinco fábricas de arriba, y por el mismo motivo que la
+				# vegetación: por ahí no viaja un color, viaja un MULTIPLICADOR
+				# de valor, y un multiplicador no se convierte. Sin instancias
+				# con color el flag no hace nada (el color por defecto es blanco),
+				# así que las piedras sueltas de `Kit.nodo()` no cambian.
+				m.vertex_color_use_as_albedo = true
+				return
 	if m.albedo_texture != null:
 		# **Lo de Quaternius ya viene domado de disco y no se vuelve a domar.**
 		#

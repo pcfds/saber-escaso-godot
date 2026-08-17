@@ -193,8 +193,18 @@ func _process(dt: float) -> void:
 		# pero con menos energía" se ve sucia, no nocturna.
 		entorno.ambient_light_color = Color(0.30, 0.36, 0.52).lerp(
 			Color(0.42, 0.38, 0.31), n)
-		entorno.fog_light_color = Color(0.09, 0.12, 0.20).lerp(Color(0.52, 0.58, 0.62), n)
-		entorno.fog_light_energy = lerp(0.22, 0.55, n)
+		# La niebla sale de la paleta y no de dos literales escritos acá. Eran
+		# `NIEBLA_NOCHE` y `NIEBLA_DIA` copiadas a mano, y copiadas se separan
+		# el día que alguien toca una de las dos.
+		#
+		# Y la energía subió, que **no es cosmético desde que la niebla de
+		# distancia existe de verdad**: tenía la densidad en cero y no pintaba
+		# un solo píxel. Con la perspectiva aérea puesta, a 0,55 lo lejano
+		# rendía luma 113 contra un horizonte de 197 — o sea que la montaña se
+		# iba a un gris que no era el del cielo que tenía detrás, que es
+		# exactamente lo que la niebla vino a evitar.
+		entorno.fog_light_color = Paleta.niebla(n)
+		entorno.fog_light_energy = lerp(0.22, 0.80, n)
 		entorno.volumetric_fog_density = lerp(0.0016, 0.0009, n)
 		# De noche el brillo de las ventanas y la fragua tiene que pesar más:
 		# es lo único que queda encendido, y es lo que dice "hay alguien".

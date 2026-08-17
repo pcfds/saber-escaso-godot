@@ -265,6 +265,8 @@ static func casa(padre: Node3D, sitio: Dictionary,
 	var alero := CASA_NIVELES * alto_nivel
 	if not quemada:
 		_techo(alta, alero, rng)
+	else:
+		_quemar(g, baja, alta, alto_nivel, rng)
 
 	# El basamento y los escalones. La ruina también los lleva: una casa
 	# quemada sigue teniendo cimientos, y sin ellos su planta baja flota.
@@ -310,6 +312,107 @@ static func _tabique(g: Node3D, pos: Vector3, rot: float, alto: float,
 		g.add_child(cuerpo)
 
 
+# ===========================================================================
+# LA CASA QUEMADA — EL INCENDIO SE VE, NO SE CUENTA
+#
+# El valle tiene un pasado escrito en la base del servidor: **un incendio de
+# hace sesenta inviernos con dos versiones irreconciliables de quién lo
+# empezó**, y un claro que la aldea taló para las vigas. Es la pieza de historia
+# más vieja del juego y hasta el 18 de agosto **el cliente no la mostraba**: la
+# Casa Quemada era la misma casa que las otras once, con un tercio de los muros
+# faltando y sin techo. Un muro faltante dice "esto se cayó". No dice "esto se
+# quemó", que es otra cosa y es la que importa — la aldea entera se acuerda de
+# ese fuego y no se pone de acuerdo sobre él.
+#
+# Lo que hace un incendio, y es lo que se hace acá, en orden de cuánto se lee a
+# 27 metros:
+#
+#  1. **BAJA EL VALOR, Y BAJA MÁS ARRIBA.** El fuego sube. La planta alta queda
+#     casi negra y la baja tiznada, y ese GRADIENTE VERTICAL es la firma: una
+#     ruina pareja se lee como piedra vieja, una ruina con la parte de arriba
+#     más negra que la de abajo se lee como fuego. Va con `Kit.tinte()`, que
+#     multiplica el albedo sin tocar la malla compartida por las otras casas.
+#     La paleta ya dice dónde tiene que terminar: `MURO_RUINA` es V3, **el único
+#     muro FRÍO del archivo**, y está por debajo del suelo a propósito — es lo
+#     único construido que no levanta la vista.
+#  2. **VIGAS QUEMADAS CONTRA EL CIELO.** Cuatro palos inclinados donde estaba
+#     el techo. Es silueta pura, que es lo único que se lee a esta distancia, y
+#     es lo que distingue un esqueleto de una caja rota. Doce triángulos cada
+#     uno.
+#  3. **LO QUE SE CAYÓ ESTÁ EN EL SUELO.** Tres troncos del kit tirados
+#     alrededor del zócalo. Una ruina sin escombros es una maqueta de ruina: lo
+#     que se derrumbó tiene que estar en algún lado.
+#
+# Lo que NO se hace y por qué: nada de partículas de humo ni brasas. **Hace
+# sesenta inviernos.** Un rescoldo encendido convierte una herida vieja en un
+# incendio de anteayer, y el tono del juego es Frieren — historia vieja que
+# pesa, no una emergencia.
+# ===========================================================================
+
+## Cuánto se le baja el valor a cada planta. La alta casi al carbón (V1–V2), la
+## baja tiznada (V3–V4). Son multiplicadores sobre el albedo del kit, así que
+## un muro `MURO_ALDEA` (V6, 0.66) sale en 0.46 abajo y en 0.30 arriba: V4 y
+## V3, que es exactamente donde la paleta pone `MURO_RUINA`.
+## **Y son CÁLIDOS, con más rojo que azul, y eso no es gusto: está medido.** La
+## primera versión los puso neutros y bajó la planta alta a V2. En pantalla el
+## muro en sombra salió **h176 s0,39**, o sea azul verdoso, no carbón. El motivo
+## es del entorno y vale para todo el juego: `ambiente.gd` saca el 45% de la luz
+## ambiente del cielo, y el cielo es azul. Sobre un muro V6 eso no se nota; sobre
+## un muro V2 el ambiente ES el color. La paleta ya lo tenía escrito por el otro
+## lado —*no hay superficies grandes en V0/V1*— y esto es el mismo límite visto
+## desde arriba: **una superficie grande por debajo de V2/V3 deja de tener color
+## propio y adopta el del cielo.** Así que el hollín se queda en V3 abajo del
+## techo y sube de temperatura para pelearle al azul.
+const HOLLIN_BAJO := Color(0.70, 0.64, 0.58)
+const HOLLIN_ALTO := Color(0.46, 0.40, 0.35)
+
+
+## Le pone al esqueleto de la casa las marcas del fuego. Ver el bloque de arriba.
+static func _quemar(g: Node3D, baja: Node3D, alta: Node3D, alto_nivel: float,
+		rng: RandomNumberGenerator) -> void:
+	for capa: Array in [[baja, HOLLIN_BAJO], [alta, HOLLIN_ALTO]]:
+		var nodo: Node3D = capa[0]
+		var tinte: Color = capa[1]
+		for h in nodo.get_children():
+			if h is MeshInstance3D:
+				# Cada panel un poco distinto: un incendio no quema parejo, y
+				# ocho paneles del mismo negro vuelven a ser un estampado.
+				var v := rng.randf_range(0.82, 1.18)
+				Kit.tinte(h as MeshInstance3D, Color(tinte.r * v, tinte.g * v, tinte.b * v))
+
+	# (2) Las vigas. Salen del entrepiso y se cruzan arriba, como queda un techo
+	# cuando se le va el machimbre y aguantan los pares.
+	var viga_mat := Paleta.madera(Paleta.MADERA)
+	var alero := CASA_NIVELES * alto_nivel
+	for k in 4:
+		var caja := BoxMesh.new()
+		caja.size = Vector3(0.16, rng.randf_range(1.4, 2.6), 0.16)
+		caja.material = viga_mat
+		var mi := MeshInstance3D.new()
+		mi.mesh = caja
+		var a := TAU * (float(k) + rng.randf_range(-0.18, 0.18)) / 4.0
+		var r := CASA_CELDA * rng.randf_range(0.45, 0.85)
+		mi.position = Vector3(cos(a) * r, alero - alto_nivel * 0.25, sin(a) * r)
+		mi.rotation = Vector3(rng.randf_range(-0.5, 0.5), a, rng.randf_range(-0.5, 0.5))
+		g.add_child(mi)
+
+	# (3) Los escombros. Troncos del kit, tirados de costado, tiznados al mismo
+	# carbón que la planta alta. **Van pegados al zócalo y no repartidos por el
+	# prado**: acá no se sabe la altura del terreno —eso lo sabe `valle.gd`— y un
+	# tronco apoyado en la nada flota. Sobre el basamento no hay ese riesgo.
+	for k in 3:
+		var mi := Kit.nodo("naturaleza/log_large")
+		if mi == null:
+			break
+		var a := TAU * (float(k) + rng.randf_range(-0.3, 0.3)) / 3.0
+		mi.position = Vector3(cos(a) * CASA_ADENTRO * 0.8, CASA_PISO,
+			sin(a) * CASA_ADENTRO * 0.8)
+		mi.rotation = Vector3(0.0, rng.randf() * TAU, PI / 2.0 + rng.randf_range(-0.3, 0.3))
+		mi.scale = Vector3.ONE * rng.randf_range(0.7, 1.2)
+		Kit.tinte(mi, HOLLIN_ALTO)
+		g.add_child(mi)
+
+
 ## El zócalo: el basamento de piedra que tapa lo que la pendiente deja en el
 ## aire, y que además es el piso sobre el que se camina adentro.
 ##
@@ -329,7 +432,12 @@ static func _zocalo(g: Node3D, hondo: float, quemada: bool) -> void:
 
 	var caja := BoxMesh.new()
 	caja.size = Vector3(lado, alto, lado)
-	caja.material = Paleta.piedra(Paleta.LOSA_CAMINO)
+	# En la ruina el basamento también se tiznó. Baja de V5 a V3 y se enfría:
+	# es el mismo peldaño y el mismo criterio que `MURO_RUINA`, que la paleta
+	# describe como *"piedra quemada, y es el único muro FRÍO"*. Sin esto la
+	# Casa Quemada queda parada sobre un basamento nuevo y reluciente, que es
+	# justo el detalle que delata que la ruina es decorado.
+	caja.material = Paleta.piedra(Paleta.MURO_RUINA if quemada else Paleta.LOSA_CAMINO)
 	var mi := MeshInstance3D.new()
 	mi.mesh = caja
 	mi.position.y = -alto / 2.0
@@ -337,7 +445,10 @@ static func _zocalo(g: Node3D, hondo: float, quemada: bool) -> void:
 
 	var tablas := BoxMesh.new()
 	tablas.size = Vector3(CASA_ADENTRO * 2.0, CASA_PISO, CASA_ADENTRO * 2.0)
-	tablas.material = (Paleta.piedra(Paleta.TIERRA) if quemada
+	# Adentro no queda tabla: queda ceniza. V2, un peldaño por debajo del muro
+	# tiznado de la planta baja, para que el cuarto se lea como un pozo negro
+	# desde arriba — que es de donde lo mira la cámara.
+	tablas.material = (Paleta.piedra(Paleta.TECHO) if quemada
 		else Paleta.madera(Paleta.MURO_FRAGUA))
 	var piso := MeshInstance3D.new()
 	piso.mesh = tablas
@@ -705,6 +816,39 @@ static func pasto(padre: Node3D, alturas: Callable, cantidad: int, radio: float)
 ## ~104.000 de ahora. No hay máquina que lo aguante y no es una decisión de
 ## arte, es aritmética. El pasto se queda con las hojas generadas, que a la
 ## distancia a la que se juega son una textura de color y no una silueta.
+##
+## ===========================================================================
+## DOS COSAS QUE CAMBIARON EL 18 DE AGOSTO, Y LAS DOS SON DE ARTE
+## ===========================================================================
+##
+## **1. LAS PIEDRAS NO ERAN PIEDRAS.** El comentario de acá abajo decía que a la
+## roca del kit *"no se le pisa el material: viene con el suyo del atlas de
+## Kenney"*. Eran dos frases falsas en una. `rock_smallA.glb` **no usa atlas** —
+## el Nature Kit no tiene texturas, el color va en el material— y sus dos
+## materiales no se llaman `stone`: se llaman **`grass` y `dirt`**, leído
+## abriendo el `.glb`. La aduana los mandaba a `COPA_CLARA` y `TIERRA`, los dos
+## en V4, o sea al mismo peldaño que el suelo. Las 320 piedras que este archivo
+## llama *"la puntuación clara del cuadro"* eran 320 manchas invisibles.
+##
+## Arreglado en `Paleta.KIT_CONTEXTO`, por ruta: el cuerpo va a `ROCA` (V6) y la
+## tapa a `PASTO` (V3). Una piedra con musgo, no un terrón.
+##
+## **2. EN GRUPOS, NO REPARTIDAS PAREJO.** `cantidad` ya no es la cuenta de
+## piedras: es la cuenta de **grupos**, y cada grupo trae de 2 a 6. Las piedras
+## no están espolvoreadas por el prado; afloran juntas donde afloran. Es la
+## segunda de las tres reglas de `naturaleza.md` —*una distribución uniforme es
+## lo que más grita "generado por computadora"*— y de paso multiplica por ~3,6
+## la cantidad sin tocar `valle.gd`, que es de otra rama: 320 grupos dan ~1.150
+## piedras y siguen siendo 16 triángulos cada una.
+##
+## Los miembros de un grupo se agregan seguidos a propósito. `rendimiento.gd`
+## ralea con `visible_instance_count`, o sea que se queda con las primeras N de
+## cada baldosa: con los grupos seguidos, ralear deja grupos ENTEROS de menos, y
+## no medio grupo cortado por la mitad.
+##
+## **Y hay cuatro piedras distintas en el kit, no una.** La malla se sortea por
+## baldosa (determinista, sale de la celda) así que un rincón del valle tiene
+## sus piedras y otro las suyas, y sigue habiendo un solo MultiMesh por baldosa.
 static func piedras(padre: Node3D, alturas: Callable, cantidad: int, radio: float) -> void:
 	var roca := Kit.malla("naturaleza/rock_smallA")
 	if roca == null:
@@ -720,49 +864,96 @@ static func piedras(padre: Node3D, alturas: Callable, cantidad: int, radio: floa
 		# que no puntuaba nada: eran manchones oscuros del mismo valor que el
 		# pasto húmedo.
 		#
-		# A la roca del kit, en cambio, **no se le pisa el material**: viene con
-		# el suyo del atlas de Kenney y `Kit` lo dice explícito. La paleta manda
-		# sobre lo que generamos nosotros, no sobre las mallas del kit — mezclar
-		# las dos autoridades sobre el mismo objeto es el "indeciso" que la
-		# dirección de arte existe para terminar.
+		# A la roca del kit se le pisa el color en la aduana, por ruta, porque
+		# sus materiales se llaman `grass` y `dirt` y no `stone`. Ver el
+		# encabezado de esta función y `Paleta.KIT_CONTEXTO`.
 		esfera.material = Paleta.piedra(Paleta.PIEDRA_SUELTA)
 		roca = esfera
 
-	# La malla del kit mide 0,36 × 0,19; la esfera de antes medía 1,0 × 0,7.
-	# Este factor la lleva a la misma convención para que el sorteo de escalas
-	# de abajo —que está afinado -— siga dando piedras del mismo tamaño.
-	var caja := roca.get_aabb()
-	var norma := Transform3D(Basis().scaled(Vector3(
-		1.0 / maxf(caja.size.x, 0.001),
-		1.0 / maxf(caja.size.y, 0.001),
-		1.0 / maxf(caja.size.z, 0.001))), Vector3.ZERO)
+	# Las cuatro piedras del kit. `rock_tallC` es el peñón —0,78 de alto contra
+	# 0,19— y por eso va sola en la lista de las chatas: sale una de cada
+	# cuatro baldosas y es la que rompe la línea del horizonte del prado.
+	var mallas: Array[Mesh] = []
+	for r in ["naturaleza/rock_smallA", "naturaleza/rock_smallB",
+			"naturaleza/rock_smallD", "naturaleza/rock_tallC"]:
+		var m := Kit.malla(r)
+		if m != null:
+			mallas.append(m)
+	if mallas.is_empty():
+		mallas.append(roca)
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 991
-	var por_baldosa := _repartir(rng, cantidad, radio, alturas,
-		func(t: Transform3D, r: RandomNumberGenerator) -> Transform3D:
-			t.origin.y -= 0.1
-			return t.rotated_local(Vector3.UP, r.randf() * TAU).scaled_local(Vector3(
-				r.randf_range(0.4, 1.5), r.randf_range(0.3, 0.8),
-				r.randf_range(0.4, 1.5))) * norma)
+	# `cantidad` son GRUPOS. Cada uno tira de 2 a 6 piedras en un radio de 1,4 m
+	# alrededor del punto sorteado, y las escalas de un grupo no son iguales: una
+	# grande y las otras el resto, que es como se ve un afloramiento y no un
+	# puñado de bolitas.
+	var por_baldosa := {}
+	for i in cantidad:
+		var a := rng.randf() * TAU
+		var r := sqrt(rng.randf()) * radio
+		var cx := cos(a) * r
+		var cz := sin(a) * r
+		var celda := Vector2i(floori(cx / BALDOSA), floori(cz / BALDOSA))
+		if not por_baldosa.has(celda):
+			por_baldosa[celda] = []
+		var cuantas := rng.randi_range(2, 6)
+		# La primera del grupo es la grande. Las demás salen de su sombra.
+		var escala_madre := rng.randf_range(0.9, 1.7)
+		for k in cuantas:
+			var ang := rng.randf() * TAU
+			var dist := (0.0 if k == 0 else sqrt(rng.randf()) * 1.4)
+			var x := cx + cos(ang) * dist
+			var z := cz + sin(ang) * dist
+			var e := escala_madre if k == 0 else escala_madre * rng.randf_range(0.28, 0.7)
+			var t := Transform3D()
+			t.origin = Vector3(x, alturas.call(x, z) - 0.1, z)
+			t = t.rotated_local(Vector3.UP, rng.randf() * TAU).scaled_local(Vector3(
+				e, e * rng.randf_range(0.6, 1.1), e * rng.randf_range(0.8, 1.2)))
+			por_baldosa[celda].append(t)
 
+	var total := 0
 	for celda: Vector2i in por_baldosa:
 		var lista: Array = por_baldosa[celda]
 		var centro := _centro(celda, alturas)
+		# La malla de esta baldosa sale de la celda, así que es la misma en la
+		# pantalla de todos: es multijugador.
+		var malla: Mesh = mallas[absi(celda.x * 73856093 ^ celda.y * 19349663) % mallas.size()]
+		# Y la malla del kit no viene normalizada: hay que llevarla a 1 metro
+		# antes de aplicarle las escalas de arriba, o el peñón sale ocho veces
+		# más grande que las chatas.
+		var caja := malla.get_aabb()
+		var norma := Transform3D(Basis().scaled(Vector3(
+			1.0 / maxf(caja.size.x, 0.001),
+			1.0 / maxf(caja.size.y, 0.001),
+			1.0 / maxf(caja.size.z, 0.001))), Vector3.ZERO)
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = roca
+		mm.use_colors = true
+		mm.mesh = malla
 		mm.instance_count = lista.size()
+		var rc := RandomNumberGenerator.new()
+		rc.seed = celda.x * 73856093 ^ celda.y * 19349663
 		for i in lista.size():
 			var t: Transform3D = lista[i]
 			t.origin -= centro
-			mm.set_instance_transform(i, t)
+			mm.set_instance_transform(i, t * norma)
+			# Un MULTIPLICADOR de valor por piedra, no un color: mil doscientas
+			# piedras del mismo gris son una piedra repetida mil doscientas
+			# veces. Va de 0,68 a 1,04, o sea de V5 largo a V6 clavado — la
+			# escalera no se sale de sus dos peldaños y el campo de piedras deja
+			# de ser un estampado. Ver la nota del camino de color en
+			# `Paleta.KIT_CONTEXTO`: acá el flag sRGB va apagado a propósito.
+			var f := rc.randf_range(0.68, 1.04)
+			mm.set_instance_color(i, Color(f, f, f))
+		total += lista.size()
 
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.position = centro
 		mmi.add_to_group("piedras")
 		padre.add_child(mmi)
+	print("piedras: %d grupos → %d piedras en %d baldosas" % [cantidad, total, por_baldosa.size()])
 
 
 ## Tira `cantidad` puntos en un disco de `radio` y los agrupa por baldosa.
