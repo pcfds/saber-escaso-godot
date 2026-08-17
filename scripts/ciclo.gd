@@ -115,8 +115,8 @@ func _process(dt: float) -> void:
 		var sin_rebote := 1.35 if not entorno.sdfgi_enabled else 1.0
 		entorno.ambient_light_energy = lerp(0.14, 0.62, n) * sin_rebote
 		entorno.fog_light_color = Color(0.09, 0.12, 0.20).lerp(Color(0.52, 0.58, 0.62), n)
-		entorno.fog_light_energy = lerp(0.35, 0.9, n)
-		entorno.volumetric_fog_density = lerp(0.0090, 0.0055, n)
+		entorno.fog_light_energy = lerp(0.22, 0.55, n)
+		entorno.volumetric_fog_density = lerp(0.0016, 0.0009, n)
 		# De noche el brillo de las ventanas y la fragua tiene que pesar más:
 		# es lo único que queda encendido, y es lo que dice "hay alguien".
 		entorno.glow_intensity = lerp(1.05, 0.55, n)

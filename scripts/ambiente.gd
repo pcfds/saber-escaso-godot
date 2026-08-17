@@ -76,15 +76,22 @@ func _construir_entorno() -> Environment:
 	# distancia. Antes llegaba a 190 y los últimos sesenta metros los pintaban
 	# las dos nieblas encima: se pagaba dos veces por el mismo gris.
 	e.volumetric_fog_enabled = true
-	e.volumetric_fog_density = 0.0055
-	e.volumetric_fog_albedo = Color(0.78, 0.72, 0.66)
+	# 0,0055 llenaba de bruma los 130 metros que la cámara está mirando: con la
+	# cámara a 40-68 m, TODO el valle queda adentro del volumen y sale blanco
+	# lavado. La niebla volumétrica sirve para los rayos de sol entre los
+	# árboles, no para velar la escena. Un sexto de lo que era.
+	e.volumetric_fog_density = 0.0009
+	# Y el albedo casi blanco era la otra mitad del problema: la bruma sumaba
+	# luz clara encima de todo. Más oscuro y más frío, para que reste contraste
+	# sólo donde debe.
+	e.volumetric_fog_albedo = Color(0.46, 0.48, 0.52)
 	e.volumetric_fog_emission = Color(0.05, 0.06, 0.08)
 	# Inyectar la GI en la niebla es una lectura de SDFGI por vóxel de humo. A
 	# 1,0 el rayo de sol sigue estando; de 1,0 a 1,4 no se distinguía.
 	e.volumetric_fog_gi_inject = 1.0
 	e.volumetric_fog_length = 130.0
 	e.volumetric_fog_detail_spread = 2.0
-	e.volumetric_fog_ambient_inject = 0.7
+	e.volumetric_fog_ambient_inject = 0.25
 
 	# Niebla de distancia: da profundidad y esconde el borde del mundo, que es
 	# el problema clásico de un valle chico. Es de las cosas más baratas que
@@ -92,12 +99,12 @@ func _construir_entorno() -> Environment:
 	e.fog_enabled = true
 	e.fog_mode = Environment.FOG_MODE_DEPTH
 	e.fog_light_color = Color(0.52, 0.58, 0.62)
-	e.fog_light_energy = 0.9
+	e.fog_light_energy = 0.55
 	e.fog_sun_scatter = 0.35
 	e.fog_density = 0.0
 	# Llega hasta la cordillera: las montañas tienen que verse como siluetas
 	# azuladas, no desaparecer en una pared de niebla a los 190 metros.
-	e.fog_depth_begin = 130.0
+	e.fog_depth_begin = 210.0
 	e.fog_depth_end = 780.0
 	e.fog_depth_curve = 1.4
 
@@ -126,15 +133,22 @@ func _construir_entorno() -> Environment:
 
 	# (4) AgX: no quema los naranjas de la fragua como haría ACES.
 	e.tonemap_mode = Environment.TONE_MAPPER_AGX
-	e.tonemap_exposure = 0.95
+	e.tonemap_exposure = 1.02
 	e.tonemap_white = 6.0
 
 	# Los ajustes de color estaban en +2% de saturación y +4% de contraste. Eso
 	# está por debajo de lo que el ojo distingue y prende una variante más del
 	# shader de tonemapping. Si algún día hace falta una corrección de color,
 	# que sea una que se vea.
-	e.adjustment_enabled = false
-
+	# La corrección de color estaba APAGADA, y AgX desatura fuerte por diseño:
+	# es un tonemapper filmic, pensado para material fotográfico que después se
+	# colorea. Sin nada que lo compense, un mundo estilizado sale pastel — que
+	# es exactamente lo que pasó. Acá el color es una decisión de diseño, no una
+	# aproximación a lo real, así que se recupera a mano.
+	e.adjustment_enabled = true
+	e.adjustment_saturation = 1.38
+	e.adjustment_contrast = 1.12
+	e.adjustment_brightness = 1.0
 	return e
 
 
