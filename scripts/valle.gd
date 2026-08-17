@@ -59,6 +59,10 @@ const ALTURA_JUGADOR := 1.85
 
 ## Distancias para decidir en qué lugar estás. SALIR es más grande que ENTRAR
 ## a propósito — ver la histéresis en _avisar_donde_estoy().
+## Cuántos segundos pasan antes de que la misma persona te vuelva a saludar.
+## Noventa: lo suficiente para cruzar la aldea entera sin que nadie te repita.
+const ESPERA_SALUDO := 90.0
+
 const ENTRAR := 30.0
 const SALIR := 44.0
 
@@ -414,7 +418,7 @@ func _armar_lugar(slug: String, def: Dictionary) -> void:
 		# unas sobre otras — que es exactamente lo que pasaba con siete en un
 		# círculo de 5 metros. Una casa mide 2,7 de ancho, así que la cuerda
 		# entre dos vecinas tiene que ser mayor que eso con aire.
-		var r: float = maxf(4.5, 2.2 * n / TAU + 4.0)
+		var r: float = maxf(8.0, 4.4 * n / TAU + 7.0)
 		# Miran hacia afuera del círculo, como un caserío alrededor de una
 		# plaza. Antes rotaban con el ángulo Y con azar encima, y quedaban
 		# cruzadas entre sí.
@@ -893,7 +897,10 @@ const ANILLO_GENTE := 6.5
 ## círculos que las cubran enteras se solapan entre sí y dejan a la gente
 ## atrapada contra ellos —medido con el andamio: dos de los tres vecinos de la
 ## aldea quedaban clavados—. Con la caja de verdad hay calle entre casa y casa.
-const CASA_MEDIA := Vector2(1.65, 1.55)
+## Media planta de la casa más holgura, para empujar a la gente antes de que
+## roce la pared. Sigue a `Detalles.CASA_CELDA`: si la casa crece y esto no,
+## la gente camina por adentro de las paredes.
+const CASA_MEDIA := Vector2(3.15, 3.05)
 ## Hasta dónde puede llegar alguien haciendo su ronda, medido desde el centro
 ## del lugar. Es el límite duro y tiene la última palabra: nadie se va de su
 ## lugar, y **nadie se le sube a los otros jugadores**, que empiezan a pararse a
@@ -1577,15 +1584,17 @@ func _process(dt: float) -> void:
 	# Que te reconozcan al pasar. Una sola vez por acercamiento: si se
 	# disparara cada cuadro sería un cartel, y si no se reseteara al alejarte
 	# nunca te volverían a saludar. Por eso se limpia cuando te vas.
-	if mas_cerca != "" and not _ya_saludo.has(mas_cerca):
-		_ya_saludo[mas_cerca] = true
+	# Una espera antes de volver a saludarte. Antes alcanzaba con alejarse y
+	# volver, así que caminando por la aldea te saludaban en bucle: el mismo
+	# recurso que hace que el valle parezca habitado lo volvía insoportable.
+	# La gente que ya te vio hace un rato no te vuelve a levantar la vista.
+	var ahora := Time.get_ticks_msec() / 1000.0
+	if mas_cerca != "" and ahora - float(_ya_saludo.get(mas_cerca, -999.0)) > ESPERA_SALUDO:
+		_ya_saludo[mas_cerca] = ahora
 		var a: Dictionary = _actitudes.get(mas_cerca, {})
 		var linea: String = str(a.get("saludo", ""))
 		if linea != "":
 			interfaz.reconocer(linea, str(a.get("animo", "neutral")))
-	for quien: String in _ya_saludo.keys():
-		if quien != mas_cerca:
-			_ya_saludo.erase(quien)
 
 	_avisar_donde_estoy()
 

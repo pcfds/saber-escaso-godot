@@ -53,7 +53,14 @@ const BALDOSA := 34.0
 
 ## Un módulo del kit, en metros. 2 celdas → planta de 2,6 m, que es la caja de
 ## antes. Ver `CASA_MEDIA` en `valle.gd`: los dos números están atados.
-const CASA_CELDA := 1.3
+## El lado de una celda del kit. La casa son 2×2 celdas.
+##
+## Estaba en 1,3, o sea una casa de 2,6 m de planta con un personaje de 1,85 de
+## alto: **la persona era más grande que la casa**, y se veía. Una casa
+## medieval de verdad tiene entre seis y ocho metros de frente; con 2,7 la
+## planta queda en 5,4 y la puerta le llega a la cabeza a alguien parado
+## enfrente, que es la proporción que el ojo espera.
+const CASA_CELDA := 2.7
 
 ## Dos plantas. Con una la casa queda de 1,3 m y parece una casilla; con tres
 ## pasa los 4 m y deja de ser un caserío para ser un pueblo de otra escala.
