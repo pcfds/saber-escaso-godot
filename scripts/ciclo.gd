@@ -48,9 +48,46 @@ const OCASO   := Color(1.00, 0.48, 0.24)
 const LUNAR   := Color(0.52, 0.64, 0.92)
 
 
+## Con `--hora=` puesto, el reloj queda clavado ahí y el servidor no lo mueve.
+## Es SÓLO para verificar.
+var _hora_fija := -1.0
+
+
 func _ready() -> void:
 	if entorno != null and entorno.sky != null:
 		_cielo = entorno.sky.sky_material as ShaderMaterial
+	_leer_hora_pedida()
+
+
+## `--hora=0.35` o `--hora=noche|alba|mediodia|ocaso`. Congela el reloj.
+##
+## **Esta bandera existe por el peor bug que tuvo el proyecto.** Toda medición
+## de luz necesita el sol quieto —así se descartaron SDFGI, las dos nieblas y
+## el tonemapper como causa de la banda de gris, y así se encontró que la
+## niebla se estaba comiendo el cielo entero— y hasta hoy la única forma era
+## parchear `_fraccion` a mano. Una de esas sondas se coló en un commit
+## (`_fraccion = 0.35 # SONDA TEMPORAL — BORRAR`) y **congeló el reloj del
+## mundo en producción**, o sea el reloj compartido de todos los jugadores.
+##
+## Una bandera de línea de comandos no se puede commitear por accidente. Eso
+## es todo lo que hace y por eso vale.
+func _leer_hora_pedida() -> void:
+	for arg in OS.get_cmdline_user_args() + OS.get_cmdline_args():
+		if not arg.begins_with("--hora="):
+			continue
+		var v := arg.substr(7).strip_edges().to_lower()
+		match v:
+			"medianoche", "noche": _hora_fija = 0.0
+			"madrugada": _hora_fija = 0.12
+			"alba", "amanecer": _hora_fija = 0.25
+			"manana", "mañana": _hora_fija = 0.35
+			"mediodia", "mediodía": _hora_fija = 0.5
+			"tarde": _hora_fija = 0.65
+			"ocaso", "atardecer": _hora_fija = 0.75
+			_: _hora_fija = fposmod(float(v), 1.0)
+		_fraccion = _hora_fija
+		print("[ciclo] hora clavada en %.3f (%s) — sólo para verificar" % [_hora_fija, v])
+		return
 
 
 ## La llama el valle cuando el servidor contesta. `fraccion` sale de cuántos
@@ -58,6 +95,8 @@ func _ready() -> void:
 ## todos los que estén conectados.
 func sincronizar(tick_del_valle: int, segundos_en_el_dia: float) -> void:
 	dia = tick_del_valle
+	if _hora_fija >= 0.0:
+		return
 	_fraccion = fposmod(segundos_en_el_dia / DIA_REAL, 1.0)
 
 
@@ -71,7 +110,8 @@ func fraccion() -> float:
 
 
 func _process(dt: float) -> void:
-	_fraccion = fposmod(_fraccion + dt / DIA_REAL, 1.0)
+	if _hora_fija < 0.0:
+		_fraccion = fposmod(_fraccion + dt / DIA_REAL, 1.0)
 
 	# El sol sale por el este y se pone por el oeste, inclinado — un sol que
 	# pasa justo por el cenit aplana todo al mediodía y no da sombras largas.
@@ -90,7 +130,11 @@ func _process(dt: float) -> void:
 		var color := LUNAR.lerp(MEDIODIA, d)
 		color = color.lerp(OCASO if cos(angulo) < 0.0 else ALBA, dorada * 0.75)
 		sol.light_color = color
-		sol.light_energy = lerp(0.09, 2.1, d)
+		# 0,16 y no 0,09: la luna tiene que dar la DIRECCIÓN de la sombra. Sin
+		# una direccional que se note, subir sólo la ambiente aplana la noche —
+		# todo igual de gris y sin volumen, que es el otro modo de que no se
+		# vea nada.
+		sol.light_energy = lerp(0.16, 2.1, d)
 		# Sombras largas y blandas cuando el sol está bajo.
 		sol.light_angular_distance = lerp(2.6, 0.9, d)
 		sol.shadow_blur = lerp(2.2, 1.1, d)
@@ -113,7 +157,42 @@ func _process(dt: float) -> void:
 		# Sin SDFGI no hay rebote de luz: la ambiente tiene que cubrir ese hueco
 		# o el valle en calidad baja queda plano y más oscuro de lo que es.
 		var sin_rebote := 1.35 if not entorno.sdfgi_enabled else 1.0
-		entorno.ambient_light_energy = lerp(0.14, 0.62, n) * sin_rebote
+		# El piso de la noche pasó de 0,14 a 0,38, y el color de la ambiente se
+		# va al azul de la luna en vez de quedarse en el marrón cálido del
+		# rebote del suelo (que de noche no rebota nada porque no hay sol).
+		#
+		# Medido antes de tocarlo, con `--hora=noche` y el reloj clavado: el
+		# suelo daba **luma media 2,8, con el percentil 95 en 13** contra 136,9
+		# al mediodía. Eso no es una noche oscura, es una pantalla negra: no se
+		# lee una silueta, no se ve dónde termina el pasto y empieza la casa, y
+		# el juego queda injugable un tramo de cada vuelta del sol.
+		#
+		# Y la noche NO es tiempo muerto en este juego: la rutina manda a la
+		# gente a su casa al anochecer, que es justo cuando entrar a una casa y
+		# encontrar a alguien adentro significa algo.
+		#
+		# **El número salió de una curva, no de una corazonada.** Con el reloj
+		# clavado en la noche, tres corridas cambiando sólo esto:
+		#
+		#     ambiente 0,38 → suelo luma  4,7      (era 0,14 → 2,8)
+		#     ambiente 1,20 → suelo luma 14,9
+		#     ambiente 3,00 → suelo luma 31,8
+		#
+		# Responde, pero muy sublinealmente: es AgX aplastando los oscuros. El
+		# ocaso mide 26,8, así que la noche tiene que quedar CLARAMENTE por
+		# debajo o deja de ser noche — 1,15 la pone en unos 14, que se lee y no
+		# se confunde con el atardecer.
+		#
+		# Sí, de noche la ambiente termina siendo MAYOR que de día (0,62), y no
+		# es un error: de día la luz la pone el sol y la ambiente sólo rellena
+		# las sombras; de noche la ambiente es lo único que hay. Es el número
+		# de un relleno, no el de una cantidad de luz.
+		entorno.ambient_light_energy = lerp(1.15, 0.62, n) * sin_rebote
+		# Que el color cambie es lo mismo que ya hace la luz del sol tres
+		# bloques más arriba, y por el mismo motivo: una noche que es "el día
+		# pero con menos energía" se ve sucia, no nocturna.
+		entorno.ambient_light_color = Color(0.30, 0.36, 0.52).lerp(
+			Color(0.42, 0.38, 0.31), n)
 		entorno.fog_light_color = Color(0.09, 0.12, 0.20).lerp(Color(0.52, 0.58, 0.62), n)
 		entorno.fog_light_energy = lerp(0.22, 0.55, n)
 		entorno.volumetric_fog_density = lerp(0.0016, 0.0009, n)
