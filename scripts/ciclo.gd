@@ -72,6 +72,7 @@ func fraccion() -> float:
 
 func _process(dt: float) -> void:
 	_fraccion = fposmod(_fraccion + dt / DIA_REAL, 1.0)
+	_fraccion = 0.35  # SONDA TEMPORAL — BORRAR: congela el sol para poder medir A/B
 
 	# El sol sale por el este y se pone por el oeste, inclinado — un sol que
 	# pasa justo por el cenit aplana todo al mediodía y no da sombras largas.

@@ -38,11 +38,12 @@ func _sonda() -> void:
 		var l := n as DirectionalLight3D
 		soles.append("%s e=%.2f rotx=%.1f c=%s sh=%s" % [l.name, l.light_energy,
 			rad_to_deg(l.rotation.x), l.light_color, l.shadow_enabled])
-	print("SONDA cuadros=%d fps=%.1f amb=%.3f sdfgi=%s vol=%s fog=%s tone=%d sat=%.2f | %s" % [
+	print("SONDA cuadros=%d fps=%.1f amb=%.3f sdfgi=%s vol=%s fog=%s tone=%d sat=%.2f grade=%s expo=%.2f volden=%.4f skyc=%.2f | %s" % [
 		Engine.get_frames_drawn(), Engine.get_frames_per_second(),
 		environment.ambient_light_energy, environment.sdfgi_enabled,
 		environment.volumetric_fog_enabled, environment.fog_enabled,
 		environment.tonemap_mode, environment.adjustment_saturation,
+		environment.adjustment_enabled, environment.tonemap_exposure, environment.volumetric_fog_density, environment.ambient_light_sky_contribution,
 		", ".join(PackedStringArray(soles))])
 
 

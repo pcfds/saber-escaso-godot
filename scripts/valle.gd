@@ -94,6 +94,7 @@ var _monstruos: Array[Monstruo] = []
 var ciclo: Ciclo
 var vegetacion: Vegetacion
 var sonido: Sonido
+var dibujado: Dibujado
 var _lugar_actual := ""
 var _monstruos_por_id: Dictionary = {}
 ## Cómo te trata cada uno al pasar. Lo manda el servidor con /mundo.
@@ -194,6 +195,19 @@ func _ready() -> void:
 		sonido.oyente = jugador
 
 	_refrescar_cada_tanto()
+	# El contorno. Va después de la interfaz para quedar debajo de ella en el
+	# orden de capas, y encima del mundo.
+	dibujado = Dibujado.new()
+	var cam := jugador.get_node_or_null("Camara") as Camera3D
+	if cam == null:
+		for n in jugador.find_children("*", "Camera3D", true, false):
+			cam = n as Camera3D
+			break
+	if cam != null:
+		cam.add_child(dibujado)
+	else:
+		add_child(dibujado)
+
 	_captura_si_corresponde()
 
 	if api.token == "":
