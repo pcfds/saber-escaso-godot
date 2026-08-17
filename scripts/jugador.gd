@@ -27,13 +27,17 @@ const GRAVEDAD := 18.0
 # Límites de la órbita. La inclinación va de casi cenital a tres cuartos.
 const PITCH_MIN := deg_to_rad(28.0)
 const PITCH_MAX := deg_to_rad(64.0)
-const DIST_MIN := 9.0
-const DIST_MAX := 42.0
+## La cámara vive LEJOS. Es la vista del juego —Stardew, Baldur's Gate— y es
+## lo que hace que el valle se lea como un lugar y no como el pasto que tenés
+## delante de la nariz. Acercarse es un gesto puntual para mirar algo, no la
+## posición de trabajo.
+const DIST_MIN := 12.0
+const DIST_MAX := 68.0
 
 var _yaw := deg_to_rad(38.0)
 var _pitch := deg_to_rad(56.0)
-var _dist := 27.0
-var _dist_objetivo := 27.0
+var _dist := 40.0
+var _dist_objetivo := 40.0
 var _arrastrando := false
 
 @onready var _pivote: Node3D = $Pivote
@@ -62,9 +66,9 @@ func _unhandled_input(evento: InputEvent) -> void:
 		if e.button_index == MOUSE_BUTTON_RIGHT:
 			_arrastrando = e.pressed
 		elif e.button_index == MOUSE_BUTTON_WHEEL_UP and e.pressed:
-			_dist_objetivo = clampf(_dist_objetivo - 1.6, DIST_MIN, DIST_MAX)
+			_dist_objetivo = clampf(_dist_objetivo - _dist_objetivo * 0.12, DIST_MIN, DIST_MAX)
 		elif e.button_index == MOUSE_BUTTON_WHEEL_DOWN and e.pressed:
-			_dist_objetivo = clampf(_dist_objetivo + 1.6, DIST_MIN, DIST_MAX)
+			_dist_objetivo = clampf(_dist_objetivo + _dist_objetivo * 0.12, DIST_MIN, DIST_MAX)
 	elif evento is InputEventMouseMotion and _arrastrando:
 		var m := evento as InputEventMouseMotion
 		_yaw -= m.relative.x * 0.006

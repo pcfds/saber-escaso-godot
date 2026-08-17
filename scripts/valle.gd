@@ -348,17 +348,22 @@ func _armar_lugar(slug: String, def: Dictionary) -> void:
 	techo_mat.roughness = 0.95
 
 	var n: int = def["casas"]
-	var huellas: Array[Vector2] = []
+	var huellas: Array[Vector3] = []
 	_casas[slug] = huellas
 	for i in n:
 		var a := TAU * i / float(n) + 0.4
-		var r := 5.0 if n > 3 else 2.6
+		# El radio tiene que crecer con la cantidad, o las casas se encaraman
+		# unas sobre otras — que es exactamente lo que pasaba con siete en un
+		# círculo de 5 metros. Una casa mide 2,7 de ancho, así que la cuerda
+		# entre dos vecinas tiene que ser mayor que eso con aire.
+		var r: float = maxf(4.5, 2.2 * n / TAU + 4.0)
 		var h := randf_range(2.4, 3.6)
+		# Miran hacia afuera del círculo, como un caserío alrededor de una
+		# plaza. Antes rotaban con el ángulo Y con azar encima, y quedaban
+		# cruzadas entre sí.
 		var px := cos(a) * r
 		var pz := sin(a) * r
 		var py := altura_en(base.x + px, base.z + pz) - base.y
-		# Para la ronda de la gente: acá hay una casa y no se atraviesa.
-		huellas.append(Vector2(base.x + px, base.z + pz))
 
 		var caja := BoxMesh.new()
 		caja.size = Vector3(2.7, h, 2.5)
@@ -369,6 +374,10 @@ func _armar_lugar(slug: String, def: Dictionary) -> void:
 		casa.rotation.y = a + randf_range(-0.2, 0.2)
 		Detalles.ventanas_y_puerta(casa, 2.7, h)
 		g.add_child(casa)
+		# Para la ronda de la gente: dónde hay una casa y cómo está girada. Se
+		# anota acá, que es el único momento en que el dato existe sin tener que
+		# ir a buscarlo al árbol.
+		huellas.append(Vector3(base.x + px, base.z + pz, casa.rotation.y))
 
 		var col := StaticBody3D.new()
 		var cf := CollisionShape3D.new()
@@ -765,25 +774,47 @@ func _tumbar_a(nodo: Node3D, si: bool, instantaneo: bool) -> void:
 ## El anillo donde se para la gente del lugar. Los otros jugadores van de 7,5 a
 ## 12 m (ver `_punto_de`) y las casas de la aldea están a 5 m: 6,5 es el hueco.
 const ANILLO_GENTE := 6.5
-## Cuánto ocupa una casa. La caja mide 2,7 × 2,5, o sea 1,84 m de semidiagonal;
-## el resto es el cuerpo de la persona más un margen para no rozar la pared.
-const CASA_RADIO := 2.3
+## Media casa, con el cuerpo de la persona adentro del número: la caja mide
+## 2,7 × 2,5 (o sea 1,35 × 1,25 de medio lado) y los 30 cm que sobran son para
+## que nadie termine rozando la pared.
+##
+## Es una CAJA ORIENTADA y no un círculo, y la diferencia importa: las siete
+## casas de la aldea están a 5 m del centro y a 4,34 m una de otra, así que
+## círculos que las cubran enteras se solapan entre sí y dejan a la gente
+## atrapada contra ellos. Con la caja de verdad hay 1 m de calle entre casa y
+## casa, y hacia afuera la pared termina a 6,25 m: justo adentro del anillo
+## donde se para la gente, que está a 6,5.
+const CASA_MEDIA := Vector2(1.65, 1.55)
 ## Hasta dónde puede llegar alguien haciendo su ronda, medido desde el centro
-## del lugar. **Los dos números de arriba están elegidos para que este límite
-## alcance:** una casa de la aldea está a 5,0 m y empuja hasta 5,0 + 2,3 = 7,3,
-## que es justo esto, y esto es justo lo que queda por debajo del 7,5 donde
-## empiezan a pararse los otros jugadores. Nadie se mete en una casa, nadie se
-## va de su lugar y nadie se le sube a nadie.
+## del lugar. Es el límite duro: nadie se va de su lugar, y **nadie se le sube a
+## los otros jugadores**, que empiezan a pararse a 7,5 m. Lo peor que puede
+## pasar es que a alguien lo empuje la esquina de una casa de la aldea: 5,0 más
+## la semidiagonal de la caja (2,26) da 7,26, y ahí este número lo ataja.
 const RONDA_LIMITE := 7.3
 
 ## La forma de una ronda. Todo esto sale del nombre y NADA de la máquina.
 const RONDA_TANGENTE := 1.9    ## cuánto se corre a lo largo del anillo
 const RONDA_ADENTRO := 1.6     ## cuánto se mete hacia el centro del lugar
-const RONDA_AFUERA := 0.85     ## y cuánto se aleja (poco: ahí está el límite)
+const RONDA_AFUERA := 0.45     ## y cuánto se aleja (poco: ahí está el límite)
 const RONDA_MIRADA := 1.0      ## desvío máximo, en radianes, de mirar al centro
 const RONDA_PASO := 0.95       ## m/s. Paso de andar por su lugar, no de ir a algún lado.
 const RONDA_QUIETO_MIN := 1.8  ## segundos parado en una parada
 const RONDA_QUIETO_MAX := 7.0
+## Cuánto se le exagera el paso.
+##
+## `Figura.animar()` está calibrada para el jugador, que corre a 7,5 m/s. Si se
+## le pasan los 0,95 m/s de andar por el patio tal cual, sale un balanceo de
+## pierna de SEIS grados y una zancada cada siete segundos: a 27 m eso son tres
+## píxeles de pie moviéndose, o sea que la persona se desliza. Medido, no
+## estimado — con el andamio puesto la intensidad de la caminata daba 0,17.
+##
+## Así que se le miente la velocidad. No es un parche: es la decisión de arte
+## del proyecto aplicada al movimiento. **Un caminar estilizado y claro es lo
+## correcto; uno "más realista" y blando es el error.** Con este factor la
+## cadencia queda en 1,3 pasos por segundo (zancada de 70 cm, que es andar) y el
+## pie se mueve unos 30 px en pantalla a la distancia a la que se juega.
+const RONDA_ZANCADA := 4.5
+
 ## Un salto más grande que esto no es caminar, es cambiarse de lugar: no se le
 ## anima una zancada ni se le gira el cuerpo, se lo planta y listo.
 const RONDA_SALTO := 1.5
@@ -993,8 +1024,11 @@ func _ubicar_vecino(nombre: String, nodo: Node3D, t: float, dt: float, yo: Vecto
 	else:
 		# Girar lleva su tiempo. Es la mitad de que se lea como una persona
 		# decidiendo y no como un cartel rotando: 3,5 rad/s son unos 200 ms para
-		# darse vuelta del todo.
-		cuerpo.rotation.y = lerp_angle(cuerpo.rotation.y, rumbo, minf(1.0, 3.5 * dt))
+		# darse vuelta del todo. El `wrapf` es higiene: `lerp_angle` siempre va
+		# por el lado corto pero devuelve el ángulo sin plegar, y en una sesión
+		# larga eso se aleja del cero y se come la precisión del float.
+		cuerpo.rotation.y = wrapf(
+			lerp_angle(cuerpo.rotation.y, rumbo, minf(1.0, 3.5 * dt)), -PI, PI)
 		# El único lugar donde el nivel de calidad puede meterse: la ronda misma
 		# NO puede depender de él —es la identidad de la persona y tiene que dar
 		# igual en las tres máquinas— pero dibujar la zancada de alguien que está
@@ -1008,20 +1042,33 @@ func _ubicar_vecino(nombre: String, nodo: Node3D, t: float, dt: float, yo: Vecto
 const _ANIMAR_HASTA: Array[float] = [3600.0, 6400.0, 12100.0]
 
 
-## Empuja un punto fuera de la huella de las casas del lugar.
+## Empuja un punto fuera de las casas del lugar, por la pared que tenga más
+## cerca.
 ##
-## Es lo que deja calcular la ronda libre y sin caminos: la trayectoria pasa
-## por donde quiera y acá se la desvía, así que rodear una casa sale solo. Y
-## como la velocidad se mide del desplazamiento real, el rodeo se camina.
+## Es lo que deja calcular la ronda libre y sin caminos: la trayectoria pasa por
+## donde quiera y acá se la desvía, así que rodear una casa o caminar pegado a
+## una pared salen solos. Y como la velocidad se mide del desplazamiento REAL,
+## el rodeo se camina en vez de deslizarse.
+##
+## Esto es lo único de la ronda que puede dar distinto en dos máquinas, y es
+## porque **las casas ya dan distinto**: `_armar_lugar()` les sortea el giro con
+## `randf()`. Son centímetros contra una pared, y la alternativa —sembrar el
+## sorteo de las casas— es otra tarea.
 func _afuera_de_casas(slug: String, p: Vector2) -> Vector2:
-	for c: Vector2 in _casas.get(slug, []):
-		var d := p - c
-		var l := d.length()
-		if l < CASA_RADIO:
-			# Justo en el centro de la casa no hay hacia dónde empujar; cualquier
-			# dirección sirve y esto no pasa nunca, pero dividir por cero sí.
-			d = Vector2(0.0, 1.0) if l < 0.001 else d / l
-			p = c + d * CASA_RADIO
+	for c: Vector3 in _casas.get(slug, []):
+		var centro := Vector2(c.x, c.y)
+		# Al marco de la casa. Un giro de θ en Y lleva lo local al mundo con
+		# `rotated(-θ)`, así que del mundo a lo local se va con `rotated(θ)`.
+		var d := (p - centro).rotated(c.z)
+		var mx := CASA_MEDIA.x - absf(d.x)
+		var my := CASA_MEDIA.y - absf(d.y)
+		if mx <= 0.0 or my <= 0.0:
+			continue                     # afuera de esta casa, no hay nada que hacer
+		if mx < my:
+			d.x = CASA_MEDIA.x if d.x >= 0.0 else -CASA_MEDIA.x
+		else:
+			d.y = CASA_MEDIA.y if d.y >= 0.0 else -CASA_MEDIA.y
+		p = centro + d.rotated(-c.z)
 	return p
 
 
@@ -1161,13 +1208,17 @@ func _ANDAMIO_ronda() -> void:
 			var slug := str(n.get_meta("lugar", ""))
 			var c: Vector3 = LUGARES[slug]["pos"]
 			var p := Vector2(n.position.x, n.position.z)
-			var dcasa := 99.0
-			for casa: Vector2 in _casas.get(slug, []):
-				dcasa = minf(dcasa, p.distance_to(casa))
-			s += "| %s %s x%+8.3f z%+8.3f r%5.2f casa%5.2f giro%+.2f " % [
+			# Penetración en la caja REAL de la casa (1,35 × 1,25, sin margen):
+			# positivo = adentro de una casa, que es lo que no puede pasar.
+			var dentro := -99.0
+			for casa: Vector3 in _casas.get(slug, []):
+				var l := (p - Vector2(casa.x, casa.y)).rotated(casa.z)
+				dentro = maxf(dentro, minf(1.35 - absf(l.x), 1.25 - absf(l.y)))
+			var fig := n.get_node(^"Cuerpo") as Figura
+			s += "| %s %s x%+8.3f z%+8.3f r%5.2f casa%+6.2f giro%+.2f pierna%+.2f int%.2f " % [
 				nombre.substr(0, 10), slug, p.x, p.y,
-				p.distance_to(Vector2(c.x, c.z)), dcasa,
-				(n.get_node(^"Cuerpo") as Node3D).rotation.y]
+				p.distance_to(Vector2(c.x, c.z)), dentro, fig.rotation.y,
+				(fig.get("_pierna_i") as Node3D).rotation.x, fig.get("_intensidad")]
 		print(s)
 		await get_tree().create_timer(2.0).timeout
 	print("=== FIN ANDAMIO ===")

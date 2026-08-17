@@ -435,10 +435,10 @@ func _plantar(celdas: Dictionary, ix: int, iz: int, x: float, z: float, campo: D
 	var alto := 0.0
 	var esbeltez := 0.0
 	if conifera:
-		alto = _entre(ix, iz, 29, 7.0, 12.6)
+		alto = _entre(ix, iz, 29, 5.0, 8.2)
 		esbeltez = _entre(ix, iz, 30, 0.155, 0.215)
 	else:
-		alto = _entre(ix, iz, 29, 5.6, 10.4)
+		alto = _entre(ix, iz, 29, 4.2, 7.0)
 		esbeltez = _entre(ix, iz, 30, 0.255, 0.360)
 	alto *= soledad
 	# Los robles viejos del Sotobosque: es el bosque más viejo del valle y
