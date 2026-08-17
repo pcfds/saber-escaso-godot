@@ -11,6 +11,10 @@ signal dialogo_recibido(datos: Dictionary)
 signal peleado(datos: Dictionary)
 signal danio_recibido(datos: Dictionary)
 signal levantado(datos: Dictionary)
+## Lo que contestó `POST /tomar`: `{ok, health, lugar, objeto, hecho_por,
+## cuenta}`. `lugar` viene igual al de antes — **tomar NO te mueve**, que es
+## justamente para qué sirve.
+signal tomado(datos: Dictionary)
 signal cronica_recibida(texto: String)
 ## Lo que pasó cuando mandaste una acción. Ver `actuar()`: el servidor lo
 ## contesta y el cliente lo venía tirando a la basura.
@@ -118,6 +122,18 @@ func danio(id: String = "") -> void:
 func levantarse() -> void:
 	_hacer_post("/j/%s/levantarse" % token, "",
 		func(d: Dictionary) -> void: levantado.emit(d))
+
+
+## Tomarse algo. Hoy sólo hay una cosa que se toma, el cuenco de cuajada, y lo
+## que compra no es vida: es **posición**. Levantarse te deja entero pero en la
+## aldea; el cuenco te deja a medias donde caíste.
+##
+## Que sean dos botones distintos y no uno mejor es el punto: es la primera
+## decisión de este juego donde lo que ganás y lo que perdés no son la misma
+## moneda.
+func tomar(que := "") -> void:
+	_hacer_post("/j/%s/tomar" % token, "que=" + que.uri_encode(),
+		func(d: Dictionary) -> void: tomado.emit(d))
 
 
 ## Mandar una acción del mundo: `buscar`, `aprender`, `trabajar`, `encargarse`,

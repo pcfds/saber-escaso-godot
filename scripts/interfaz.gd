@@ -612,7 +612,7 @@ func avisar(texto: String) -> void:
 ##
 ## Botón sin grab_focus() a propósito: un control con foco empieza a comerse
 ## teclas, y la última vez que pasó eso fue el LineEdit tragándose el WASD.
-func mostrar_caida(al_levantarse: Callable) -> void:
+func mostrar_caida(al_levantarse: Callable, al_tomar := Callable()) -> void:
 	if _caida != null:
 		return
 
@@ -640,16 +640,43 @@ func mostrar_caida(al_levantarse: Callable) -> void:
 	t.bbcode_enabled = true
 	t.fit_content = true
 	t.custom_minimum_size = Vector2(540, 110)
+	# ¿Llevás con qué levantarte acá? Se pregunta a la bolsa, que es lo que
+	# `/mundo` ya trae. Si no llevás, el segundo camino ni se menciona: una
+	# opción apagada es una promesa que el mundo no puede cumplir.
+	var con_cuenco := false
+	for o in _objetos:
+		if str((o as Dictionary).get("kind", "")) == "cuenco de cuajada":
+			con_cuenco = true
+			break
+
 	t.text = "\n".join([
 		"[b][color=#ce8b84]Estás en el piso.[/color][/b]",
 		"",
 		"No perdiste lo que sabes — eso vive en tu cabeza, y ninguna caída te lo saca.",
 		"[color=#7d867f]Vas a levantarte en la aldea. Volver hasta aquí es caminarlo.[/color]",
+	] if not con_cuenco else [
+		"[b][color=#ce8b84]Estás en el piso.[/color][/b]",
+		"",
+		"No perdiste lo que sabes — eso vive en tu cabeza, y ninguna caída te lo saca.",
+		"[color=#7d867f]Llevas un cuenco de cuajada. Puedes elegir cómo te levantas.[/color]",
 	])
 	col.add_child(t)
 
+	# **Las dos se muestran juntas o el jugador no ve que eligió nada.** Es la
+	# primera decisión del juego donde lo que ganás y lo que perdés no son la
+	# misma moneda: entero pero lejos, o a medias pero acá. Un botón solo
+	# convierte eso en un trámite.
+	if con_cuenco and al_tomar.is_valid():
+		var bc := Button.new()
+		bc.text = "tomarte el cuenco — te pones en pie aquí mismo, a medias"
+		bc.pressed.connect(func() -> void:
+			bc.disabled = true
+			bc.text = "tomándotelo…"
+			al_tomar.call())
+		col.add_child(bc)
+
 	var b := Button.new()
-	b.text = "levantarse"
+	b.text = "levantarse — entero, pero en la aldea" if con_cuenco else "levantarse"
 	b.pressed.connect(func() -> void:
 		# Se apaga apenas lo apretás y recién se cierra cuando contesta el
 		# servidor: mover al personaje antes de que el mundo lo escriba es

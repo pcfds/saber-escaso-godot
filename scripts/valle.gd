@@ -189,6 +189,7 @@ func _ready() -> void:
 	api.peleado.connect(_al_resultado_de_pelea)
 	api.danio_recibido.connect(_al_resultado_de_danio)
 	api.levantado.connect(_al_levantarse)
+	api.tomado.connect(_al_tomar)
 
 	jugador = _armar_jugador()
 	add_child(jugador)
@@ -1681,7 +1682,9 @@ func _caer_jugador() -> void:
 		return          # se cae una sola vez; de ahí se sale levantándose
 	_caido = true
 	_tumbar(true)
-	interfaz.mostrar_caida(api.levantarse)
+	# Las dos salidas, y la interfaz decide si muestra la segunda según lleves
+	# o no un cuenco encima.
+	interfaz.mostrar_caida(api.levantarse, func() -> void: api.tomar())
 
 
 ## Que se vea desde afuera que estás en el piso.
@@ -1703,6 +1706,30 @@ func _tumbar(si: bool) -> void:
 ## Volvió la respuesta de levantarse. Recién ACÁ se mueve el personaje: si lo
 ## moviéramos al apretar el botón y el servidor fallara, estarías caminando por
 ## la aldea mientras la base te tiene tirado en la ruina.
+## Te tomaste algo. **La diferencia con `_al_levantarse` es todo el punto: acá
+## NO se teletransporta a nadie.** El servidor contesta el mismo lugar donde ya
+## estabas, y ésa es la propiedad que se compró con el cuenco.
+##
+## Si algún día alguien "arregla" esta función copiándole el salto de posición
+## a su hermana, el cuenco deja de servir para nada y nadie se va a dar cuenta:
+## las dos van a andar.
+func _al_tomar(d: Dictionary) -> void:
+	if not bool(d.get("ok", false)):
+		interfaz.avisar(str(d.get("porque", "no pudo")))
+		return
+	_levantado_en = Time.get_ticks_msec()
+	_caido = false
+	_tumbar(false)
+	interfaz.ocultar_caida()
+	# El nombre del que lo hizo va en el aviso porque es la mitad de por qué
+	# esto existe: un cuenco que dice "lo hizo Sarn" es el oficio de otro
+	# salvándote a veinte metros de donde te tiraron.
+	var quien: Variant = d.get("hecho_por")
+	var de := "" if quien == null else str(quien).strip_edges()
+	interfaz.avisar("Te pusiste en pie aquí mismo%s."
+		% (", con un cuenco que hizo %s" % de if de != "" and de != "<null>" else ""))
+
+
 func _al_levantarse(d: Dictionary) -> void:
 	var slug: String = str(d.get("lugar", ""))
 	if bool(d.get("ok", false)) and LUGARES.has(slug):
