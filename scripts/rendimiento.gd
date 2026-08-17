@@ -138,7 +138,12 @@ func _esconder_la_ventana() -> void:
 		return
 	if DisplayServer.get_name() == "headless":
 		return
+	# Se prueban las tres, de la más fuerte a la más débil, porque WSLg no
+	# respeta todas: minimizar es lo único que de verdad saca la ventana de
+	# encima de un juego en modo ventana sin bordes, que es como se juega.
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_NO_FOCUS, true)
 	DisplayServer.window_set_position(Vector2i(9000, 9000))
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MINIMIZED)
 
 
 func _pidieron(bandera: String) -> bool:
