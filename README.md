@@ -1,69 +1,66 @@
-# Saber Escaso — cliente Godot
+# Saber Escaso — cliente 3D
 
-Cliente 3D del mismo mundo que corre en https://saber-escaso.vercel.app.
-La base, la simulación, el director de IA y el diálogo de NPCs **no cambian**:
-esto es sólo la capa de dibujo.
+La ventana al valle. Godot 4.7, vista lejana tipo Stardew o Baldur's Gate, todo
+procedural y sin un solo asset: el look sale de la luz.
 
-Motor: **Godot 4.7.1**, renderer Forward+.
+**Bajar la demo:** [releases](https://github.com/pcfds/saber-escaso-godot/releases) ·
+**El mundo vive acá:** [pcfds/saber-escaso](https://github.com/pcfds/saber-escaso) ·
+**Sitio:** https://saber-escaso.vercel.app
 
-## Correrlo
+## El invariante
+
+**Lo que pasa en el cliente tiene que llegar al servidor, o no pasó.**
+
+Ya lo rompimos entero una vez: monstruos con IA, combate, vida y muerte que
+vivían sólo en la máquina de cada jugador. Se veía como un juego y no lo era —
+matabas algo y el mundo no se enteraba. Toda mecánica nueva escribe en la base
+o es una demo.
+
+## Lo que hace
+
+- **Terreno, cordillera y vegetación procedurales.** La cordillera tiene una
+  sola abertura, al norte, por donde entra El Camino del Norte. Un valle que se
+  termina en niebla es un nivel; cercado con una salida es un lugar.
+- **Cielo con shader propio**: estrellas con magnitudes distintas, vía láctea,
+  dos lunas y un gigante gaseoso. El `ProceduralSkyMaterial` de Godot no tiene
+  noche — da un degradé y el mundo queda adentro de una caja azul.
+- **Día y noche atados al reloj del servidor.** Un tick es un día del valle y
+  el cron corre uno por hora, así que **una hora real es una vuelta entera del
+  sol**, y dos personas conectadas ven el mismo atardecer. La fase de la luna
+  es el día del valle.
+- **Cuerpos animados con senos**, sin un solo archivo de animación: brazos y
+  piernas en contrafase cruzada, rebote del torso al doble de frecuencia que
+  los pasos, cabeza estabilizada. Cada persona con su altura, corpulencia,
+  piel y pelo, deterministas a partir del nombre — así Ilde es la misma Ilde
+  en la pantalla de todos.
+- **Los monstruos son las amenazas de la base.** Le pegás, se resuelve en el
+  servidor al instante, y lo ve todo el mundo.
+
+```
+escenas/valle.tscn      la escena; todo lo demás lo arma valle.gd por código
+scripts/valle.gd        terreno, lugares, NPCs, amenazas, el pegamento
+scripts/cielo.gd        el shader del cielo
+scripts/ciclo.gd        el reloj del mundo, dibujado
+scripts/figura.gd       cuerpo articulado, cara, variación por nombre
+scripts/monstruo.gd     tres estados y un momento de duda antes de atacar
+scripts/detalles.gd     ventanas, humo, pasto y piedras en MultiMesh, luciérnagas
+scripts/ambiente.gd     WorldEnvironment: SDFGI, niebla volumétrica, AgX, DOF
+scripts/api.gd          habla con el servidor
+scripts/interfaz.gd     HUD, diálogo, inventario
+desplegar.sh            probar → exportar → cerrar el juego → instalar
+```
+
+## Compilar
 
 ```bash
-godot --path . -- --token=TU_TOKEN
+./desplegar.sh
 ```
 
-El token sale de tu link en la web (`/j/<token>`). Si no lo pasás, el juego te
-lo pide una vez y lo guarda.
+Corre el juego headless primero y **aborta si hay `SCRIPT ERROR`**: un
+`--import` limpio no prueba nada, los errores de orden de inicialización sólo
+aparecen ejecutando `_ready()`. Después exporta, cierra el juego si está
+abierto —Windows bloquea el `.exe` mientras corre— y sobrescribe siempre la
+misma carpeta.
 
-## Controles
-
-| | |
-|---|---|
-| WASD / flechas | caminar (relativo a la cámara) |
-| Espacio | saltar |
-| E | hablar con quien tengas al lado |
-| Botón derecho + arrastrar | girar la cámara |
-| Rueda | acercar / alejar |
-
-## Cómo está armado
-
-```
-scripts/ambiente.gd   la luz — es el 80% del look, y no cuesta un asset
-scripts/valle.gd      construye el mundo y lo puebla con lo que dice el servidor
-scripts/jugador.gd    movimiento y cámara isométrica restringida
-scripts/api.gd        cliente HTTP del mismo servidor que usa la web
-scripts/interfaz.gd   HUD y diálogo
-```
-
-Todo procedural: no hay un solo asset importado. El terreno se genera con
-ruido, los lugares se arman con primitivas, y lo que hace que se vea bien es
-la iluminación.
-
-## Las cuatro decisiones del look
-
-1. **Profundidad de campo en vista isométrica.** Desenfocar lo lejano hace que
-   el cerebro lea la escena como una maqueta. Es el efecto tilt-shift, y es lo
-   distintivo del juego.
-2. **Niebla volumétrica.** Convierte la luz direccional en rayos.
-3. **SDFGI.** Iluminación global en tiempo real: la pared iluminada tiñe el piso.
-4. **AgX** como tonemapper — filmic, no quema los naranjas de la fragua.
-
-## ⚠ Sobre las capturas
-
-Las capturas de este repo se sacaron en **WSL con llvmpipe, un renderer por
-software sin GPU**. En esa configuración SDFGI y los reflejos en pantalla
-producen basura, así que están **apagados** en el código.
-
-**Al correrlo con GPU real, prendé estas tres líneas en `scripts/ambiente.gd`:**
-
-```gdscript
-e.sdfgi_enabled = true
-e.ssr_enabled = true
-```
-
-Se ve bastante mejor con eso puesto.
-
-## Lo que todavía no hay
-
-Animación de personajes, monstruos, combate, multijugador y inventario. Están
-en el navegador (menos animación y monstruos) y hay que portarlos.
+Las trampas ya pisadas están en [`CLAUDE.md`](CLAUDE.md). Leelas antes de tocar
+la escena: hay varias que cuestan una tarde cada una.
