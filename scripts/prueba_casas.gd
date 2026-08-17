@@ -42,6 +42,9 @@ func _ready() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20260817
 
+	if OS.get_cmdline_user_args().has("--medir"):
+		_medir_enseres()
+		return
 	if OS.get_cmdline_user_args().has("--interior"):
 		_interiores(rng)
 		return
@@ -109,6 +112,54 @@ func _plaza() -> void:
 	_captura()
 
 
+# ===========================================================================
+# LA REGLA DE ORO DEL PROYECTO, HECHA UN COMANDO  (`-- --medir`)
+#
+# *Medí la malla, no la estimes.* Así se desarmó el bloqueo de la mudanza al
+# MegaKit —el revoque tiene 0,200 de espesor leído del `.gltf`— y así se
+# descubrió que las cuatro piedras del Nature Kit no tienen ni una superficie de
+# piedra. La alternativa es lo que ya pasó y costó una tarde: **el tronco de los
+# escombros de la Casa Quemada se rotaba 90° sobre Z "para acostarlo", y el
+# tronco ya venía acostado**, así que el giro lo paraba de punta. Nadie lo vio
+# porque nadie midió el bulto: 2,00 × 0,45 × 0,45 es una cosa acostada en X y se
+# lee de un vistazo si alguien la imprime.
+#
+# Esto imprime, de cada enser que este archivo pone en un cuarto: el bulto en
+# metros, sobre qué eje es largo, dónde tiene el origen y cuántos triángulos
+# cuesta. Sin abrir Blender y sin creerle al nombre del archivo.
+# ===========================================================================
+
+const ENSERES_MEDIDOS: Array[String] = [
+	"naturaleza/log_large", "naturaleza/log_stack", "naturaleza/stump_round",
+	"naturaleza/pot_large",
+	"utiles/bedroll", "utiles/chest", "utiles/workbench", "utiles/workbench-anvil",
+	"utiles/barrel", "utiles/barrel-open", "utiles/box", "utiles/box-large",
+	"utiles/bucket", "utiles/bottle", "utiles/tool-hammer", "utiles/tool-axe",
+	"utiles/resource-planks", "utiles/resource-wood", "utiles/resource-stone",
+	"utiles/campfire-pit", "utiles/campfire-stand",
+]
+
+
+func _medir_enseres() -> void:
+	print("%-30s %18s  %-6s %18s %7s" % [
+		"pieza", "bulto (x·y·z m)", "largo", "origen", "tri"])
+	for ruta in ENSERES_MEDIDOS:
+		var m := Kit.malla(ruta)
+		if m == null:
+			print("  %-28s NO ESTÁ" % ruta)
+			continue
+		var b := m.get_aabb()
+		# Sobre qué eje es larga la cosa. Es el dato que decide si hay que
+		# girarla para acostarla o si ya viene acostada.
+		var eje := "X" if b.size.x >= maxf(b.size.y, b.size.z) else (
+			"Y" if b.size.y >= b.size.z else "Z")
+		print("  %-28s %5.2f %5.2f %5.2f  %-6s %5.2f %5.2f %5.2f %7d" % [
+			ruta, b.size.x, b.size.y, b.size.z, eje,
+			b.get_center().x, b.get_center().y, b.get_center().z,
+			Kit.triangulos(m)])
+	get_tree().quit()
+
+
 ## El costo, en triángulos, dicho y no estimado. La regla de la casa: *el costo
 ## del arte nuevo hay que poder decirlo*.
 func _censo() -> void:
@@ -166,6 +217,7 @@ func _interiores(rng: RandomNumberGenerator) -> void:
 	var x := -14.0
 	var puertas: Array[Vector3] = []
 	var hojas: Array[MeshInstance3D] = []
+	var cuartos: Array[Node3D] = []
 	for i in 3:
 		var sitio := {
 			"pos": Vector3(x, 0, 0), "giro": 0.0,
@@ -178,6 +230,9 @@ func _interiores(rng: RandomNumberGenerator) -> void:
 		casas.habitar(clave, "Alguien", OFICIOS_MUESTRA[i])
 		var pd: Vector3 = casa["puerta"]
 		puertas.append(Vector3(x + pd.x, pd.y, pd.z))
+		var cuarto := (casa["nodo"] as Node3D).get_node_or_null(^"Cuarto") as Node3D
+		if cuarto != null:
+			cuartos.append(cuarto)
 		var hoja: MeshInstance3D = casa.get("hoja")
 		if hoja != null:
 			hojas.append(hoja)
@@ -189,6 +244,7 @@ func _interiores(rng: RandomNumberGenerator) -> void:
 	_medir_hojas(hojas)
 	await _medir_puertas(puertas)
 	_medir_apertura(casas, puertas)
+	_medir_empuje(casas, cuartos, puertas)
 
 	# El recorte, forzado en las tres: la cámara mira desde +Z, así que se
 	# apagan el techo, la planta alta y los muros del frente. En el valle se
@@ -276,16 +332,15 @@ func _medir_hojas(hojas: Array[MeshInstance3D]) -> void:
 		var h: MeshInstance3D = hojas[k]
 		var caja := h.get_aabb()
 		var s: Vector3 = h.global_transform.basis.get_scale()
-		# El conteo va acá y no con `Kit.triangulos()`: esa función lee
-		# `ARRAY_INDEX` y esta malla se hace con `SurfaceTool` sin indexar, así
-		# que le llega un `Nil`. La malla del kit sí viene indexada y por eso allá
-		# anda. (Queda anotado: `Kit.triangulos()` se rompe con mallas sueltas.)
-		var tri := 0
-		for i in h.mesh.get_surface_count():
-			tri += (h.mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]
-				as PackedVector3Array).size() / 3
+		# El conteo vuelve a `Kit.triangulos()`. Acá había una copia a mano con
+		# una nota al lado —*"queda anotado: `Kit.triangulos()` se rompe con
+		# mallas sueltas"*— y ésa es la forma más cara que hay de tener un bug:
+		# documentado, vivo, y con el que lo encontró trabajando alrededor. La
+		# causa era que una malla sin indexar devuelve `null` en `ARRAY_INDEX` y
+		# no un array vacío; está arreglada en `kit.gd`.
 		print("  hoja %d: %.2f × %.2f m de tabla, %d triángulos" % [
-			k, absf(caja.size.x * s.x), absf(caja.size.y * s.y), tri])
+			k, absf(caja.size.x * s.x), absf(caja.size.y * s.y),
+			Kit.triangulos(h.mesh)])
 
 
 ## ¿SE ABRE? Y no mirando una captura: **una captura es un instante y lo que hay
@@ -325,6 +380,84 @@ func _medir_apertura(casas: Interiores, puertas: Array[Vector3]) -> void:
 
 	print("apertura: al llegar %.2f rad (%.0f°), al irse %.2f rad — abre a %.2f"
 		% [abierta, rad_to_deg(absf(abierta)), cerrada, Interiores.PUERTA_GIRO])
+
+
+## ¿SE MUEVE ALGO CUANDO ENTRÁS? El reclamo era literal —*"en las casas no se
+## puede mover nada"*— y la respuesta no se puede verificar con una captura,
+## porque una captura es un instante y lo que hay que probar es que la banqueta
+## está en otro lado DESPUÉS de que le pasaste por encima.
+##
+## Camina un punto por el cuarto —el jugador sin cuerpo, igual que
+## `_medir_apertura()`— y compara la posición de cada mueble antes y después.
+## Lo que tiene que dar:
+##
+##   · **algo se movió** (si no, `LIVIANOS` no engancha con ninguna ruta de las
+##     tablas y el cuarto volvió a ser una vitrina sin que nadie se entere);
+##   · **nada se movió más que `EMPUJE_CORREA`** (si no, el cuarto termina
+##     apilado en un rincón);
+##   · **nada se fue afuera de los 2,43 m del cuarto** (si no, hay un balde
+##     adentro del revoque, y eso desde afuera se ve).
+##
+## Y lo pesado tiene que seguir donde estaba: si el yunque se corre, se rompió la
+## mitad del argumento, que es que un cuarto tiene peso porque algunas cosas no
+## se mueven.
+func _medir_empuje(casas: Interiores, cuartos: Array[Node3D],
+		puertas: Array[Vector3]) -> void:
+	if cuartos.is_empty() or puertas.is_empty():
+		print("empuje: no hay cuarto que probar")
+		return
+	var cuarto: Node3D = cuartos[0]
+	var antes := {}
+	for h in _muebles_de(cuarto):
+		antes[h.get_instance_id()] = h.global_position
+
+	# Una vuelta por el cuarto: entrar por la puerta, cruzar hasta el rincón del
+	# fondo del otro lado, y volver. Es el recorrido que hace cualquiera.
+	var p: Vector3 = puertas[0]
+	var camara := Vector3(p.x, 11.0, p.z + 27.0)
+	var y := Detalles.CASA_PISO
+	var cx := cuarto.global_position.x
+	var ruta: Array[Vector3] = [
+		Vector3(p.x, y, Detalles.CASA_LADO / 2.0),
+		Vector3(cx - 1.2, y, -1.2), Vector3(cx + 1.3, y, -1.4),
+		Vector3(cx + 1.2, y,  1.3), Vector3(cx - 1.3, y,  1.4),
+		Vector3(p.x, y, Detalles.CASA_LADO / 2.0),
+	]
+	var dt := 1.0 / 60.0
+	for k in ruta.size() - 1:
+		for s in 40:
+			casas.actualizar(ruta[k].lerp(ruta[k + 1], s / 39.0), camara, dt)
+
+	var movidos := 0
+	var mayor := 0.0
+	var afuera := 0
+	for h in _muebles_de(cuarto):
+		var origen: Vector3 = antes[h.get_instance_id()]
+		var d := origen.distance_to(h.global_position)
+		if d < 0.01:
+			continue
+		movidos += 1
+		mayor = maxf(mayor, d)
+		var loc := cuarto.to_local(h.global_position)
+		if absf(loc.x) > Detalles.CASA_ADENTRO or absf(loc.z) > Detalles.CASA_ADENTRO:
+			afuera += 1
+		print("  se corrió %.2f m: %s" % [d, h.name])
+	print("empuje: %d de %d muebles se corrieron, el que más %.2f m (correa %.2f), %d afuera del cuarto"
+		% [movidos, _muebles_de(cuarto).size(), mayor, Interiores.EMPUJE_CORREA, afuera])
+
+
+## Los muebles de un cuarto, incluidos los del puesto del oficio, que cuelgan de
+## un nodo aparte para poder rehacerse solos cuando cambia el que vive ahí.
+func _muebles_de(cuarto: Node3D) -> Array[MeshInstance3D]:
+	var out: Array[MeshInstance3D] = []
+	for h in cuarto.get_children():
+		if h is MeshInstance3D:
+			out.append(h)
+		elif h is Node3D:
+			for n in (h as Node3D).get_children():
+				if n is MeshInstance3D:
+					out.append(n)
+	return out
 
 
 ## Una vara de la altura del jugador, para que la escala se discuta mirando.

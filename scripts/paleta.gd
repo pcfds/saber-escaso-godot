@@ -282,6 +282,44 @@ const MURO_FRAGUA := Color(0.530, 0.436, 0.382)     ## h22  s0.28 v0.53 (V5) —
 const MURO_RUINA := Color(0.279, 0.289, 0.300)      ## h210 s0.07 v0.30 (V3) — piedra quemada, y es el único muro FRÍO
 const LOSA_CAMINO := Color(0.530, 0.509, 0.482)     ## h34  s0.09 v0.53 (V5) — un peldaño arriba del suelo: se ve la línea, no grita
 
+## EL HOLLÍN. No es un color: es un MULTIPLICADOR, y por eso vive acá igual.
+##
+## Estaba en `detalles.gd` —dos `Color()` sueltos con su porqué al lado— y era la
+## deuda de siempre en otro idioma: *no se inventa un color afuera de
+## `paleta.gd`, ni en GDScript ni "sólo esta vez"* (`DISENO.md` §6). Se movió el
+## día que hizo falta en un segundo archivo, que es exactamente cuándo un valor
+## suelto se convierte en dos valores que se van a separar.
+##
+## Los dos números son un peldaño y medio de la escalera, no una opacidad
+## elegida a ojo: `BAJO` es el pie del muro, apenas ahumado; `ALTO` es lo que
+## quedó abajo del techo, casi carbón. **Y `ALTO` no baja más por un motivo que
+## es del entorno, no del gusto**: `ambiente.gd` saca el 45% de la luz ambiente
+## del cielo, y el cielo es azul. Sobre un muro V6 no se nota; sobre un muro V2
+## el ambiente ES el color. La regla ya estaba escrita por el otro lado —*no hay
+## superficies grandes en V0/V1*— y esto es el mismo límite visto desde arriba:
+## **una superficie grande por debajo de V2/V3 deja de tener color propio y
+## adopta el del cielo.** Por eso el hollín se queda en V3 y sube de temperatura
+## para pelearle al azul.
+const HOLLIN_BAJO := Color(0.70, 0.64, 0.58)
+const HOLLIN_ALTO := Color(0.46, 0.40, 0.35)
+
+## Y LA MADERA QUEMADA, que sí es un color y no un multiplicador. Los dos de
+## arriba multiplican una superficie GRANDE con textura —un muro— y el resultado
+## se lo pone el revoque que hay debajo. Un enser de sesenta centímetros no tiene
+## debajo nada que valga: a la distancia a la que se juega su materia no existe
+## y lo único que se lee es de qué valor es la mancha (`DISENO.md` §6, regla 4).
+## Así que la madera quemada entra a la escalera por la puerta de adelante.
+##
+## **V3, y no V1 ni V2, y el motivo es de dónde se apoya**: el piso de la ruina
+## es `piedra(TECHO)`, o sea V2. Un escombro en V1 sobre un piso V2 no es un
+## escombro, es una mancha que no está. Con V3 hay un peldaño de separación, que
+## es lo mínimo para que se lea que en el piso hay algo tirado.
+##
+## Cálido, como el hollín y por lo mismo: el ambiente de este juego es azul y lo
+## oscuro se lo come. Y S 0,27, bien abajo del techo de 0,35 — el carbón no es
+## un color, es lo que queda cuando se fue el color.
+const CARBON := Color(0.300, 0.250, 0.220)          ## h26 s0.27 v0.30 (V3)
+
 const TECHO := Color(0.210, 0.166, 0.147)           ## h18 s0.30 v0.21 (V2)
 ## El segundo techo. Mismo peldaño que `TECHO` —V2, la tapa oscura— y frío en
 ## vez de cálido, que es toda la diferencia que puede haber entre dos techos sin

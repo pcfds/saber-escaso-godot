@@ -142,9 +142,28 @@ const PUERTA_NOCHE_VEL := 0.55
 ## el fuego y vos cuando entrás.
 const HOGAR := Vector3(-1.45, 0.0, -1.45)
 
+# ---------------------------------------------------------------------------
+# QUÉ LE PASÓ A CADA PIEZA
+#
+# La quinta columna de las tablas de abajo. `DISENO.md` §6, regla 2: *lo que
+# tiene historia la muestra — la Casa Quemada se quema de verdad. Un mundo nuevo
+# se lee como maqueta.*
+#
+# **Y romper NO es geometría nueva**, que es la regla 4 de la misma ficha
+# (*menos geometría, no más*): un arcón volcado, hundido y tiznado es la misma
+# malla, cuesta cero triángulos y se lee a veinte metros. Lo hace `Kit.tumbar()`,
+# que elige el eje del vuelco MIDIENDO el bulto y después apoya la pieza — ver
+# el bloque de `kit.gd`, que es donde vivía el bug de los escombros parados.
+# ---------------------------------------------------------------------------
+
+const ENTERO := 0
+const VOLCADO := 1   ## tirada de costado, media vuelta al azar y hundida
+const TIZNADO := 2   ## le pasó el fuego por encima
+
+
 ## Los sitios fijos del cuarto. Lo que tiene toda casa, viva quien viva.
 const MUEBLES: Array = [
-	# ruta                         pos                        giro   escala
+	# ruta                         pos                        giro   escala  qué le pasó
 	["naturaleza/log_stack",       Vector3(-2.00, 0, -0.30),  0.00,  1.70],
 	["naturaleza/stump_round",     Vector3(-0.30, 0, -1.10),  0.60,  2.10],
 	["utiles/bedroll",             Vector3(-1.80, 0,  1.30),  0.00,  3.10],
@@ -155,11 +174,39 @@ const MUEBLES: Array = [
 ## Y lo que queda de una casa que se quemó. La Casa Quemada ya es una mazmorra y
 ## no lo sabía: acá vivía Ren y con ella se fueron dos runas. Adentro no hay
 ## fuego, no hay cama y no hay luz — hay lo que nadie se llevó.
+##
+## **Y hasta hoy lo que nadie se llevó estaba impecable**: un arcón nuevo y un
+## barril cerrado parados en un cuarto sin techo, cuyo muro está tiznado a
+## carbón. Ése es el detalle que delata que la ruina es decorado, y es el mismo
+## que ya se había corregido en el basamento (`Detalles._zocalo()`, *"sin esto la
+## Casa Quemada queda parada sobre un basamento nuevo y reluciente"*) y que
+## faltaba adentro.
+##
+## El barril es `barril-open` y no `barrel`: el kit trae los dos y el abierto es
+## el mismo barril con las duelas de arriba abiertas — 380 triángulos contra 412,
+## o sea que romperlo sale **32 triángulos más barato** que dejarlo entero.
+## Medido con `prueba_casas.tscn -- --medir`.
+##
+## Las tablas son el piso de arriba, que es lo que el fuego se llevó y tenía que
+## caer en algún lado: la ruina es la única casa del valle sin planta alta y
+## hasta ahora eso no dejaba rastro adentro.
+##
+## Y el hogar queda **de pie pero tiznado**, que es la mitad de una corrección
+## que salió de mirar la captura de cerca: la piedra no se quema y es lo único
+## que se puede reconocer de un cuarto que se quemó, así que en pie se queda —
+## pero **el pozo de fuego de Kenney trae los leños pintados de naranja en el
+## atlas**, y sin tiznar la ruina tenía un anillo naranja encendido en el
+## rincón. Medido sobre la captura del banco: S 1,00 a V 0,45, el píxel más
+## saturado de las tres casas, en la única que no tiene fuego. O sea que la Casa
+## Quemada tenía las brasas prendidas — y `interiores.gd` dice tres renglones
+## más arriba, desde el día que se escribió, que *adentro no hay fuego*.
 const MUEBLES_RUINA: Array = [
-	["utiles/campfire-pit",        Vector3(-1.45, 0, -1.45),  0.00,  2.70],
-	["utiles/chest",               Vector3( 1.70, 0, -1.60),  0.80,  2.50],
-	["utiles/barrel",              Vector3(-1.95, 0,  0.90),  1.20,  2.40],
-	["naturaleza/rock_smallB",     Vector3( 0.40, 0,  1.30),  2.10,  2.20],
+	["utiles/campfire-pit",        Vector3(-1.45, 0, -1.45),  0.00,  2.70, TIZNADO],
+	["utiles/chest",               Vector3( 1.70, 0, -1.60),  0.80,  2.50, VOLCADO | TIZNADO],
+	["utiles/barrel-open",         Vector3(-1.95, 0,  0.90),  1.20,  2.40, VOLCADO | TIZNADO],
+	["naturaleza/rock_smallB",     Vector3( 0.40, 0,  1.30),  2.10,  2.20, ENTERO],
+	["utiles/resource-planks",     Vector3( 0.55, 0, -0.35), -0.30,  2.20, VOLCADO | TIZNADO],
+	["utiles/resource-planks",     Vector3(-0.75, 0,  1.85),  1.05,  1.90, VOLCADO | TIZNADO],
 ]
 
 ## Qué se ve en el cuarto de cada oficio, en el mismo formato que `MUEBLES`.
@@ -220,6 +267,53 @@ const OFICIO_CUALQUIERA: Array = [
 	["utiles/barrel",                Vector3( 2.00, 0.00, -0.45),  0.70, 2.40],
 	["utiles/bucket",                Vector3( 0.45, 0.00, -2.00),  0.00, 2.20]]
 
+# ---------------------------------------------------------------------------
+# LO QUE SE CORRE CUANDO LO EMPUJÁS
+#
+# El reclamo de la dirección del proyecto, textual, después de jugar:
+# *"en las casas no se puede mover nada"*. Y era literal — un cuarto amueblado
+# donde nada se entera de que entraste no es un cuarto, es una vitrina.
+#
+# **Esto vive en el cliente y es correcto que viva acá.** El invariante 4 dice
+# que lo que pasa en el cliente llega al servidor o no pasó, y el corte está
+# dicho: que un mueble se pueda empujar es PRESENTACIÓN; que te lo lleves, que
+# quede roto para siempre o que construyas es ESTADO DEL MUNDO y va a la base.
+# Dónde quedó la banqueta después de que la pateaste no lo tiene que ver nadie
+# más y se puede olvidar al recargar: es exactamente igual que la hoja de la
+# puerta, que también se mueve y tampoco viaja.
+#
+# No hay física: no hay `RigidBody3D`, no hay impulso y no se toca `jugador.gd`
+# —que además es de otra rama—. La pieza se corre lo justo para quedar afuera
+# de tu cápsula y se queda donde quedó. A la distancia a la que se juega eso se
+# lee como haberla empujado, y no puede trabar a nadie contra una pared, que es
+# lo que sí pasa con un barril con cuerpo rígido en un cuarto de 4,86 m.
+#
+# Qué se corre: lo que un cristiano corre de una patada, y sólo si está EN EL
+# PISO. La cama, el arcón, el yunque y el banco no — un yunque que se desliza
+# deja de pesar, y lo que hace que un cuarto tenga peso es justamente que
+# algunas cosas no se muevan.
+
+## Los enseres livianos. El radio de empuje NO está acá: sale del bulto de cada
+## malla por su escala, medido al construirla. Un balde y un barril no se
+## corren desde la misma distancia.
+const LIVIANOS := {
+	"naturaleza/stump_round": true, "naturaleza/pot_large": true,
+	"utiles/bucket": true, "utiles/barrel": true, "utiles/barrel-open": true,
+	"utiles/box": true, "utiles/box-large": true,
+	"utiles/resource-stone": true, "utiles/resource-wood": true,
+	"utiles/resource-planks": true,
+}
+
+## Cuánto se puede alejar una pieza de donde la pusieron. Un cuarto de 4,86 m
+## donde todo termina apilado en un rincón es peor que uno donde nada se mueve:
+## con metro y medio de correa la banqueta se corre, se nota, y el cuarto sigue
+## siendo el cuarto.
+const EMPUJE_CORREA := 1.5
+## Y cuánto margen se le deja al muro, para que nada termine metido adentro del
+## revoque. `CASA_ADENTRO` es 2,43 y el radio del bulto se suma aparte.
+const EMPUJE_MURO := 0.12
+
+
 ## Dónde se para el que está en su casa. Tres, por si comparten techo.
 const ADENTRO_SITIOS: Array[Vector3] = [
 	Vector3(-0.45, 0, -0.55),   # junto al fuego
@@ -259,8 +353,10 @@ func amueblar(clave: String, casa: Dictionary, quemada: bool,
 	cuarto.position.y = Detalles.CASA_PISO
 	g.add_child(cuarto)
 
+	var livianos: Array = []
 	for m: Array in (MUEBLES_RUINA if quemada else MUEBLES):
-		var mueble := _poner(cuarto, m[0], m[1], m[2], m[3], espejo)
+		var mueble := _poner(cuarto, m[0], m[1], m[2], m[3], espejo, rng,
+			int(m[4]) if m.size() > 4 else ENTERO, livianos)
 		# LA BANQUETA. Ya estaba puesta y no era nada: un tocón junto al fuego
 		# que el juego no sabía que era un asiento. Marcarlo no agrega
 		# geometría, agrega que se lo pueda encontrar — ver `asiento_cerca()`.
@@ -292,6 +388,10 @@ func amueblar(clave: String, casa: Dictionary, quemada: bool,
 		"quemada": quemada, "quien": "", "gente": 0, "recortada": false,
 		"hoja": hoja, "hoja_base": (hoja.transform if hoja != null else Transform3D()),
 		"hoja_angulo": 0.0, "hoja_espera": 0.0,
+		# Lo que se corre de una patada. Se guarda por casa y no en un grupo
+		# global: sólo se empuja lo de la casa que estás pisando, y sin eso
+		# pasar por la calle correría los muebles del vecino a través del muro.
+		"livianos": livianos,
 		# El punto del hueco de la puerta, en el mundo. Es contra esto que se
 		# mide si estás yendo a esa puerta, y no contra el centro de la casa:
 		# desde el centro, las dos casas vecinas quedan a la misma distancia.
@@ -388,6 +488,7 @@ func actualizar(jugador: Vector3, camara: Vector3, dt := -1.0) -> void:
 		_muros_fuera.clear()
 	if _casas.has(_adentro):
 		_recortar(_casas[_adentro], true, camara)
+		_empujar(_casas[_adentro], jugador)
 
 	_encender(jugador)
 	# El delta sale del nodo y no del llamador: `valle.gd` llama a `actualizar()`
@@ -435,6 +536,80 @@ func puesto_cerca(p: Vector3, radio := 2.2) -> Dictionary:
 	if p.distance_to(nodo.global_position) > radio:
 		return {}
 	return {"nodo": nodo, "de": str(c.get("oficio_de", ""))}
+
+
+# ---------------------------------------------------------------------------
+# DÓNDE VAN LAS COSAS DE UNO
+#
+# Éstas son las dos funciones que le faltan al cliente para que se pueda AGARRAR
+# algo de adentro de una casa, y no hacen falta más: el verbo ya existe
+# (`api.levantar()`), el dibujo de lo que hay en el suelo ya existe
+# (`valle.gd::_sincronizar_suelo()`) y la E ya lo levanta.
+#
+# **Lo único que falta es del servidor, y es chico**: hoy `objects` no sabe de
+# quién es una cosa —sabe quién la HIZO (`made_by`) y quién la dejó tirada
+# (`left_by`), que no es lo mismo—, así que el martillo de Ilde no existe como
+# fila y no hay nada que levantar. Está pedido en el informe con la columna y el
+# verbo exactos.
+#
+# Y el día que exista, el punto donde se dibuja NO puede ser el que
+# `_sincronizar_suelo()` calcula hoy: ése reparte las cosas entre 3 y 11 m del
+# centro del lugar, y las casas están a doce. O sea que el martillo de Ilde
+# aparecería tirado en el medio de la plaza. Estas dos funciones dan el punto de
+# adentro, y **sin que ninguna coordenada viaje**, que es la regla que sostiene
+# todo el sistema: la casa que le toca a cada uno ya sale del orden alfabético
+# de su lugar (`valle.gd::_repartir_casas()`) y es la misma en todas las
+# pantallas, y el rincón de adentro sale del `id` del objeto, igual que afuera.
+#
+# Del lado de `valle.gd` es un `if` de tres líneas adentro del bucle que ya
+# existe; está escrito en el informe.
+# ---------------------------------------------------------------------------
+
+## Los tres rincones donde puede estar algo de uno, en el marco de la casa. El
+## banco de trabajo, el pie del arcón y el suelo junto al hogar: los tres sitios
+## donde una persona deja lo suyo, y ninguno en el paso de la puerta.
+const GUARDADO: Array[Vector3] = [
+	Vector3( 1.60, 0.62,  0.20),   # arriba del banco
+	Vector3(-1.55, 0.00,  1.95),   # al pie del arcón
+	Vector3(-0.85, 0.00, -1.60),   # en el piso, junto al fuego
+]
+
+
+## Dónde va una cosa que está adentro de esta casa. `Vector3.ZERO` si esa casa
+## no existe.
+##
+## `semilla` es lo que reparte varias cosas en rincones distintos, y tiene que
+## salir del `id` del objeto —no de un contador— para que dos jugadores vean el
+## martillo en el mismo rincón. Es la misma regla y el mismo truco que usa
+## `_sincronizar_suelo()` afuera.
+func punto_en_casa(clave: String, semilla: int = 0) -> Vector3:
+	var c: Dictionary = _casas.get(clave, {})
+	if c.is_empty():
+		return Vector3.ZERO
+	var g: Node3D = c["nodo"]
+	var p: Vector3 = GUARDADO[absi(semilla) % GUARDADO.size()]
+	p.x *= float(c["espejo"])
+	# Un dedo de dispersión, del mismo hash: dos cosas en el mismo rincón no se
+	# pisan, y siguen siendo el mismo punto en todas las pantallas.
+	var h := absi(semilla / GUARDADO.size())
+	p.x += float(h % 21) / 100.0 - 0.10
+	p.z += float((h / 21) % 21) / 100.0 - 0.10
+	return g.to_global(p + Vector3(0, Detalles.CASA_PISO, 0))
+
+
+## Dónde van las cosas de esta persona. `Vector3.ZERO` si no vive en ninguna
+## casa dibujada —el que duerme en el monte no tiene dónde guardar nada—.
+##
+## Va por NOMBRE porque es lo único que el servidor manda de una persona en el
+## suelo y en los objetos: `made_by` es un nombre, no un id, y a propósito —el
+## que lo hizo se muere y la cosa tiene que seguir diciendo quién fue—.
+func punto_de(nombre: String, semilla: int = 0) -> Vector3:
+	if nombre == "":
+		return Vector3.ZERO
+	for clave: String in _casas:
+		if str(_casas[clave].get("quien", "")) == nombre:
+			return punto_en_casa(clave, semilla)
+	return Vector3.ZERO
 
 
 ## ¿Hay dónde sentarse acá al lado? Devuelve `{"pos", "mirando", "nodo"}` o `{}`.
@@ -557,8 +732,26 @@ func abrir_todas(camara: Vector3, recorte := true) -> void:
 # Lo de adentro
 # ---------------------------------------------------------------------------
 
+## Pone una pieza en el cuarto.
+##
+## `roto` es la quinta columna de las tablas —`VOLCADO`, `TIZNADO`— y `livianos`
+## es la lista donde se anota lo que después se va a poder empujar; los dos
+## llegan siempre desde el llamador y no por defecto, que en GDScript un `Array`
+## por defecto lo comparten todas las llamadas.
+##
+## `rng` no es opcional y es la mitad de por qué esta función existe: **doce
+## cuartos idénticos son una maqueta**. La ficha de identidad (`DISENO.md` §6,
+## regla 2) pide variación POR INSTANCIA en todo lo que se repite, y acá se
+## repite doce veces cada mueble. La variación es de POSE y de VALOR, nunca de
+## matiz ni de silueta: un dedo de corrimiento, un poco de vuelta, y el valor
+## multiplicado entre 0,92 y 1,08 — que a veinte metros es la diferencia entre
+## cinco muebles y cinco copias del mismo mueble.
+##
+## La semilla sale del `rng` del LUGAR (`valle.gd` lo siembra con `hash(slug)`),
+## así que Vado Bajo tiene los mismos cuartos en la pantalla de todos.
 func _poner(cuarto: Node3D, ruta: String, pos: Vector3, giro: float,
-		escala: float, espejo: float) -> MeshInstance3D:
+		escala: float, espejo: float, rng: RandomNumberGenerator,
+		roto := ENTERO, livianos: Array = []) -> MeshInstance3D:
 	var mi := Kit.nodo(ruta)
 	if mi == null:
 		return null
@@ -567,7 +760,56 @@ func _poner(cuarto: Node3D, ruta: String, pos: Vector3, giro: float,
 	# la pared izquierda termina mirando a la pared.
 	mi.rotation.y = giro * espejo
 	mi.scale = Vector3.ONE * escala
+	if rng != null:
+		mi.position.x += rng.randf_range(-0.07, 0.07)
+		mi.position.z += rng.randf_range(-0.07, 0.07)
+		mi.rotation.y += rng.randf_range(-0.14, 0.14)
+		mi.scale *= rng.randf_range(0.95, 1.05)
+
+	if (roto & VOLCADO) != 0 and rng != null:
+		Kit.tumbar(mi, rng, pos.y, 0.035)
+	if (roto & TIZNADO) != 0:
+		# El mismo hollín que el muro, y con el mismo desparejo: un incendio no
+		# quema parejo y cuatro cosas del mismo negro vuelven a ser un estampado.
+		# Ver `Paleta.HOLLIN_ALTO`.
+		#
+		# Y va SIN TEXTURA (`plano`) y con `CARBON`, que es un COLOR y no el
+		# multiplicador del muro. Las dos mitades salieron de mirar la captura de
+		# cerca y cada una arregló lo que rompía la otra:
+		#
+		#   · Con textura, el barril tiznado seguía teniendo la boca naranja a
+		#     **S 1,00** —brasas en la única casa sin fuego— porque un
+		#     multiplicador baja el valor y no desatura. Ver `Kit.tinte()`.
+		#   · Sin textura pero con `HOLLIN_ALTO`, la pieza salía en V 0,46: ese
+		#     número es un multiplicador sobre un revoque V6, no un albedo, y
+		#     usado como albedo **aclara**. El barril quedó más claro quemado
+		#     que entero.
+		#
+		# Medido después de las dos: la ruina pasa de S 1,00 a S 0,82, y lo que
+		# queda arriba de todo es el jade de la vara del banco, que es una de las
+		# tres excepciones con nombre de la regla 3.
+		var v := rng.randf_range(0.86, 1.14) if rng != null else 1.0
+		var h := Paleta.CARBON
+		Kit.tinte(mi, Color(h.r * v, h.g * v, h.b * v), true)
+	elif rng != null:
+		var v := rng.randf_range(0.92, 1.08)
+		Kit.tinte(mi, Color(v, v, v))
+
 	cuarto.add_child(mi)
+
+	# ¿Se puede empujar? Sólo lo liviano, y sólo lo que está en el piso: un
+	# frasco arriba del banco no se corre de una patada. El radio sale del BULTO
+	# de la malla por su escala y no de un número escrito — es la misma cuenta
+	# que hace `Detalles._tope()` con la colisión de los troncos, y por el mismo
+	# motivo: con un radio fijo, el balde se corre desde tan lejos como el barril.
+	if LIVIANOS.has(ruta) and pos.y <= 0.001 and mi.mesh != null:
+		var b := mi.mesh.get_aabb().size * mi.scale
+		var bulto := maxf(b.x, b.z) * 0.5
+		# 0,45 es el radio de la cápsula del jugador (`jugador.gd`).
+		mi.set_meta("empuje", 0.45 + bulto + 0.06)
+		mi.set_meta("empuje_bulto", bulto)
+		mi.set_meta("empuje_casa", mi.position)
+		livianos.append(mi)
 	return mi
 
 
@@ -578,8 +820,12 @@ func _poner(cuarto: Node3D, ruta: String, pos: Vector3, giro: float,
 ## el fuego de la fragua y los faroles: dos senos que no encajan entre sí. Un
 ## fuego que no titila es una lámpara.
 func _hogar(cuarto: Node3D, espejo: float, rng: RandomNumberGenerator) -> OmniLight3D:
-	_poner(cuarto, "utiles/campfire-pit", HOGAR, rng.randf() * TAU, 2.70, espejo)
-	_poner(cuarto, "utiles/campfire-stand", HOGAR, 1.20, 2.40, espejo)
+	# Sin `rng`: el pozo y el trípode van CLAVADOS donde dice `HOGAR`, porque la
+	# brasa, la luz y el punto al que mira el que vive acá se calculan de esa
+	# constante. Un fuego corrido siete centímetros deja la luz adentro de la
+	# piedra. Es la única pieza del cuarto que no lleva variación.
+	_poner(cuarto, "utiles/campfire-pit", HOGAR, rng.randf() * TAU, 2.70, espejo, null)
+	_poner(cuarto, "utiles/campfire-stand", HOGAR, 1.20, 2.40, espejo, null)
 
 	var brasa := SphereMesh.new()
 	brasa.radius = 0.19
@@ -609,10 +855,21 @@ func _hogar(cuarto: Node3D, espejo: float, rng: RandomNumberGenerator) -> OmniLi
 
 
 ## Las herramientas del oficio del que vive acá.
+##
+## El `rng` es propio y sembrado con el nombre del que vive acá, no el del lugar:
+## esto corre cuando llega `/mundo` y se rehace si el vecino cambia, así que
+## tomar del `rng` del lugar movería los muebles de las otras once casas. Con el
+## nombre de semilla, **el cuarto de Ilde es el mismo cuarto en todas las
+## pantallas y sigue siéndolo después de un `/mundo`.**
 func _puesto(c: Dictionary, oficio: String) -> void:
 	var nodo: Node3D = c["oficio"]
 	for h in nodo.get_children():
 		h.queue_free()
+	var livianos: Array = c["livianos"]
+	# Lo del oficio anterior ya no está: se saca de la lista de empujables o
+	# quedan nodos liberados adentro.
+	livianos.assign(livianos.filter(func(n: Node) -> bool:
+		return is_instance_valid(n) and not n.is_queued_for_deletion()))
 
 	var o := oficio.to_lower()
 	var lista: Array = OFICIO_CUALQUIERA
@@ -621,9 +878,12 @@ func _puesto(c: Dictionary, oficio: String) -> void:
 			lista = OFICIOS[clave]
 			break
 
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(str(c.get("quien", "")) + oficio)
 	var espejo := float(c["espejo"])
 	for d: Array in lista:
-		_poner(nodo, str(d[0]), d[1], float(d[2]), float(d[3]), espejo)
+		_poner(nodo, str(d[0]), d[1], float(d[2]), float(d[3]), espejo, rng,
+			ENTERO, livianos)
 
 
 # ---------------------------------------------------------------------------
@@ -666,6 +926,65 @@ func _recortar(c: Dictionary, si: bool, camara: Vector3) -> void:
 		_muros_fuera[gi.get_instance_id()] = tapa
 		gi.cast_shadow = (GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY if tapa
 			else GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
+
+
+## Corre lo liviano que tengas encima. Ver el bloque `LO QUE SE CORRE CUANDO LO
+## EMPUJÁS`.
+##
+## Cuesta tres distancias por cuadro —sólo las piezas de la casa que estás
+## pisando— y cero cuando estás afuera, que es casi siempre. No escribe nada si
+## no tocaste nada.
+##
+## La cuenta es la mínima que se porta bien: la pieza se corre lo justo para
+## quedar afuera de tu cápsula, en la dirección que la aleja de vos. No hay
+## inercia, no hay masa y no hay `RigidBody3D`, y eso NO es una simplificación
+## barata: un cuerpo rígido en un cuarto de 4,86 m con una `CharacterBody3D` de
+## 0,45 de radio termina, tarde o temprano, con un barril trabando al jugador
+## contra la pared de su propia casa.
+func _empujar(c: Dictionary, jugador: Vector3) -> void:
+	var livianos: Array = c["livianos"]
+	if livianos.is_empty():
+		return
+	var g: Node3D = c["nodo"]
+	var yo := Vector2(jugador.x, jugador.z)
+	for n in livianos:
+		var mi := n as MeshInstance3D
+		if mi == null or not is_instance_valid(mi):
+			continue
+		var r := float(mi.get_meta("empuje", 0.0))
+		var p := mi.global_position
+		var d := Vector2(p.x, p.z) - yo
+		var l := d.length()
+		# Fuera de alcance, o justo encima (que sólo pasa el primer cuadro
+		# después de un teletransporte y no tiene dirección hacia dónde salir).
+		if l >= r or l < 0.001:
+			continue
+
+		# Adónde iría, en el marco de la casa: es ahí donde el muro es un
+		# rectángulo y no cuatro planos girados.
+		var mundo := p + Vector3(d.x, 0.0, d.y).normalized() * (r - l)
+		var loc := g.to_local(mundo)
+		var casa: Vector3 = mi.get_meta("empuje_casa", loc)
+		# Ni afuera del cuarto ni más lejos de su sitio que la correa. Las dos
+		# cotas son duras: sin la primera la banqueta termina adentro del
+		# revoque, sin la segunda todo el cuarto se apila en un rincón.
+		var borde := Detalles.CASA_ADENTRO \
+			- float(mi.get_meta("empuje_bulto", 0.2)) - EMPUJE_MURO
+		loc.x = clampf(loc.x, -borde, borde)
+		loc.z = clampf(loc.z, -borde, borde)
+		var corrida := Vector2(loc.x - casa.x, loc.z - casa.z)
+		if corrida.length() > EMPUJE_CORREA:
+			corrida = corrida.normalized() * EMPUJE_CORREA
+			loc.x = casa.x + corrida.x
+			loc.z = casa.z + corrida.y
+		loc.y = mi.position.y
+
+		# Y da un cuarto de vuelta por metro corrido. Una cosa que se desliza
+		# sin girar se lee como arrastrada por un imán; girando se lee como
+		# pateada, que es lo que acaba de pasar.
+		var paso := Vector2(loc.x - mi.position.x, loc.z - mi.position.z).length()
+		mi.position = loc
+		mi.rotation.y += paso * 1.6
 
 
 ## Enciende los hogares que se pueden ver y apaga el resto. Ver `LUZ_CERCA`.

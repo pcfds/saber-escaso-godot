@@ -236,6 +236,24 @@ agosto y están en `DISENO.md` §6.
   línea: `var t := clampf((p.y - 0.4) / 4.6, 0.0, 1.0)`, que deja el fondo del
   cuenco en pasto y sólo seca las lomas.
 
+- **En la casa se puede EMPUJAR, no todavía agarrar.** Al 18 de agosto lo
+  liviano que está en el piso —la banqueta, el balde, el barril, la olla, las
+  cajas— se corre cuando le pasás por encima, con correa de 1,5 m y sin salirse
+  del cuarto; lo pesado no se mueve, que es lo que hace que un cuarto tenga
+  peso. Está en `interiores.gd` y **es presentación a propósito**: dónde quedó
+  la banqueta no lo tiene que ver nadie más, igual que la hoja de la puerta.
+  Verificado con `prueba_casas.tscn -- --interior`, que ahora también mide el
+  empuje.
+
+  **Lo que falta para AGARRAR es del servidor y es una columna.** El verbo
+  `levantar` existe, `/mundo` manda `suelo` y la E ya lo levanta; lo que no
+  existe es de quién es una cosa: `objects` sabe quién la HIZO (`made_by`) y
+  quién la dejó tirada (`left_by`), y eso no es lo mismo que el martillo de
+  Ilde. Del lado del cliente ya está puesto el punto donde va a ir dibujado
+  (`Interiores.punto_de()` / `punto_en_casa()`), porque el reparto de hoy tira
+  las cosas entre 3 y 11 m del centro del lugar y las casas están a doce: sin
+  eso, el martillo de Ilde aparece en el medio de la plaza.
+
 **Ya está hecho, no lo rehagas:** **las cosas se pueden dejar y levantar del
 suelo** — `/mundo` manda `suelo` (lo que hay tirado en cada lugar, con quién lo
 hizo, quién lo dejó y hace cuántos días) y `valle.gd` lo dibuja; **ninguna

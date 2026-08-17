@@ -252,20 +252,105 @@ static func _domar_arbol(n: Node, techo: float, ruta: String = "") -> void:
 		_domar_arbol(h, techo, ruta)
 
 
-## Cuántos triángulos tiene una malla del kit. Para el censo: el costo del arte
-## nuevo hay que poder decirlo, no estimarlo.
+## Cuántos triángulos tiene una malla. Para el censo: el costo del arte nuevo
+## hay que poder decirlo, no estimarlo.
+##
+## **Una malla SIN INDEXAR devuelve `null` en `ARRAY_INDEX`, no un array vacío**,
+## y eso tiraba `SCRIPT ERROR` en el momento de asignarlo a un
+## `PackedInt32Array`: el `if idx.size() > 0` de más abajo nunca llegaba a
+## correr. Las del kit vienen indexadas y por eso no se notó nunca; las que arma
+## `SurfaceTool` sin `index()` —la hoja de la puerta, sin ir más lejos— no.
+## `prueba_casas.gd` tenía el conteo copiado a mano al lado de un comentario que
+## decía *"queda anotado: `Kit.triangulos()` se rompe con mallas sueltas"*, que
+## es la forma más cara de tener un bug: documentado y vivo.
+##
+## Y no toda superficie son triángulos. Una malla de líneas o de puntos —el
+## trazo de una runa, un depurador— no tiene ninguno, y contarle vértices sobre
+## tres da un número inventado. Se saltea.
 static func triangulos(m: Mesh) -> int:
 	if m == null:
 		return 0
 	var t := 0
 	for s in m.get_surface_count():
+		if m.surface_get_primitive_type(s) != Mesh.PRIMITIVE_TRIANGLES:
+			continue
 		var arr := m.surface_get_arrays(s)
-		var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
-		if idx.size() > 0:
-			t += idx.size() / 3
+		if arr.size() <= Mesh.ARRAY_VERTEX:
+			continue
+		var idx: Variant = arr[Mesh.ARRAY_INDEX]
+		if idx != null and (idx as PackedInt32Array).size() > 0:
+			t += (idx as PackedInt32Array).size() / 3
 		else:
-			t += (arr[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() / 3
+			var v: Variant = arr[Mesh.ARRAY_VERTEX]
+			if v != null:
+				t += (v as PackedVector3Array).size() / 3
 	return t
+
+
+# ---------------------------------------------------------------------------
+# LO QUE SE CAYÓ, LO QUE SE ROMPIÓ
+#
+# `DISENO.md` §6, regla 2: *nada es liso, todo está usado; y lo que tiene
+# historia la muestra.* Un valle con un incendio de hace sesenta inviernos y
+# ni un mueble volcado adentro de la casa quemada no muestra nada.
+#
+# Romper algo NO es geometría nueva —regla 4: *menos geometría, no más*—. Es
+# **pose**: la misma malla volcada, hundida y tiznada cuesta cero triángulos y
+# se lee a veinte metros, que es lo único que se lee a veinte metros.
+#
+# Y las dos funciones de acá existen porque el bug que arreglaron era
+# EXACTAMENTE el de creerle a la intuición en vez de medir: los escombros de la
+# Casa Quemada se giraban 90° sobre Z *"para acostarlos"* y el tronco de Kenney
+# ya venía acostado —1,00 × 0,42 × 0,55, largo en X, medido con
+# `prueba_casas.tscn -- --medir`—, así que el giro lo PARABA DE PUNTA y encima
+# medio enterrado. Cuatro postes negros clavados en el piso de la ruina.
+# ---------------------------------------------------------------------------
+
+## Deja la pieza APOYADA: la corre en Y hasta que lo más bajo de su bulto quede
+## en `suelo`.
+##
+## **Después de girar algo, dónde cae su base es una cuenta, no una intuición.**
+## El origen de las mallas del kit está en el piso de la pieza, así que sin girar
+## no hace falta; en cuanto la volcás, la mitad se va abajo del piso. Esto lo
+## resuelve con el bulto ya girado y escalado, que es el único número que no se
+## puede discutir.
+static func apoyar(mi: MeshInstance3D, suelo := 0.0) -> void:
+	if mi == null or mi.mesh == null:
+		return
+	# El bulto llevado al marco del padre SIN la traslación: lo que se busca es
+	# cuánto sobresale para abajo del origen del nodo, no dónde está el nodo.
+	var caja := Transform3D(mi.basis, Vector3.ZERO) * mi.mesh.get_aabb()
+	mi.position.y = suelo - caja.position.y
+
+
+## Vuelca una pieza: la tira de costado, le da una vuelta al azar y la deja
+## apoyada. Es la forma más barata que hay de que un lugar tenga historia.
+##
+## El eje sobre el que se vuelca se elige MIDIENDO —se tumba sobre el eje
+## horizontal más corto, que es sobre el que una cosa se cae de verdad— y por eso
+## anda igual con un barril (alto en Y) que con un tronco (largo en X): a lo que
+## ya está acostado no lo para de punta. Ver el bloque de arriba.
+##
+## `hundir` es cuánto se la mete abajo del piso, para que no se lea apoyada como
+## un adorno sino caída donde cayó.
+static func tumbar(mi: MeshInstance3D, rng: RandomNumberGenerator,
+		suelo := 0.0, hundir := 0.03) -> void:
+	if mi == null or mi.mesh == null:
+		return
+	var b := mi.mesh.get_aabb().size
+	# ¿Está parada? Sólo se vuelca lo que tiene algo que perder: si ya es más
+	# ancha que alta, alcanza con desnivelarla.
+	var parada := b.y > minf(b.x, b.z) * 0.9
+	var vuelco := (PI / 2.0 + rng.randf_range(-0.22, 0.22)) if parada \
+		else rng.randf_range(-0.16, 0.16)
+	# Sobre X o sobre Z, la que la deje más despatarrada. Con el orden de Euler
+	# de Godot (YXZ) el giro de Y se aplica último, así que la vuelta queda
+	# arriba del vuelco y la pieza cae en cualquier dirección.
+	if b.x <= b.z:
+		mi.rotation = Vector3(vuelco, rng.randf() * TAU, rng.randf_range(-0.12, 0.12))
+	else:
+		mi.rotation = Vector3(rng.randf_range(-0.12, 0.12), rng.randf() * TAU, vuelco)
+	apoyar(mi, suelo - hundir)
 
 
 ## Multiplica el albedo de una malla del kit por un color, sin tocar la malla
@@ -273,8 +358,22 @@ static func triangulos(m: Mesh) -> int:
 ##
 ## Se usa poco y a propósito: es para empujar una pieza hacia la paleta —una
 ## casa quemada, un muro de un pueblo distinto—, no para recolorear el kit.
-## Devuelve los materiales nuevos para que el llamador los ponga por superficie.
-static func tinte(mi: MeshInstance3D, c: Color) -> void:
+##
+## `plano` le saca además la textura, y no es un adorno: **un multiplicador no
+## puede desaturar.** Multiplicar un téxel naranja por un hollín cálido lo baja
+## de valor y lo deja igual de naranja, o más. Se descubrió mirando de cerca la
+## Casa Quemada del banco: el barril abierto tenía la boca a **S 1,00 y V 0,45**
+## —el píxel más saturado de las tres casas— ya tiznado, en la única casa del
+## valle que no tiene fuego. A veinte metros eso no se lee como un barril: se
+## lee como brasas, que es exactamente la señal que la regla 3 de la ficha de
+## identidad reserva para el fuego y para nada más.
+##
+## Con la textura afuera, la pieza sale de un solo valor carbón. Es lo que le
+## pasa a la madera quemada y además es lo correcto acá: a la distancia a la que
+## se juega, la materia de un enser de 60 cm no existe, y la silueta y el valor
+## sí (`DISENO.md` §6, regla 4). **No lo uses en superficies grandes** —el muro
+## de la ruina sigue con su revoque puesto, y ahí la regla que manda es la 2.
+static func tinte(mi: MeshInstance3D, c: Color, plano := false) -> void:
 	if mi == null or mi.mesh == null:
 		return
 	for s in mi.mesh.get_surface_count():
@@ -282,4 +381,6 @@ static func tinte(mi: MeshInstance3D, c: Color) -> void:
 		var m: StandardMaterial3D = (base.duplicate() if base is StandardMaterial3D
 			else StandardMaterial3D.new())
 		m.albedo_color = m.albedo_color * c
+		if plano:
+			m.albedo_texture = null
 		mi.set_surface_override_material(s, m)

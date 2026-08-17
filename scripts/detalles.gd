@@ -734,18 +734,15 @@ static func _caja(st: SurfaceTool, a: Vector3, b: Vector3) -> void:
 ## baja tiznada (V3–V4). Son multiplicadores sobre el albedo del kit, así que
 ## un muro `MURO_ALDEA` (V6, 0.66) sale en 0.46 abajo y en 0.30 arriba: V4 y
 ## V3, que es exactamente donde la paleta pone `MURO_RUINA`.
-## **Y son CÁLIDOS, con más rojo que azul, y eso no es gusto: está medido.** La
-## primera versión los puso neutros y bajó la planta alta a V2. En pantalla el
-## muro en sombra salió **h176 s0,39**, o sea azul verdoso, no carbón. El motivo
-## es del entorno y vale para todo el juego: `ambiente.gd` saca el 45% de la luz
-## ambiente del cielo, y el cielo es azul. Sobre un muro V6 eso no se nota; sobre
-## un muro V2 el ambiente ES el color. La paleta ya lo tenía escrito por el otro
-## lado —*no hay superficies grandes en V0/V1*— y esto es el mismo límite visto
-## desde arriba: **una superficie grande por debajo de V2/V3 deja de tener color
-## propio y adopta el del cielo.** Así que el hollín se queda en V3 abajo del
-## techo y sube de temperatura para pelearle al azul.
-const HOLLIN_BAJO := Color(0.70, 0.64, 0.58)
-const HOLLIN_ALTO := Color(0.46, 0.40, 0.35)
+##
+## **Los dos números se mudaron a `paleta.gd`** el día que los necesitó un
+## segundo archivo (`interiores.gd`, para los muebles de la ruina), que es
+## exactamente cuándo un color suelto deja de ser una comodidad y pasa a ser dos
+## colores que se van a separar. El porqué de los valores —incluido que son
+## CÁLIDOS a propósito, medido: neutros salían h176 s0,39, azul verdoso— está
+## allá, con el resto de la escalera.
+const HOLLIN_BAJO := Paleta.HOLLIN_BAJO
+const HOLLIN_ALTO := Paleta.HOLLIN_ALTO
 
 
 ## Le pone al esqueleto de la casa las marcas del fuego. Ver el bloque de arriba.
@@ -787,15 +784,27 @@ static func _quemar(g: Node3D, baja: Node3D, alta: Node3D, alto_nivel: float,
 	# carbón que la planta alta. **Van pegados al zócalo y no repartidos por el
 	# prado**: acá no se sabe la altura del terreno —eso lo sabe `valle.gd`— y un
 	# tronco apoyado en la nada flota. Sobre el basamento no hay ese riesgo.
+	#
+	# **Y estaban PARADOS DE PUNTA, que es lo contrario de un escombro.** Acá
+	# había un `rotation.z = PI/2` con el motivo *"tirados de costado"* al lado, y
+	# el tronco de Kenney ya viene acostado: mide 1,00 × 0,42 × 0,55 y es largo en
+	# X (medido con `prueba_casas.tscn -- --medir`, no estimado). O sea que el
+	# giro que iba a acostarlo lo paraba, y encima le enterraba media pieza. Ahora
+	# lo vuelca `Kit.tumbar()`, que elige el eje midiendo el bulto y después
+	# **apoya la pieza**, que es la parte que nadie hace a mano y es la que falla.
+	#
+	# El radio bajó de 0,8 a 0,72 de `CASA_ADENTRO` por lo mismo que se midió: un
+	# tronco de un metro con el centro a 1,94 m del medio del cuarto mete media
+	# cabeza afuera del muro.
 	for k in 4:
 		var mi := Kit.nodo("naturaleza/log_large")
 		if mi == null:
 			break
 		var a := TAU * (float(k) + rng.randf_range(-0.3, 0.3)) / 4.0
-		mi.position = Vector3(cos(a) * CASA_ADENTRO * 0.8, CASA_PISO,
-			sin(a) * CASA_ADENTRO * 0.8)
-		mi.rotation = Vector3(0.0, rng.randf() * TAU, PI / 2.0 + rng.randf_range(-0.3, 0.3))
 		mi.scale = Vector3.ONE * rng.randf_range(0.7, 1.2)
+		mi.position = Vector3(cos(a) * CASA_ADENTRO * 0.72, CASA_PISO,
+			sin(a) * CASA_ADENTRO * 0.72)
+		Kit.tumbar(mi, rng, CASA_PISO, 0.04)
 		Kit.tinte(mi, HOLLIN_ALTO)
 		g.add_child(mi)
 
