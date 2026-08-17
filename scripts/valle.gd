@@ -2492,6 +2492,9 @@ func _al_golpear() -> void:
 			mejor = d
 			elegido = m
 
+	if elegido == null and _golpear_persona():
+		return
+
 	if elegido == null:
 		# Decirle que no llegó. El silencio es lo que hace que parezca roto:
 		# el jugador no sabe si falló, si el botón no anda, o si el bicho es
@@ -2515,6 +2518,86 @@ func _al_golpear() -> void:
 	elegido.doler_ahora()
 	if elegido.id_servidor != "":
 		api.pelear(elegido.id_servidor)
+
+
+## A quién le pegaste la última vez que amagaste, y hasta cuándo vale ese amago.
+var _amago_a := ""
+var _amago_hasta := 0.0
+
+## Cuánto dura el amago. Tres segundos: lo que tardás en leer el aviso y volver
+## a apretar a propósito, y no tanto como para que el segundo clic te agarre
+## pensando en otra cosa.
+const AMAGO_DURA := 3.0
+## Desde dónde alcanzás a una persona. Más corto que a un bicho (6,5): un bicho
+## viene hacia vos, a una persona hay que ir a buscarla.
+const ALCANCE_PERSONA := 3.6
+
+
+## PEGARLE A UNA PERSONA.
+##
+## Pedido de la dirección: *«no te deja pegar desde player a npcs»*. Las bases
+## están en `DISENO.md` §9.3c y la que manda acá es la regla 3: **matar tiene
+## que ser posible, difícil y nunca accidental.** Si el jugador no entendió lo
+## que estaba haciendo hasta que fue irreversible, el juego le mintió.
+##
+## Por eso el primer clic NO pega. Amaga, y dice a quién y qué oficio se lleva
+## puesto. El segundo clic dentro de tres segundos sí. **No es un cartel de
+## confirmación**: es la diferencia entre pegar un golpe y decidir pegarlo, y en
+## este juego esa diferencia es todo — el saber vive en gente mortal, así que si
+## matás a la herrera, nadie en este valle vuelve a forjar nunca. No es un
+## castigo para vos: es empobrecer el mundo, permanentemente, para todos los que
+## juegan, incluidos los que en ese momento no estaban conectados.
+##
+## Lo que pasa después NO lo decide el cliente: el daño, la huida, quién lo vio
+## y qué se pierde son del servidor (`golpearPersona()` en `combate.ts`). Acá
+## sólo viaja a quién le pegaste — invariante 4.
+##
+## Devuelve si se ocupó del clic. Falso significa "no había nadie", y entonces
+## el que llama sigue con el aviso de siempre.
+func _golpear_persona() -> bool:
+	if jugador == null or not is_instance_valid(jugador):
+		return false
+
+	var elegido := ""
+	var nodo: Node3D = null
+	var mejor := ALCANCE_PERSONA
+	for nombre: String in _npcs:
+		var n: Node3D = _npcs[nombre]
+		if not is_instance_valid(n):
+			continue
+		var d := n.global_position.distance_to(jugador.global_position)
+		if d < mejor:
+			mejor = d
+			elegido = nombre
+			nodo = n
+	if elegido == "":
+		return false
+
+	var ahora := float(Time.get_ticks_msec()) / 1000.0
+	if _amago_a != elegido or ahora > _amago_hasta:
+		_amago_a = elegido
+		_amago_hasta = ahora + AMAGO_DURA
+		# Si enseña, se dice. Es el dato que el cliente YA tiene y el único que
+		# de verdad cambia lo que estás por hacer: lo que se pierde cuando se
+		# muere alguien que enseña no lo recupera el valle nunca.
+		var act: Dictionary = _actitudes.get(elegido, {})
+		interfaz.avisar(("Vas a pegarle a %s. " % elegido)
+			+ ("Enseña lo que sabe. " if bool(act.get("ensena", false)) else "")
+			+ "Clic otra vez para hacerlo.")
+		return true
+
+	_amago_a = ""
+	# El verbo es `golpear` y NO `pelear`, y la diferencia es el diseño entero:
+	# `pelear` es contra algo que vino a hacerte daño y SUBE el aprecio de los
+	# que te ven; esto lo baja. Ver el bloque de `golpearPersona()`.
+	api.actuar("golpear", elegido)
+	# El respingo se ve YA, y la vida la decide el servidor. Es el mismo trato
+	# que con los bichos: esperar la respuesta para reaccionar mete 200 ms entre
+	# el clic y el efecto, y eso alcanza para que se sienta roto.
+	if nodo != null and nodo.has_method("doler"):
+		nodo.call("doler")
+	interfaz.avisar("Le pegaste a %s. El valle se acuerda." % elegido)
+	return true
 
 
 ## Captura de verificación: `--captura` guarda un PNG y sale. Sirve para
