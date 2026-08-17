@@ -5,6 +5,17 @@
 ;   godot escenas/prueba_sonido.tscn                 ← con parlantes, ESCUCHALO
 ;   godot --headless escenas/prueba_sonido.tscn      ← imprime el lecho y sale
 ;
+; En headless no hay salida de audio, así que no se reproduce nada y se calcula
+; todo igual (ver `_hay_salida` en sonido.gd: además de ahorrar trabajo, es lo
+; que evita que el proceso cierre avisando de instancias sin liberar). El precio
+; es que una corrida headless no puede descubrir una fuga de audio nueva, y por
+; eso se puede pedir la condición que rompe:
+;
+;   godot --headless escenas/prueba_sonido.tscn --quit-after 60 -- --sonido-con-audio
+;
+; Eso fuerza la reproducción y hoy deja instancias colgadas — es del motor y
+; está medido. Lo que se vigila ahí es que el número no crezca.
+;
 ; El nodo raíz es el módulo de sonido con `modo_prueba` prendido: imprime qué
 ; lecho eligió para cada lugar a siete horas del día, y después camina el
 ; valle entero mientras pasa un día, haciendo sonar todo de verdad.

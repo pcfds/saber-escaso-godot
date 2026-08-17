@@ -140,13 +140,12 @@ agosto y están en `DISENO.md` §6.
 
 - **Interiores.** Las casas tienen una puerta dibujada y no se abre ninguna:
   *"no hay puertas para entrar"*.
-- **Los NPCs están clavados en un punto.** Es el pedido más repetido después de
-  "le falta la vida". Que caminen dentro de su lugar es barato y no depende del
-  servidor — ojo: eso es animación de presencia, no estado. El NPC sigue estando
-  *en la fragua* para el mundo.
 - **La paleta existe y todavía no la usa nadie.** `paleta.gd` está escrito con
   los 95 literales mapeados, y los nueve scripts siguen con sus colores a mano.
   Hasta que se migren, de a un archivo por vez, el valle se ve igual.
+- **Nadie camina de un lugar a otro.** La gente se mueve dentro de su lugar,
+  pero cuando el servidor dice que alguien se mudó, se planta en el lugar
+  nuevo. Que el viaje se vea es de la tarea del servidor, no de acá.
 - **No hay lugares para frenar:** el valle es todo tránsito, no hay dónde
   sentarse ni esperar a alguien.
 - **El bicho no dice quién es.** En la base hay amenazas con nombre propio y
@@ -156,4 +155,42 @@ agosto y están en `DISENO.md` §6.
 **Ya está hecho, no lo rehagas:** los ojos y la ropa por oficio en las figuras;
 el inventario en pantalla con quién hizo cada cosa; las amenazas dibujadas
 desde la tabla `threats`; los otros jugadores visibles; la vida del jugador
-mandada por el servidor.
+mandada por el servidor; **la gente moviéndose en su lugar** (rondas de 3 a 5
+paradas derivadas del nombre, ~3/4 del tiempo quietas); **el lecho de ambiente**
+y **la vegetación del valle entero**, los dos cableados en `_ready()`.
+
+## Cablear un módulo nuevo: una trampa que ya costó
+
+Los módulos grandes se escriben en archivos nuevos —`paleta.gd`, `sonido.gd`,
+`vegetacion.gd`— para que dos ramas no se pisen. **El precio es que el cableado
+en `valle.gd` queda pendiente, y ahí es donde se rompe.** Lo que pasó de verdad:
+
+- **`Sonido` terminó instanciado dos veces**, desde dos ramas que no se veían
+  entre sí: dos lechos de ambiente sonando juntos, y uno de ellos en una
+  variable local, o sea colgado.
+
+  **CORRECCIÓN — esto decía que ésa era la causa de la fuga de veinte objetos
+  al cerrar, y es falso.** Se midió con un control: con el duplicado ya sacado,
+  revertir el arreglo del módulo devuelve las 22 fugas, y ponerlo las lleva a
+  cero. Y la aritmética nunca cerró — la escena de prueba tiene UN solo
+  `Sonido` (es el nodo raíz, no hay dónde duplicarlo) y filtraba las mismas 20.
+  La causa real es del motor: hacen falta dos cuadros de proceso entre parar el
+  audio y cerrar, y en `_exit_tree()` ya no queda ninguno. Un
+  `AudioStreamPlayer` pelado sin una línea nuestra deja dos.
+
+  El duplicado era un bug real y sacarlo estuvo bien. **Lo que estuvo mal fue
+  dar por probada una causa que no se probó**, y dejarlo escrito acá como
+  hecho: eso manda al próximo a cazar lo que no es.
+- **La vegetación quedó cableada y `_armar_bosque()` seguía llamándose**, así
+  que el Sotobosque tenía dos bosques encimados en el mismo sitio.
+
+Las dos reglas que salen de eso:
+1. **Antes de cablear, `grep` del `class_name` en `valle.gd`.** Si ya está, no
+   lo agregues: alguien llegó primero.
+2. **Guardá la instancia en un miembro, nunca en una variable local**, y si el
+   módulo reemplaza algo viejo, **borrá lo viejo en el mismo cambio.**
+
+Y una del entorno: **un `class_name` nuevo que ningún otro script referencia no
+entra al cache de clases globales** sólo con `--quit-after`. Da
+`Identifier "X" not declared`. Se arregla corriendo `godot --headless --import`
+una vez — verificá con md5 que eso no te modificó `project.godot`.

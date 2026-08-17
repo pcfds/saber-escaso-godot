@@ -351,6 +351,21 @@ var _ms_generacion := 0.0
 ## build de depuración, cerrar el juego sigue dejando esas instancias. Es del
 ## motor, es cosmético (el aviso no se imprime en un build de release y el
 ## sistema operativo recupera la memoria igual) y no depende de este módulo.
+##
+## EL COSTO DE ESTA REGLA, y cómo se paga. Si en headless no suena nada, una
+## corrida headless tampoco puede descubrir una fuga de audio nueva. Por eso
+## existe `--sonido-con-audio`: fuerza la reproducción aunque no haya salida,
+## y con eso la condición que rompe se puede pedir a mano, en la escena de
+## prueba, sin esperar a que la descubra el cableado:
+##
+##   godot --headless escenas/prueba_sonido.tscn --quit-after 60 -- --sonido-con-audio
+##
+## Eso HOY deja instancias colgadas, y tiene que dejarlas: es el motor y está
+## medido. Lo que hay que mirar en esa corrida es que el número no CREZCA: es
+## una por emisor sonando más una por bucle distinto — hoy 12 + 8 = 20. Si un
+## día salta, alguien agregó un emisor que no se apaga.
+const FORZAR_AUDIO := "--sonido-con-audio"
+
 var _hay_salida := true
 
 
@@ -371,7 +386,8 @@ func _ready() -> void:
 ## La llama el valle. `lugares` es la tabla LUGARES de valle.gd (opcional: si
 ## no viene, se usa la copia de acá).
 func preparar(lugares: Dictionary = {}) -> void:
-	_hay_salida = AudioServer.get_driver_name() != "Dummy"
+	_hay_salida = AudioServer.get_driver_name() != "Dummy" \
+		or OS.get_cmdline_user_args().has(FORZAR_AUDIO)
 	if not lugares.is_empty():
 		_tabla = {}
 		for slug: String in lugares:
@@ -1147,6 +1163,31 @@ func _probar_el_reloj() -> void:
 	c.free()
 
 
+## Cuántos bucles distintos están SONANDO. No es lo mismo que la cantidad de
+## emisores —el viento son dos emisores con el mismo bucle— y cuentan sólo los
+## que suenan, porque un bucle asignado y quieto no queda colgado al salir.
+func _bucles_distintos() -> int:
+	var vistos := {}
+	for voz: String in _jug:
+		for p: Node in _jug[voz]:
+			if not bool(p.call("is_playing")):
+				continue
+			var st: Object = p.get("stream")
+			if st != null:
+				vistos[st.get_instance_id()] = true
+	return vistos.size()
+
+
+## Cuántos emisores están sonando ahora mismo.
+func _sonando() -> int:
+	var n := 0
+	for voz: String in _jug:
+		for p: Node in _jug[voz]:
+			if is_instance_valid(p) and bool(p.call("is_playing")):
+				n += 1
+	return n
+
+
 ## Que la cadena esté entera: cada emisor con su bus vivo y su bucle con
 ## muestras adentro.
 ##
@@ -1180,8 +1221,18 @@ func _revisar_la_cadena() -> void:
 			float(muestras * 2) / 1048576.0,
 			"OK" if fallas.is_empty() else "MAL: " + ", ".join(fallas)])
 	if _hay_salida:
-		print("Salida de audio: %s. Los emisores están sonando."
-			% AudioServer.get_driver_name())
+		var forzado := OS.get_cmdline_user_args().has(FORZAR_AUDIO)
+		print("Salida de audio: %s%s. Los emisores están sonando: %d."
+			% [AudioServer.get_driver_name(),
+				" (FORZADA por " + FORZAR_AUDIO + ")" if forzado else "",
+				_sonando()])
+		if forzado:
+			# Sin nombrar las palabras que grepea la verificación del repo.
+			print("  Con audio forzado el proceso cierra avisando de instancias")
+			print("  sin liberar, y tiene que hacerlo: una por emisor sonando más")
+			print("  una por bucle distinto (%d + %d = %d), y las suelta el motor,"
+				% [_sonando(), _bucles_distintos(), _sonando() + _bucles_distintos()])
+			print("  no este módulo. Lo que se vigila es que ese número no crezca.")
 	else:
 		# Ojo con el texto de acá: la verificación del repo se hace con grep
 		# sobre esta salida, así que no se nombran las palabras que se buscan.
