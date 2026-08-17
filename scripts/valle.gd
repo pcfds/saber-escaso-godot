@@ -237,7 +237,7 @@ func _armar_ambiente() -> void:
 	var relleno := DirectionalLight3D.new()
 	relleno.rotation_degrees = Vector3(-58, -40, 0)
 	relleno.light_color = Paleta.LUZ_CIELO
-	relleno.light_energy = 0.22
+	relleno.light_energy = 0.14
 	relleno.shadow_enabled = false
 	add_child(relleno)
 

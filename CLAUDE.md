@@ -80,6 +80,31 @@ prueba nada, los errores de orden de inicialización sólo aparecen en `_ready()
   sombreaba todo). Está en -44°.
 - **Bajo WSL no hay GPU** — Vulkan por software (llvmpipe). SDFGI y SSR salen
   basura acá y bien en el `.exe`. No los apagues por una captura hecha en WSL.
+
+## SÍ se puede ver el juego. Dejá de pedir capturas.
+
+Durante días este archivo dijo que nadie del equipo podía ver la escena, y **es
+falso**: hay display bajo WSLg y Godot renderiza por software. Cada tarea de
+arte terminaba con "pedí una captura" y esperaba a una persona. No hace falta.
+
+```bash
+cd /home/pedro/proyectos/saber-escaso-godot
+export PATH="$HOME/.local/bin:$PATH"
+godot --display-driver x11 --rendering-driver vulkan --audio-driver Dummy \
+      --quit-after 900 -- --token=$(cat /tmp/tok3d) --captura
+# deja captura.png en la raíz. --calidad=alto|medio|bajo también sirve.
+```
+
+**Qué vale y qué no de esa captura.** Es software: SDFGI y SSR salen basura y no
+se juzgan acá. **Pero el valor, la silueta, la saturación y la composición sí se
+miden**, y son justamente las decisiones de esta rama. Convertí a gris y sacá
+números — no mires "si se ve lindo", medí la separación.
+
+No hay PIL ni ImageMagick en esta máquina, sí `numpy`. Hay un decodificador PNG
+de treinta líneas en el scratchpad de la sesión; si no está, se reescribe con
+`zlib` + `struct`.
+
+**Y borrá `captura.png` al terminar**: no va al repo.
 - **`Object._get()` ya existe.** No le pongas `_get` a un método propio.
 - **Un `LineEdit` visible se come el WASD.** Todo campo de texto avisa con
   `Interfaz.escribiendo()`.

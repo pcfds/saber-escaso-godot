@@ -913,11 +913,20 @@ func _primitiva(tipo: int) -> Array:
 ## Se acota a [0,45 · 1,55] para que un color raro no blanquee ni apague una
 ## instancia entera.
 func _tinte(c: Color) -> Color:
+	# **Sólo brillo, nunca matiz.** Dividir canal por canal sería correcto si la
+	# malla fuera blanca, pero las del kit YA traen su color: multiplicar un
+	# verde por un cociente calculado sobre verdes corre el matiz, y el
+	# resultado sale cian. Se vio en una captura del juego real — árboles
+	# turquesa y techos rosa chicle. Un multiplicador gris no puede hacer eso:
+	# oscurece o aclara y deja el color del arte donde estaba.
+	#
+	# La variación por instancia sigue existiendo (un árbol más apagado que su
+	# vecino, la loma seca más clara), que es para lo que sirve de verdad.
 	var ref := _color_medio
-	return Color(
-		clampf(c.r / maxf(ref.r, 0.02), 0.45, 1.55),
-		clampf(c.g / maxf(ref.g, 0.02), 0.45, 1.55),
-		clampf(c.b / maxf(ref.b, 0.02), 0.45, 1.55))
+	var lum := func(x: Color) -> float:
+		return x.r * 0.299 + x.g * 0.587 + x.b * 0.114
+	var f := clampf(lum.call(c) / maxf(lum.call(ref), 0.02), 0.62, 1.42)
+	return Color(f, f, f)
 
 
 ## Una baldosa. El nodo va apoyado en el centro de la baldosa y NO en el origen

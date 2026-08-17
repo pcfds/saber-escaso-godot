@@ -27,6 +27,23 @@ func _ready() -> void:
 	environment = _construir_entorno()
 	camera_attributes = _construir_camara()
 	Rendimiento.registrar_entorno(environment, camera_attributes)
+	_sonda()
+
+
+# SONDA TEMPORAL — BORRAR
+func _sonda() -> void:
+	await get_tree().create_timer(3.4).timeout
+	var soles: Array = []
+	for n in get_tree().root.find_children("*", "DirectionalLight3D", true, false):
+		var l := n as DirectionalLight3D
+		soles.append("%s e=%.2f rotx=%.1f c=%s sh=%s" % [l.name, l.light_energy,
+			rad_to_deg(l.rotation.x), l.light_color, l.shadow_enabled])
+	print("SONDA cuadros=%d fps=%.1f amb=%.3f sdfgi=%s vol=%s fog=%s tone=%d sat=%.2f | %s" % [
+		Engine.get_frames_drawn(), Engine.get_frames_per_second(),
+		environment.ambient_light_energy, environment.sdfgi_enabled,
+		environment.volumetric_fog_enabled, environment.fog_enabled,
+		environment.tonemap_mode, environment.adjustment_saturation,
+		", ".join(PackedStringArray(soles))])
 
 
 func _construir_entorno() -> Environment:
@@ -43,7 +60,13 @@ func _construir_entorno() -> Environment:
 	e.background_mode = Environment.BG_SKY
 	e.sky = s
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	e.ambient_light_sky_contribution = 1.0
+	# 1,0 significa que TODA la luz ambiente sale del cielo, y el cielo es azul.
+	# Resultado: cualquier cosa que no reciba sol directo se pinta de celeste —
+	# se vio en una captura del juego real, con árboles cian y techos rosa. Se
+	# baja a 0,45 y el resto lo pone un ambiente propio, cálido, que es la luz
+	# que rebota del suelo. Un valle no está iluminado sólo por el cielo.
+	e.ambient_light_sky_contribution = 0.45
+	e.ambient_light_color = Color(0.42, 0.38, 0.31)
 	e.ambient_light_energy = 0.62
 	e.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 
@@ -146,7 +169,10 @@ func _construir_entorno() -> Environment:
 	# es exactamente lo que pasó. Acá el color es una decisión de diseño, no una
 	# aproximación a lo real, así que se recupera a mano.
 	e.adjustment_enabled = true
-	e.adjustment_saturation = 1.38
+	# 1,38 fue una sobrecorrección mía y se vio en la primera captura: techos
+	# rosa chicle, árboles cian, suelo rosado. AgX desatura y hay que compensar,
+	# pero la compensación tiene que devolver color, no inventarlo.
+	e.adjustment_saturation = 1.10
 	e.adjustment_contrast = 1.12
 	e.adjustment_brightness = 1.0
 	return e
@@ -163,11 +189,17 @@ func _construir_camara() -> CameraAttributesPractical:
 	# intacto y la pasada cuesta una fracción.
 	var c := CameraAttributesPractical.new()
 	c.dof_blur_far_enabled = true
-	c.dof_blur_far_distance = 40.0
-	c.dof_blur_far_transition = 26.0
-	c.dof_blur_near_enabled = true
-	c.dof_blur_near_distance = 11.0
-	c.dof_blur_near_transition = 7.0
+	# 40 metros era el desenfoque de cuando la cámara estaba a 27. Ahora la
+	# cámara ARRANCA en 40 y llega a 68, así que el mundo entero caía detrás
+	# del corte y salía borroso de punta a punta — el efecto maqueta se había
+	# convertido en una mancha. Empieza más allá de donde la cámara puede
+	# llegar, y así vuelve a desenfocar sólo la lejanía de verdad.
+	c.dof_blur_far_distance = 95.0
+	c.dof_blur_far_transition = 55.0
+	# El desenfoque de cerca se apaga: con la cámara a 40 metros no hay nada
+	# entre ella y el jugador que valga la pena desenfocar, y lo único que hacía
+	# era ensuciar los árboles que quedan en el borde de la pantalla.
+	c.dof_blur_near_enabled = false
 	c.dof_blur_amount = 0.09
 	c.auto_exposure_enabled = false
 	return c

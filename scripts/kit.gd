@@ -1,5 +1,13 @@
 extends RefCounted
+
 class_name Kit
+
+## El follaje y la corteza que se le imponen a las mallas del kit. Salen de la
+## paleta pero aclarados: los de `Paleta` se calibraron contra conos verdes en
+## una escena sin niebla, y acá hay que leerlos a cuarenta metros con AgX
+## desaturando por encima.
+const COPA_VIVA := Color(0.271, 0.396, 0.216)
+const CORTEZA := Color(0.322, 0.243, 0.184)
 
 # ===========================================================================
 # EL KIT — las mallas hechas por alguien
@@ -72,9 +80,45 @@ static func malla(ruta: String) -> Mesh:
 	var raiz := escena.instantiate()
 	var m := _primera_malla(raiz)
 	raiz.queue_free()
+	if m != null:
+		_arreglar_color(m)
 
 	_mallas[ruta] = m
 	return m
+
+
+## Le pone a la malla los colores de la paleta cuando no trae textura.
+##
+## **Los colores del Nature Kit llegan corrompidos.** Se consultaron las mallas
+## directo, sin pasar por nuestro código: todas las copas salen en
+## (0.44, 0.90, 0.84) y todos los troncos en (0.95, 0.74, 0.62) — cian y
+## salmón. En pantalla el bosque era turquesa y no había ajuste de luz que lo
+## arreglara, porque el color estaba en el archivo. Kenney no vende árboles
+## cian; se rompe en la importación, y el zip no trae textura, así que no hay
+## mapa de color que recuperar.
+##
+## Los packs de pueblo y útiles SÍ traen textura y se ven bien: por eso sólo se
+## tocan las superficies sin textura.
+##
+## Y no es un parche: es la decisión que ya estaba escrita —**el color lo
+## decide la paleta, no lo imita el material**— aplicada donde hacía falta.
+## Copa y tronco se distinguen por cuál de las dos es más verde: aunque el
+## color esté corrido, el orden entre ellos se mantiene.
+static func _arreglar_color(m: Mesh) -> void:
+	for i in m.get_surface_count():
+		var base := m.surface_get_material(i) as StandardMaterial3D
+		if base == null or base.albedo_texture != null:
+			continue
+		var c := base.albedo_color
+		var nuevo := base.duplicate() as StandardMaterial3D
+		# No se usa Paleta.COPA directo: ese color se eligió para la mancha
+		# oscura del Sotobosque hecha con conos, y aplicado a TODOS los árboles
+		# del valle deja siluetas negras. Se aclara para el follaje suelto y el
+		# Sotobosque vuelve a oscurecerse por su cuenta, con la variación por
+		# instancia que ya hace `vegetacion.gd`.
+		nuevo.albedo_color = COPA_VIVA if c.g > c.r * 1.15 else CORTEZA
+		nuevo.roughness = 0.97
+		m.surface_set_material(i, nuevo)
 
 
 ## Busca el primer MeshInstance3D del árbol importado. Los `.glb` de Kenney

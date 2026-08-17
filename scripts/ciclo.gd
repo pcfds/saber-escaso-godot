@@ -97,7 +97,7 @@ func _process(dt: float) -> void:
 
 	if relleno != null:
 		# El relleno frío es el cielo rebotando. De noche casi no hay.
-		relleno.light_energy = lerp(0.05, 0.24, clampf(altura + 0.25, 0.0, 1.0))
+		relleno.light_energy = lerp(0.04, 0.14, clampf(altura + 0.25, 0.0, 1.0))
 
 	if _cielo != null:
 		_cielo.set_shader_parameter("sol_dir", dir)

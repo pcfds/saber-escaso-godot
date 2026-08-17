@@ -60,7 +60,11 @@ const DIST_MIN := 12.0
 const DIST_MAX := 68.0
 
 var _yaw := deg_to_rad(38.0)
-var _pitch := deg_to_rad(56.0)
+## 56° era casi mirar desde arriba: se veían techos y copas de árbol, que es
+## la vista con menos información que hay. A 38° se ven las fachadas, los
+## troncos y la silueta de la gente contra el suelo — que es lo que hace
+## legible un mundo visto de lejos.
+var _pitch := deg_to_rad(38.0)
 var _dist := 40.0
 var _dist_objetivo := 40.0
 var _arrastrando := false
