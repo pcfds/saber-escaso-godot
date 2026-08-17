@@ -208,12 +208,29 @@ func _aplicar_entorno() -> void:
 	e.tonemap_exposure = 0.95
 
 	if _camara != null:
-		# El desenfoque se queda entero en los tres niveles: es el efecto
-		# maqueta, o sea la identidad, y un tilt-shift al que le sacás el
-		# desenfoque de cerca deja de leerse como maqueta. Lo que cambia con el
-		# nivel no es el efecto sino cómo se calcula (ver _aplicar_global).
+		# El desenfoque de LEJOS se queda entero en los tres niveles: es el
+		# efecto maqueta, o sea la identidad. Lo que cambia con el nivel no es
+		# el efecto sino cómo se calcula (ver _aplicar_global).
 		_camara.dof_blur_far_enabled = true
-		_camara.dof_blur_near_enabled = true
+		# El de CERCA no se toca desde acá, y este renglón es la corrección de
+		# un bug que borroneaba el juego entero.
+		#
+		# Decía `= true`, con el argumento de que un tilt-shift sin desenfoque
+		# de cerca deja de leerse como maqueta. `ambiente.gd` lo había apagado
+		# a propósito, con su motivo escrito al lado: con la cámara a cuarenta
+		# metros no hay NADA entre ella y el jugador que valga la pena
+		# desenfocar. Dos archivos opinando distinto sobre la misma propiedad,
+		# y ganaba éste por correr último.
+		#
+		# El resultado no era una diferencia de gusto: **la escena entera salía
+		# borrosa**, casas a cuarenta metros incluidas. Se aisló con dos
+		# capturas y una sola variable —prendido: mancha; apagado: nítido— y
+		# antes se habían descartado con el mismo método el nivel de calidad y
+		# el desenfoque de lejos, que empieza a 95 m cuando la cámara llega a
+		# 68 y por lo tanto no podía ser.
+		#
+		# La regla que sale de acá: **un archivo de rendimiento decide CÓMO se
+		# calcula un efecto, no si existe.** El qué es de `ambiente.gd`.
 
 
 # ---------------------------------------------------------------------------

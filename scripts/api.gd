@@ -15,6 +15,12 @@ signal cronica_recibida(texto: String)
 ## Lo que pasó cuando mandaste una acción. Ver `actuar()`: el servidor lo
 ## contesta y el cliente lo venía tirando a la basura.
 signal aviso_recibido(texto: String)
+## La magia. Las tres rutas ya vivían en producción y el cliente no las llamaba:
+## el sistema más distintivo del juego estaba entero del lado del servidor y no
+## había forma de trazar una runa desde el juego.
+signal preparado(datos: Dictionary)
+signal lanzado(datos: Dictionary)
+signal grimorio_recibido(datos: Dictionary)
 
 ## Se sobreescriben desde la línea de comandos o el archivo de config.
 var base_url := "https://saber-escaso.vercel.app"
@@ -188,6 +194,54 @@ static func _aviso_de(headers: PackedStringArray) -> String:
 			return ""
 		return loc.substr(i + 6).split("&")[0].uri_decode()
 	return ""
+
+
+## ─────────────────────────────────────────────────────────────
+## La magia
+## ─────────────────────────────────────────────────────────────
+##
+## Tres rutas y ninguna encolada: `preparar` y `lanzar` se resuelven en el acto,
+## igual que `pelear` y por el mismo motivo — un hechizo que tarda seis horas no
+## es un hechizo. **No pasan por `/act`**: `resolveAction()` del tick no conoce
+## esos verbos y encolarlos los dejaría pendientes para siempre.
+##
+## Las tres contestan JSON con 200 aunque salga mal: el "no" viene como
+## `{ok:false, porque:"..."}` y ese `porque` está escrito para leerse en
+## pantalla ("no sabe el calor", "hoy no trae el calor encima"). No lo
+## reescribas: la razón específica es lo que le enseña la gramática al jugador.
+
+## Colgarse las runas del día. Van EN ORDEN y separadas por espacio; el orden es
+## sólo cómo se te van a mostrar, la mezcla se elige al trazar.
+func preparar(runas: PackedStringArray) -> void:
+	_hacer_post("/j/%s/preparar" % token,
+		"runas=" + " ".join(runas).uri_encode(),
+		func(d: Dictionary) -> void: preparado.emit(d))
+
+
+## Trazar. `runas` EN ORDEN — el orden ES la mezcla: `brasa aliento` es fuego
+## que se esparce y `aliento brasa` es un empujón que quema.
+##
+## `blanco` es el cauce y son cuatro: `amenaza`, `persona`, `jugador`, `lugar`.
+## El cauce no es una runa a propósito — si lo fuera, cada hechizo gastaría una
+## pieza de las tres que llevás sólo para decir "a ése".
+##
+## Sin `id` el servidor agarra lo que haya donde estás parado: la primera
+## amenaza viva, vos mismo, o el lugar. Para `persona` acepta el nombre además
+## del uuid.
+func lanzar(runas: PackedStringArray, blanco: String, id: String = "") -> void:
+	var cuerpo := "runas=" + " ".join(runas).uri_encode() + "&blanco=" + blanco.uri_encode()
+	if id != "":
+		cuerpo += "&id=" + id.uri_encode()
+	_hacer_post("/j/%s/lanzar" % token, cuerpo,
+		func(d: Dictionary) -> void: lanzado.emit(d))
+
+
+## El grimorio: las runas que te enseñaron, lo que llevás hoy, y **sólo las
+## mezclas que te salieron a vos**. Nunca la lista de lo posible — un menú con
+## todo convierte el saber en información y mata el sistema entero.
+func pedir_grimorio() -> void:
+	_hacer_get("/j/%s/grimorio" % token,
+		func(d: Dictionary) -> void: grimorio_recibido.emit(d))
 
 
 func pedir_cronica() -> void:

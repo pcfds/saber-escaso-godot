@@ -36,6 +36,8 @@ scripts/ambiente.gd     WorldEnvironment: SDFGI, niebla volumétrica, AgX, DOF
 scripts/rendimiento.gd  alto/medio/bajo: qué efectos se prenden en qué máquina (F1)
 scripts/api.gd          habla con el servidor; el token sale de token.txt o --token=
 scripts/interfaz.gd     HUD, diálogo, campo para escribirle a los NPCs
+scripts/runas.gd        la magia: ritual de la mañana (P), trazo radial (R),
+                        grimorio (G) y las marcas que quedan en el suelo
 desplegar.sh            probar → exportar → cerrar el juego → instalar. UNA carpeta.
 ```
 
@@ -80,6 +82,25 @@ prueba nada, los errores de orden de inicialización sólo aparecen en `_ready()
   sombreaba todo). Está en -44°.
 - **Bajo WSL no hay GPU** — Vulkan por software (llvmpipe). SDFGI y SSR salen
   basura acá y bien en el `.exe`. No los apagues por una captura hecha en WSL.
+- **Dos archivos escribiendo la MISMA propiedad, y gana el que corre último.**
+  `ambiente.gd` apagaba `dof_blur_near_enabled` con su motivo al lado —con la
+  cámara a cuarenta metros no hay nada entre ella y el jugador que valga la
+  pena desenfocar— y `rendimiento.gd` lo volvía a prender por un argumento
+  estético, sin ponerle distancia. Resultado: **el juego entero salía borroso**,
+  casas a cuarenta metros incluidas, y así estuvo hasta el 17 de agosto.
+
+  Lo que lo hace peligroso es que no parece un bug sino una decisión de arte:
+  se lee como "está muy suave" y se va a discutir el estilo en vez de buscar la
+  línea. Se aisló con **dos capturas y una sola variable** —prendido, mancha;
+  apagado, nítido— y antes se habían descartado con el mismo método el nivel de
+  calidad y el desenfoque de lejos, que empieza a 95 m cuando la cámara llega a
+  68 y por lo tanto no podía ser. **Empezá por el experimento, no por el
+  razonamiento: mi razonamiento sobre los números decía que el DOF estaba
+  descartado, y estaba mal.**
+
+  La regla: **`rendimiento.gd` decide CÓMO se calcula un efecto, no si existe.**
+  El qué es de `ambiente.gd`. Y un efecto que se prende sin decir dónde empieza
+  usa el default del motor, que no es de nadie.
 
 ## SÍ se puede ver el juego. Dejá de pedir capturas.
 

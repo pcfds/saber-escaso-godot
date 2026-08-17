@@ -250,6 +250,13 @@ func _construir_camara() -> CameraAttributesPractical:
 	# entre ella y el jugador que valga la pena desenfocar, y lo único que hacía
 	# era ensuciar los árboles que quedan en el borde de la pantalla.
 	c.dof_blur_near_enabled = false
+	# Y la distancia queda escrita aunque el efecto esté apagado, que es el
+	# arreglo de verdad: `rendimiento.gd` lo prendía sin ponerle distancia, y
+	# un desenfoque de cerca prendido sin decir DÓNDE empieza borroneaba el
+	# valle entero. Si algún día se prende a propósito, que ya tenga un número
+	# defendible en vez del que venga por defecto.
+	c.dof_blur_near_distance = 1.5
+	c.dof_blur_near_transition = 1.0
 	c.dof_blur_amount = 0.09
 	c.auto_exposure_enabled = false
 	return c

@@ -106,6 +106,14 @@ var _actitudes: Dictionary = {}
 var _ya_saludo: Dictionary = {}
 var mapa: Mapa
 var _ya_pedimos_cronica := false
+## La magia: el ritual de la mañana, el trazo, el grimorio y las marcas que
+## quedan en el suelo. Todo el sistema vivía en el servidor y no había forma de
+## trazar una runa desde acá.
+var runas: Runas
+## Nombre -> uuid de cada persona. Hace falta para apuntarle a alguien con un
+## hechizo: `/lanzar` acepta el nombre, pero el uuid no se equivoca cuando dos
+## personas se llaman parecido.
+var _ids_gente: Dictionary = {}
 
 ## La vida del jugador NO se decide acá. Esto es el espejo de lo último que
 ## dijo el servidor, nada más.
@@ -211,6 +219,26 @@ func _ready() -> void:
 		cam.add_child(dibujado)
 	else:
 		add_child(dibujado)
+
+	# La magia. Va al final y en un miembro, nunca en una variable local: es la
+	# trampa que ya costó una tarde en este archivo —un módulo instanciado sin
+	# guardar la referencia queda colgado— y de paso un error acá no se lleva
+	# puesto nada de lo de arriba.
+	#
+	# Se le pasan cuatro cosas y ninguna es la escena entera: si sabe demasiado
+	# de `valle.gd`, el día que cambie el HUD hay que tocar los dos.
+	runas = Runas.new()
+	runas.api = api
+	runas.jugador = jugador
+	runas.camara = cam
+	# Envueltas en lambdas y no pasadas como `interfaz.avisar` a secas: `interfaz`
+	# está tipada como `CanvasLayer` y esos métodos son del script, así que
+	# tomarlos como valor se resuelve en tiempo de ejecución igual que las
+	# llamadas que ya hay en este archivo.
+	runas.escribiendo = func() -> bool: return interfaz.escribiendo()
+	runas.avisar = func(t: String) -> void: interfaz.avisar(t)
+	runas.blancos = _blancos_de_magia
+	add_child(runas)
 
 	_captura_si_corresponde()
 
@@ -1346,7 +1374,11 @@ static func _dado(nombre: String, canal: String) -> float:
 ## alguien, o estás tirado en el piso. Pegar se corta aparte (en _al_golpear)
 ## porque es un clic, y el clic no pasa por este filtro.
 func _jugador_sin_control() -> bool:
-	return _caido or interfaz.escribiendo()
+	# Tres estados, y el tercero es nuevo: con el radial de runas abierto o con
+	# el grimorio encima, el teclado tampoco es del personaje — las iniciales de
+	# las runas son B, Q, A y V, y dos de ésas ya son teclas del juego.
+	return _caido or interfaz.escribiendo() \
+		or (runas != null and is_instance_valid(runas) and runas.captura_teclado())
 
 
 ## Un bicho te pegó.
@@ -1481,11 +1513,21 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 			"animo": str(d.get("animo", "neutral")),
 			"ensena": bool(d.get("ensena", false)),
 		}
+		_ids_gente[str(d.get("name", ""))] = str(d.get("id", ""))
 
 	_sincronizar_amenazas(datos.get("amenazas", []))
 	_sincronizar_jugadores(datos.get("jugadores", []))
 	var bolsa: Array = datos.get("objetos", [])
 	interfaz.mostrar_inventario(bolsa)
+	# La misma bolsa la mira la magia: el frasco de raíz es lo único que hace
+	# aparecer la cuarta ranura del ritual de la mañana, y no se pide dos veces.
+	if runas != null and is_instance_valid(runas):
+		runas.tick = int(region.get("tick", 0))
+		runas.mirar_la_bolsa(bolsa)
+		# El día en curso es `tick + 1`, que es el que le pasa la web a la
+		# simulación: `marcasDe()` devuelve las que llegan hasta ahí o más allá.
+		_ubicar_marcas(datos.get("marcas", []), datos.get("places", []),
+			int(region.get("tick", 0)) + 1)
 	# Lo mejor que llevás va a la mano. Un arma le gana a cualquier otra cosa:
 	# es lo que cambia el resultado de una pelea y lo que conviene que se vea.
 	var enMano := ""
@@ -1519,6 +1561,74 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 		api.pedir_cronica()
 
 	_sincronizar_gente(datos.get("people", []), datos.get("places", []))
+
+
+## A qué le puede apuntar un hechizo ahora mismo.
+##
+## Este archivo es el único que sabe qué hay en la escena, así que es el que
+## arma la lista; `runas.gd` sólo la proyecta a la pantalla y elige lo que quedó
+## más cerca del cursor al soltar. Tres cauces salen de acá y el cuarto —el
+## suelo— no está en la lista a propósito: es lo que queda cuando no hay nada
+## más, y por eso nunca te quedás sin adónde tirar.
+##
+## **Los otros jugadores no entran, y no es un olvido.** `/mundo` manda a los
+## jugadores por nombre y sin uuid, y `/lanzar` con `blanco=jugador` sólo
+## resuelve por uuid; sin ese dato, apuntarle a otro sería mandar un POST que
+## vuelve "no hay ningún jugador ahí". El cauce `jugador` existe igual y es el
+## que te apunta A VOS, que es el que cura.
+func _blancos_de_magia() -> Array:
+	var lista: Array = []
+	for m in _monstruos:
+		if not is_instance_valid(m) or m.vida <= 0:
+			continue
+		lista.append({
+			"tipo": "amenaza", "id": m.id_servidor,
+			"nombre": m.nombre_servidor, "nodo": m,
+		})
+	for nombre: String in _npcs:
+		var n: Node3D = _npcs[nombre]
+		if not is_instance_valid(n):
+			continue
+		lista.append({
+			"tipo": "persona", "id": str(_ids_gente.get(nombre, nombre)),
+			"nombre": nombre, "nodo": n,
+		})
+	if jugador != null and is_instance_valid(jugador) and not _caido:
+		lista.append({"tipo": "jugador", "id": "", "nombre": "vos", "nodo": jugador})
+	return lista
+
+
+## Dónde cae cada cicatriz que dejó la magia.
+##
+## El servidor manda la marca con el `place_id`; el que sabe en qué punto del
+## mundo está ese lugar es este archivo, así que la ubicación se resuelve acá y
+## `runas.gd` recibe la posición ya hecha. Las marcas sobre un cuerpo —una
+## quemadura que alguien se lleva puesta— no se dibujan en el suelo: viajan con
+## la persona y el servidor ya las cuenta.
+func _ubicar_marcas(marcas: Array, lugares: Array, hoy: int) -> void:
+	var slug_por_id := {}
+	for p in lugares:
+		var lp: Dictionary = p
+		slug_por_id[str(lp.get("id", ""))] = str(lp.get("slug", ""))
+
+	var lista: Array = []
+	for m in marcas:
+		var d: Dictionary = m
+		if str(d.get("sobre_kind", "")) != "place":
+			continue
+		var slug: String = slug_por_id.get(str(d.get("place_id", "")), "")
+		if not LUGARES.has(slug):
+			continue
+		var centro: Vector3 = LUGARES[slug]["pos"]
+		lista.append({
+			"id": str(d.get("id", "")),
+			"kind": str(d.get("kind", "ardor")),
+			"por": str(d.get("por", "")),
+			"dias": maxi(0, int(d.get("hasta_tick", 0)) - hoy),
+			"lugar": str(LUGARES[slug].get("nombre", slug)),
+			"pos": Vector3(centro.x, altura_en(centro.x, centro.z), centro.z),
+		})
+	runas.mostrar_marcas(lista)
 
 
 ## Cómo estás, según el mundo. Esta es la fuente de verdad de la vida: si te

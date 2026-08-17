@@ -9,20 +9,34 @@ extends CanvasLayer
 # encima del diálogo. Declarar las zonas de una vez no es prolijidad — es lo
 # que hace que agregar el panel número ocho no sea una lotería.
 #
+# **La regla es que ningún panel elige su Y: sale de acá o no existe.** El
+# diálogo la rompía —se apoyaba en un 70 escrito a mano y se comía la barra de
+# vida, la pista de acción y la línea de teclas, o sea las tres cosas que
+# necesitás mirar justo mientras hablás con alguien—. Por eso la caja ahora se
+# apoya en `Y_PISO_CAJA`, que **no es un número nuevo sino una cuenta**: mover
+# el saludo mueve la caja sola y no hay forma de que se vuelvan a pisar.
+#
 # De abajo hacia arriba, en píxeles desde el borde inferior:
-const Y_AYUDA   := 30     # la línea de teclas, siempre última
-const Y_VIDA    := 74     # la barra y el número
-const Y_PISTA   := 112    # "[E] hablar con X"
-const Y_SALUDO  := 152    # lo que te dicen al pasar
-const ALTO_CAJA := 330    # el diálogo, que es lo más alto que hay abajo
-# Y a los costados:
-const X_MARGEN  := 22
+const Y_AYUDA     := 30    # la línea de teclas, siempre última
+const Y_VIDA      := 74    # la barra y el número
+const Y_PISTA     := 112   # "[E] hablar con X"
+const Y_SALUDO    := 152   # lo que te dicen al pasar…
+const ALTO_SALUDO := 34    # …y cuánto ocupa, que es lo que fija el techo de abajo
+const Y_PISO_CAJA := Y_SALUDO + ALTO_SALUDO + 16   # el piso del diálogo
+const ALTO_CAJA     := 540 # y lo más alto que se le permite ponerse
+const ALTO_CAJA_MIN := 200 # …y lo más bajo, para una crónica de dos renglones
+const ANCHO_CAJA    := 380 # a cada lado del centro
+# Y a los costados y arriba:
+const X_MARGEN    := 22
+const Y_TECHO     := 96    # el título del lugar y su subtítulo viven arriba de esto
 
-# La bolsa (tecla I). Vive a la derecha porque las dos columnas de la izquierda
-# —el nombre del lugar arriba, qué hacer ahora abajo— ya están ocupadas, y
-# porque abajo al centro está todo lo que hay que mirar peleando.
-const ANCHO_BOLSA := 330
-const Y_BOLSA     := 96
+# Las dos columnas. Arrancan las dos debajo del título y a la misma altura:
+# a la izquierda qué hacer ahora, a la derecha la bolsa (tecla I). Abajo al
+# centro está todo lo que hay que mirar peleando, así que ninguna baja de acá.
+const Y_COLUMNA     := Y_TECHO
+const ANCHO_COLUMNA := 380
+const ANCHO_BOLSA   := 330
+const Y_BOLSA       := Y_COLUMNA
 
 ## Los colores de la interfaz, juntos. No es prolijidad: eran quince literales
 ## repetidos y cambiar el tono de "algo apagado" costaba buscarlos de a uno.
@@ -35,6 +49,42 @@ const VERDE       := Color(0.44, 0.73, 0.62)
 const AMBAR       := Color(0.85, 0.78, 0.55)
 const ROJO        := Color(0.81, 0.55, 0.52)
 const FONDO       := Color(0.06, 0.08, 0.09, 0.92)
+
+## Las dos mitades de la caja de diálogo, rotuladas.
+##
+## No es decoración: es la diferencia de diseño más grande del juego escrita en
+## pantalla. **Las opciones mueven el mundo** —van a `/act`, cambian estado y
+## quedan escritas en la base—; **lo que escribís es sólo conversación** —va a
+## `/hablar`, el NPC contesta y no pasa nada más—. Las dos cosas eran el mismo
+## gris con la misma forma, una encima de la otra, así que nadie podía saber
+## cuál era cuál: *"no sabés cuándo escribir o elegir las respuestas rápidas ya
+## puestas"*.
+const ROTULO_ACTOS  := "ELEGÍ UNA — ESTO PASA DE VERDAD EN EL VALLE"
+const ROTULO_NO     := "TODAVÍA NO PODÉS"
+const ROTULO_CHARLA := "O DECILE ALGO — ES SÓLO CHARLA, EL MUNDO NO SE MUEVE"
+
+## Qué hace cada verbo, en un renglón.
+##
+## El servidor manda `verbo`, `texto`, `posible` y `porque`, y hace bien en no
+## explicar el verbo: **los nueve verbos son fijos y son de este lado.** Sin
+## esto el jugador aprieta «Enseñarle Destilado de raíz» sin tener idea de qué
+## está por regalar, que es exactamente el reclamo de que las opciones no dicen
+## qué hacen.
+const QUE_HACE := {
+	"aprender": "un saber suyo pasa a tu cabeza. No se lo sacás: ahora lo saben dos.",
+	"ensenar": "un saber tuyo pasa a la suya. Deja de perderse cuando te morís — y deja de ser sólo tuyo.",
+	"encargarse": "te anotás para conseguirle lo que le falta. Nadie te espera: si no volvés, se lo resuelve solo.",
+	"dar": "el objeto sale de tu bolsa y queda en sus manos.",
+	"trabajar": "te quedás laburando cerca. Con el tiempo te va conociendo.",
+}
+
+## El campo de texto dice en qué estado está, porque su estado te apaga el WASD.
+## Lo que ocupa la caja sin contar lo que scrollea: el encabezado, la línea, el
+## rótulo de la charla, el campo de texto, el botón de cerrar y los márgenes.
+const ALTO_FIJO_CAJA := 176.0
+
+const PISTA_QUIETO := "  [Enter] para escribirle algo…"
+const PISTA_TECLEANDO := "escribí y mandalo con Enter  ·  WASD apagado mientras tecleás  ·  [Esc] salir"
 
 ## Qué se puede juntar donde estás parado. Lo setea el valle.
 var lugar_da := ""
@@ -63,6 +113,9 @@ var _pista: Label
 var _caja: PanelContainer
 var _texto: RichTextLabel
 var _opciones: VBoxContainer
+var _quien: Label
+var _rotulo_actos: Label
+var _alto_deseado := float(ALTO_CAJA_MIN)
 
 var _bolsa_panel: PanelContainer
 var _bolsa_chip: Label
@@ -85,6 +138,14 @@ var _buscando := false
 static func _legible(c: Control, grosor := 5) -> void:
 	c.add_theme_constant_override("outline_size", grosor)
 	c.add_theme_color_override("font_outline_color", Color(0.03, 0.04, 0.04, 0.9))
+
+
+## El color del ánimo. Estaba escrito tres veces igual —diálogo, saludo y
+## adelanto— y agregar un ánimo nuevo era acordarse de los tres.
+static func _tono(animo: Variant) -> String:
+	return {
+		"calido": "6fb99e", "neutral": "dde3de", "seco": "98a29c", "hostil": "ce8b84",
+	}.get(str(animo), "dde3de")
 
 
 ## El fondo de los bloques que sí llevan caja. Todos iguales, y con el borde de
@@ -150,7 +211,13 @@ func _ready() -> void:
 	ayuda.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ayuda.text = "\n".join([
 		"WASD caminar · shift correr · espacio saltar · clic pegar · Q esquivar",
-		"E hablar · B buscar · I bolsa · M mapa · C quién sos · F1 calidad · +/− volumen",
+		# "quién eres" y no "quién sos": el mundo habla castellano llano y esa
+		# decisión estaba escrita en el prompt del director pero no en la
+		# interfaz, así que la pantalla vosea mientras la crónica tutea. Se
+		# midió del otro lado (`pnpm registro`) y se barrieron trece cadenas
+		# del servidor; ésta era la que quedaba de este lado.
+		"E hablar · B buscar · I bolsa · M mapa · C quién eres · R trazar · P runas del día"
+			+ " · G grimorio · Esc cerrar · F1 calidad · +/− volumen",
 	])
 	ayuda.add_theme_font_size_override("font_size", 12)
 	ayuda.add_theme_color_override("font_color", TINTA_APAGADA)
@@ -326,7 +393,7 @@ func mostrar_caida(al_levantarse: Callable) -> void:
 	t.text = "\n".join([
 		"[b][color=#ce8b84]Estás en el piso.[/color][/b]",
 		"",
-		"No perdiste lo que sabés — eso vive en tu cabeza, y ninguna caída te lo saca.",
+		"No perdiste lo que sabes — eso vive en tu cabeza, y ninguna caída te lo saca.",
 		"[color=#7d867f]Vas a levantarte en la aldea. Volver hasta acá es caminarlo.[/color]",
 	])
 	col.add_child(t)
@@ -352,54 +419,119 @@ func ocultar_caida() -> void:
 	_caida = null
 
 
+## La caja de diálogo. Es la superficie que más se usa del juego, y era la
+## peor: se apoyaba a 70 px del piso —o sea encima de la vida, de la pista y de
+## la línea de teclas—, no decía cómo se cerraba, y mezclaba las dos cosas que
+## más importa distinguir.
+##
+## Ahora son tres franjas de arriba hacia abajo y cada una dice qué es:
+##
+##   ┌ NOMBRE DEL NPC                                        [Esc] cerrar ┐
+##   │ “lo que te dijo”                                                   │  ← scrollea
+##   │ ELEGÍ UNA — ESTO PASA DE VERDAD EN EL VALLE                        │
+##   │ › Pedirle que te enseñe                                            │
+##   │      un saber suyo pasa a tu cabeza…                               │
+##   ├────────────────────────────────────────────────────────────────────┤
+##   │ O DECILE ALGO — ES SÓLO CHARLA, EL MUNDO NO SE MUEVE               │  ← fijo
+##   │ [ …                                                              ] │
+##   │ [ dejar de hablar    [Esc] ]                                       │
+##   └────────────────────────────────────────────────────────────────────┘
+##
+## Lo de arriba scrollea y lo de abajo queda fijo, y eso no es estética: la
+## lista de opciones crece (y ahora crece más, con los saberes para elegir).
+## Es la trampa de la bienvenida otra vez — un panel que crece se lleva su
+## propio botón abajo del borde de la pantalla y deja el juego trabado.
 func _armar_caja() -> void:
 	_caja = PanelContainer.new()
 	_caja.anchor_left = 0.5
 	_caja.anchor_right = 0.5
 	_caja.anchor_top = 1.0
 	_caja.anchor_bottom = 1.0
-	_caja.offset_left = -380
-	_caja.offset_right = 380
-	_caja.offset_top = -ALTO_CAJA  # 330
-	_caja.offset_bottom = -70
 	_caja.visible = false
 
 	var estilo := StyleBoxFlat.new()
 	estilo.bg_color = Color(0.07, 0.09, 0.10, 0.94)
-	estilo.border_color = Color(0.44, 0.73, 0.62)
+	estilo.border_color = VERDE
 	estilo.border_width_top = 2
-	estilo.content_margin_left = 26
-	estilo.content_margin_right = 26
-	estilo.content_margin_top = 22
-	estilo.content_margin_bottom = 22
+	estilo.content_margin_left = 22
+	estilo.content_margin_right = 22
+	estilo.content_margin_top = 13
+	estilo.content_margin_bottom = 13
 	_caja.add_theme_stylebox_override("panel", estilo)
 
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 14)
+	col.add_theme_constant_override("separation", 8)
 	_caja.add_child(col)
+
+	# Con quién estás hablando, y cómo se sale. Lo segundo andaba desde siempre
+	# y en pantalla no había una sola letra que lo dijera: *"¿cómo lo cierro si
+	# no quiero hablar?"*. Una tecla que existe y no se ve es una tecla que no
+	# existe.
+	var barra := HBoxContainer.new()
+	_quien = Label.new()
+	_quien.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_quien.add_theme_font_size_override("font_size", 18)
+	_quien.add_theme_color_override("font_color", TINTA)
+	_legible(_quien)
+	barra.add_child(_quien)
+	var salida := Label.new()
+	salida.text = "[Esc] cerrar"
+	salida.add_theme_font_size_override("font_size", 13)
+	salida.add_theme_color_override("font_color", TINTA_TENUE)
+	_legible(salida, 4)
+	barra.add_child(salida)
+	col.add_child(barra)
+
+	var rollo := ScrollContainer.new()
+	rollo.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	rollo.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	col.add_child(rollo)
+
+	var adentro := VBoxContainer.new()
+	adentro.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	adentro.add_theme_constant_override("separation", 10)
+	rollo.add_child(adentro)
 
 	_texto = RichTextLabel.new()
 	_texto.bbcode_enabled = true
 	_texto.fit_content = true
-	_texto.custom_minimum_size = Vector2(0, 92)
+	_texto.scroll_active = false
+	_texto.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_texto.add_theme_font_size_override("normal_font_size", 17)
-	col.add_child(_texto)
+	adentro.add_child(_texto)
+
+	_rotulo_actos = _rotulo(ROTULO_ACTOS, VERDE)
+	adentro.add_child(_rotulo_actos)
 
 	_opciones = VBoxContainer.new()
-	_opciones.add_theme_constant_override("separation", 6)
-	col.add_child(_opciones)
+	_opciones.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_opciones.add_theme_constant_override("separation", 8)
+	adentro.add_child(_opciones)
 
-	# Escribirle lo que se te cante. Las opciones de abajo siguen siendo las
-	# únicas que mueven el mundo; esto es la conversación.
+	col.add_child(HSeparator.new())
+
+	# La otra mitad: escribirle lo que se te cante. Va con su propio rótulo y
+	# del otro lado de una línea porque **es otra cosa** — esto no toca el
+	# mundo, y hasta hoy se veía igual que las opciones que sí lo tocan.
+	col.add_child(_rotulo(ROTULO_CHARLA, TINTA_APAGADA))
+
 	_decir = LineEdit.new()
-	_decir.placeholder_text = "decile algo…  (Enter)"
+	_decir.placeholder_text = PISTA_QUIETO
 	_decir.max_length = 300
+	# Apagado hasta que entres: un campo de texto encendido pide que escribas, y
+	# lo que este juego quiere que mires primero son las opciones.
+	_decir.modulate.a = 0.72
+	_decir.focus_entered.connect(func() -> void:
+		_decir.placeholder_text = PISTA_TECLEANDO
+		_decir.modulate.a = 1.0)
+	_decir.focus_exited.connect(func() -> void:
+		_decir.placeholder_text = PISTA_QUIETO
+		_decir.modulate.a = 0.72)
 	# Escape cierra. Sin esto quedás atrapado tecleando y el juego se siente
 	# roto en el primer minuto.
 	_decir.gui_input.connect(func(e: InputEvent) -> void:
 		if e is InputEventKey and e.pressed and (e as InputEventKey).keycode == KEY_ESCAPE:
-			_caja.visible = false
-			_decir.release_focus()
+			cerrar_caja()
 			_decir.accept_event())
 	_decir.text_submitted.connect(func(t: String) -> void:
 		if t.strip_edges() == "":
@@ -410,13 +542,46 @@ func _armar_caja() -> void:
 	col.add_child(_decir)
 
 	var cerrar := Button.new()
-	cerrar.text = "seguir"
-	cerrar.pressed.connect(func() -> void:
-		_caja.visible = false
-		_decir.release_focus())
+	cerrar.text = "dejar de hablar    [Esc]"
+	cerrar.pressed.connect(cerrar_caja)
 	col.add_child(cerrar)
 
 	add_child(_caja)
+
+	# La caja se recoloca contra el tamaño real de la ventana, no contra el que
+	# tenía el que la escribió. Con 900 px de alto sobra; en una ventana chica,
+	# sin esto, el techo de la caja se va arriba del borde y el jugador pierde
+	# el nombre del lugar y la lista de qué hacer.
+	var vp := get_viewport()
+	if vp != null and not vp.size_changed.is_connected(_recolocar_caja):
+		vp.size_changed.connect(_recolocar_caja)
+	_recolocar_caja()
+
+
+## Un rótulo de sección: chico, en mayúsculas y del color de lo que rotula.
+static func _rotulo(texto: String, color: Color) -> Label:
+	var l := Label.new()
+	l.text = texto
+	l.add_theme_font_size_override("font_size", 11)
+	l.add_theme_color_override("font_color", color)
+	_legible(l, 4)
+	return l
+
+
+## Dónde va la caja: apoyada en `Y_PISO_CAJA` y creciendo hacia arriba hasta
+## `ALTO_CAJA`, sin pasarse del techo ni de los bordes.
+func _recolocar_caja() -> void:
+	if _caja == null:
+		return
+	var vp := get_viewport()
+	var pantalla := Vector2(1280, 720) if vp == null else Vector2(vp.get_visible_rect().size)
+	var techo := clampf(pantalla.y - Y_PISO_CAJA - Y_TECHO, 120.0, float(ALTO_CAJA))
+	var alto := clampf(_alto_deseado, minf(float(ALTO_CAJA_MIN), techo), techo)
+	var ancho := minf(float(ANCHO_CAJA), pantalla.x * 0.5 - X_MARGEN)
+	_caja.offset_left = -ancho
+	_caja.offset_right = ancho
+	_caja.offset_bottom = -float(Y_PISO_CAJA)
+	_caja.offset_top = -float(Y_PISO_CAJA) - alto
 
 
 func conectar_api(api: Api) -> void:
@@ -439,7 +604,7 @@ func _al_aviso(texto: String) -> void:
 func mostrar_region(region: Dictionary, jugador: Dictionary) -> void:
 	_ultima_region = region
 	_titulo.text = region.get("name", "El valle")
-	_sub.text = "día %s · sos %s" % [region.get("tick", 0), jugador.get("name", "?")]
+	_sub.text = "día %s · eres %s" % [region.get("tick", 0), jugador.get("name", "?")]
 
 
 func mostrar_cercano(nombre: String, _nodo: Node3D) -> void:
@@ -465,78 +630,216 @@ func mostrar_cercano(nombre: String, _nodo: Node3D) -> void:
 
 func _al_dialogo(d: Dictionary) -> void:
 	if d.has("error"):
+		_encabezar(npc_cercano, "dde3de")
 		_texto.text = str(d["error"])
-		_caja.visible = true
+		_pintar_opciones([])
+		_abrir_caja()
 		return
 
-	var tono: String = {
-		"calido": "6fb99e", "neutral": "dde3de", "seco": "98a29c", "hostil": "ce8b84",
-	}.get(d.get("animo", "neutral"), "dde3de")
+	_encabezar(npc_cercano, _tono(d.get("animo", "neutral")))
+	_texto.text = "“%s”" % d.get("saludo", "…")
+	_pintar_opciones(d.get("opciones", []))
+	_abrir_caja()
 
-	_texto.text = "[color=#%s][b]%s[/b][/color]\n“%s”" % [
-		tono, npc_cercano, d.get("saludo", "…"),
-	]
 
+func _encabezar(nombre: String, tono: String) -> void:
+	_quien.text = nombre
+	_quien.add_theme_color_override("font_color", Color.html(tono))
+
+
+## Las opciones las manda EL SERVIDOR y salen del estado del mundo: cuáles hay,
+## si se pueden, y por qué no. Acá no se inventa ninguna — una opción de más es
+## una promesa que el mundo no puede cumplir.
+##
+## Lo que cambió es cómo se leen, y son tres cosas:
+##
+## 1. **Lo que no se puede deja de tener forma de botón.** Antes era un `Button`
+##    con `disabled = true`, que sigue pareciendo un botón: el ojo lo intenta,
+##    la mano lo aprieta, no pasa nada. Ahora es un renglón de texto, debajo de
+##    su propio rótulo y al final. El motivo que manda el servidor —"Sarn no le
+##    enseña lo suyo a nadie", "nada de lo que llevas le sirve"— es lo que se
+##    lee, porque es la información real: dice qué te falta.
+## 2. **Lo que sí se puede va primero**, con marca y en verde, aunque el
+##    servidor las mande mezcladas.
+## 3. **Cada una dice qué hace**, con el renglón de `QUE_HACE`.
+func _pintar_opciones(lista: Array) -> void:
 	for hijo in _opciones.get_children():
 		hijo.queue_free()
 
-	# Las opciones las manda EL SERVIDOR y salen del estado del mundo: cuáles
-	# hay, si se pueden, y por qué no. Acá no se inventa ninguna — una opción
-	# de más es una promesa que el mundo no puede cumplir.
-	#
-	# Lo que sí cambió es cómo se leen. Antes lo posible y lo imposible eran el
-	# mismo renglón gris con un guión en el medio, así que la caja parecía una
-	# lista de cosas que no podés hacer. Ahora lo que se puede hacer se ve
-	# primero y en verde, y el motivo de lo que no va debajo y en chico: es
-	# información, no una opción.
 	var posibles := 0
-	for o: Dictionary in d.get("opciones", []):
-		var verbo: String = o.get("verbo", "")
-		var quien: String = npc_cercano
-		var puede: bool = bool(o.get("posible", false))
+	for o: Dictionary in lista:
+		if not bool(o.get("posible", false)):
+			continue
+		posibles += 1
+		_opciones.add_child(_fila_posible(o))
 
-		var fila := VBoxContainer.new()
-		fila.add_theme_constant_override("separation", 0)
-
-		var b := Button.new()
-		b.text = str(o.get("texto", ""))
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.disabled = not puede
-		if puede:
-			posibles += 1
-			b.add_theme_color_override("font_color", VERDE)
-			b.add_theme_color_override("font_hover_color", TINTA)
-		b.pressed.connect(func() -> void:
-			_caja.visible = false
-			_decir.release_focus()
-			_api.actuar(verbo, quien))
-		fila.add_child(b)
-
-		if not puede:
-			var por := Label.new()
-			por.text = "    " + str(o.get("porque", "no se puede"))
-			por.add_theme_font_size_override("font_size", 12)
-			por.add_theme_color_override("font_color", TINTA_APAGADA)
-			por.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			fila.add_child(por)
-
-		_opciones.add_child(fila)
-
-	if posibles == 0:
+	if posibles == 0 and not lista.is_empty():
 		# Que no haya nada que hacer con alguien es un dato del mundo, no un
 		# error, pero en silencio se lee como que la caja está rota.
 		var nada := Label.new()
-		nada.text = "Con %s no hay nada que hacer todavía. Hablale igual." % npc_cercano
+		nada.text = "Con %s no hay nada que hacer todavía." % npc_cercano
 		nada.add_theme_font_size_override("font_size", 13)
 		nada.add_theme_color_override("font_color", TINTA_APAGADA)
 		nada.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_opciones.add_child(nada)
 
+	var imposibles := 0
+	for o: Dictionary in lista:
+		if bool(o.get("posible", false)):
+			continue
+		if imposibles == 0:
+			_opciones.add_child(_rotulo(ROTULO_NO, TINTA_APAGADA))
+		imposibles += 1
+		_opciones.add_child(_fila_imposible(o))
+
+	_rotulo_actos.visible = posibles > 0
+
+	# Cuánto alto pedirle a la caja. Se cuenta acá, con los renglones que acabo
+	# de dibujar, y NO se mide después: medir de verdad necesita esperar un
+	# cuadro de layout, y una caja que salta de tamaño un cuadro después de
+	# abrirse se lee peor que una que sale del tamaño correcto. Los números son
+	# gruesos a propósito y el techo de `ALTO_CAJA` los ataja; lo que se pase,
+	# scrollea.
+	_alto_deseado = ALTO_FIJO_CAJA + 64.0 + posibles * 58.0
+	if posibles == 0 and not lista.is_empty():
+		_alto_deseado += 40.0
+	if imposibles > 0:
+		_alto_deseado += 24.0 + imposibles * 30.0
+
+
+## Una opción que sí se puede: el botón, y debajo qué hace en un renglón.
+func _fila_posible(o: Dictionary) -> Control:
+	var verbo := str(o.get("verbo", ""))
+	var a_quien := npc_cercano
+
+	var fila := VBoxContainer.new()
+	fila.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fila.add_theme_constant_override("separation", 1)
+
+	var b := Button.new()
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.add_theme_color_override("font_color", VERDE)
+	b.add_theme_color_override("font_hover_color", TINTA)
+	fila.add_child(b)
+
+	var gloss := Label.new()
+	gloss.text = "      " + str(QUE_HACE.get(verbo, ""))
+	gloss.visible = QUE_HACE.has(verbo)
+	gloss.add_theme_font_size_override("font_size", 12)
+	gloss.add_theme_color_override("font_color", TINTA_TENUE)
+	gloss.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	fila.add_child(gloss)
+
+	# Enseñar teniendo varias cosas en la cabeza: se despliega y elegís cuál.
+	var elegir: Array = o.get("elegir", [])
+	if verbo == "ensenar" and elegir.size() > 1:
+		var cuales := _lista_saberes(elegir, a_quien)
+		cuales.visible = false
+		fila.add_child(cuales)
+		b.text = "› %s  ▾" % str(o.get("texto", ""))
+		b.pressed.connect(func() -> void:
+			cuales.visible = not cuales.visible
+			# El renglón de «qué hace» se va mientras elegís: la lista ya dice
+			# lo mismo y con más cuidado, y dos veces la misma frase una arriba
+			# de la otra hace dudar de cuál de las dos estás leyendo.
+			gloss.visible = not cuales.visible
+			# Y la caja pide el alto que ahora necesita, en vez de esconder
+			# media lista detrás del scroll sin motivo.
+			_alto_deseado += (26.0 + elegir.size() * 30.0) * (1.0 if cuales.visible else -1.0)
+			_recolocar_caja())
+	else:
+		b.text = "› " + str(o.get("texto", ""))
+		b.pressed.connect(func() -> void:
+			cerrar_caja()
+			_api.actuar(verbo, a_quien))
+	return fila
+
+
+## Elegir QUÉ le enseñás.
+##
+## **Regalar un saber es la decisión más grande del juego** — es lo único que
+## hace que no se pierda cuando te morís, y también lo que deja de hacerte
+## único. Elegía el servidor: al azar, salvo que el otro estuviera trabado
+## esperando justo eso. O sea que podías tener dos oficios en la cabeza,
+## apretar «Enseñarle», y enterarte después de cuál regalaste.
+##
+## La lista **no la inventa el cliente**: viene en `opciones[].elegir` y son los
+## saberes tuyos que el otro todavía no tiene, que es lo único que el cliente no
+## puede saber solo. Si el servidor no la manda —versión vieja, o un solo saber
+## posible— el botón sigue siendo uno y el servidor sigue eligiendo. O sea que
+## esto no puede romper nada: sólo agrega cuando hay algo que elegir.
+func _lista_saberes(saberes: Array, a_quien: String) -> Control:
+	var caja := VBoxContainer.new()
+	caja.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	caja.add_theme_constant_override("separation", 3)
+
+	var aviso := Label.new()
+	aviso.text = "      Se va uno solo y no hay forma de deshacerlo. Elegí cuál le dejás."
+	aviso.add_theme_font_size_override("font_size", 12)
+	aviso.add_theme_color_override("font_color", AMBAR)
+	aviso.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	caja.add_child(aviso)
+
+	for s in saberes:
+		var nombre := str(s).strip_edges()
+		if nombre == "":
+			continue
+		var b := Button.new()
+		b.text = "      enseñarle %s" % nombre
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.add_theme_font_size_override("font_size", 13)
+		b.add_theme_color_override("font_color", AMBAR)
+		b.add_theme_color_override("font_hover_color", TINTA)
+		b.pressed.connect(func() -> void:
+			cerrar_caja()
+			# Mismo formato que `dar`: "<qué> a <quién>", que es el que el
+			# resolvedor ya sabe partir por el último " a ".
+			_api.actuar("ensenar", "%s a %s" % [nombre, a_quien]))
+		caja.add_child(b)
+	return caja
+
+
+## Una opción que NO se puede: sin forma de botón, y con el motivo adelante.
+func _fila_imposible(o: Dictionary) -> Control:
+	var l := RichTextLabel.new()
+	l.bbcode_enabled = true
+	l.fit_content = true
+	l.scroll_active = false
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	l.add_theme_font_size_override("normal_font_size", 13)
+	# En un renglón: el qué y el por qué juntos. El motivo es lo que importa —es
+	# lo que te dice qué te falta— y partirlo en dos renglones le daba a cada
+	# imposible el mismo peso vertical que a una acción que sí podés hacer.
+	l.text = "[color=#737c77]%s[/color] [color=#5f6864]— %s[/color]" % [
+		str(o.get("texto", "")), str(o.get("porque", "todavía no")),
+	]
+	return l
+
+
+## Abrir y cerrar. Las dos son una sola cosa y las piden varios lugares —Escape,
+## el botón, apretar una opción—, así que viven acá y no repetidas en cada uno.
+func _abrir_caja() -> void:
+	_recolocar_caja()
 	_caja.visible = true
 	_decir.editable = true
 	_decir.text = ""
-	_decir.grab_focus()
+	# **No se roba el foco.** Antes sí, y era la mitad del enredo: abrías una
+	# charla y de golpe el WASD no caminaba, sin que nada en pantalla lo
+	# dijera. Ahora escribir es un acto aparte —[Enter] entra al campo— y lo
+	# primero que ves son las opciones, que es lo que mueve el mundo.
+	_decir.release_focus()
 	_pista.text = ""
+
+
+func cerrar_caja() -> void:
+	if _caja == null:
+		return
+	_caja.visible = false
+	if _decir != null:
+		_decir.release_focus()
+	# Y la pista de acción vuelve. Sin esto, al cerrar quedabas sin el
+	# "[E] hablar con X" y parecía que la persona se había ido.
+	mostrar_cercano(npc_cercano, null)
 
 
 func _al_cronica(texto: String) -> void:
@@ -545,10 +848,10 @@ func _al_cronica(texto: String) -> void:
 	if not _ya_saludamos:
 		dar_bienvenida(_ultima_region, texto, _ultimos_pasos)
 		return
+	_encabezar("Lo que pasó acá", "dde3de")
 	_texto.text = texto
-	for hijo in _opciones.get_children():
-		hijo.queue_free()
-	_caja.visible = true
+	_pintar_opciones([])
+	_abrir_caja()
 
 
 ## Cuando no hay token guardado: se pide una vez y queda.
@@ -671,7 +974,7 @@ func _pintar_bolsa() -> void:
 			"[color=#98a29c]NO LLEVÁS NADA[/color]",
 			"",
 			"[color=#7d867f]Apretá [b]B[/b] para juntar lo que haya donde estás parado.",
-			"Sin materia prima no podés cumplirle nada a nadie.[/color]",
+			"Sin materia prima no puedes cumplirle nada a nadie.[/color]",
 		])
 	else:
 		var lineas: Array[String] = ["[color=#98a29c]LO QUE LLEVÁS[/color]", ""]
@@ -796,8 +1099,8 @@ func mostrar_pasos(lista: Array) -> void:
 		_pasos.anchor_top = 0.0
 		_pasos.anchor_bottom = 0.0
 		_pasos.offset_left = X_MARGEN
-		_pasos.offset_right = 430
-		_pasos.offset_top = 96
+		_pasos.offset_right = X_MARGEN + ANCHO_COLUMNA
+		_pasos.offset_top = Y_COLUMNA
 		_pasos.add_theme_constant_override("line_separation", 3)
 		_legible(_pasos)
 		add_child(_pasos)
@@ -927,14 +1230,11 @@ func reconocer(linea: String, animo: String) -> void:
 		_saludo.anchor_left = 0.5; _saludo.anchor_right = 0.5
 		_saludo.anchor_top = 1.0; _saludo.anchor_bottom = 1.0
 		_saludo.offset_left = -330; _saludo.offset_right = 330
-		_saludo.offset_top = -Y_SALUDO - 34; _saludo.offset_bottom = -Y_SALUDO
+		_saludo.offset_top = -Y_SALUDO - ALTO_SALUDO; _saludo.offset_bottom = -Y_SALUDO
 		_saludo.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(_saludo)
 
-	var tono: String = {
-		"calido": "6fb99e", "neutral": "dde3de", "seco": "98a29c", "hostil": "ce8b84",
-	}.get(animo, "dde3de")
-	_saludo.text = "[center][color=#%s]%s[/color][/center]" % [tono, linea]
+	_saludo.text = "[center][color=#%s]%s[/color][/center]" % [_tono(animo), linea]
 	_saludo.modulate.a = 1.0
 
 	# Se desvanece sola. Un cartel que se queda deja de ser un momento y pasa
@@ -993,17 +1293,15 @@ void fragment() {
 ## en camino. Sin él, una respuesta que tarda un segundo se lee como que el
 ## juego se colgó.
 func abrir_charla(quien: String, adelanto: String, animo: String) -> void:
-	var tono: String = {
-		"calido": "6fb99e", "neutral": "dde3de", "seco": "98a29c", "hostil": "ce8b84",
-	}.get(animo, "dde3de")
-	_texto.text = "[color=#%s][b]%s[/b][/color]\n%s\n\n[color=#5f6864]…[/color]" % [
-		tono, quien, adelanto if adelanto != "" else "",
-	]
-	for hijo in _opciones.get_children():
-		hijo.queue_free()
+	_encabezar(quien, _tono(animo))
+	_texto.text = "%s\n\n[color=#5f6864]…[/color]" % adelanto
+	_pintar_opciones([])
+	_recolocar_caja()
 	if _decir != null:
 		_decir.editable = false
+		_decir.release_focus()
 	_caja.visible = true
+	_pista.text = ""
 
 
 ## El volumen, con las flechas de más y menos del teclado.
@@ -1040,6 +1338,15 @@ func _unhandled_input(evento: InputEvent) -> void:
 	if not (evento is InputEventKey and evento.pressed) or escribiendo():
 		return
 	var k := (evento as InputEventKey).keycode
+	# Enter entra al campo de texto de la charla. Es la contracara de no robar
+	# el foco al abrir: el campo está ahí, apagado y con la tecla escrita en el
+	# placeholder, y escribir pasa a ser algo que decidís. Sólo hace algo con la
+	# caja abierta, así que no le saca la tecla a nadie.
+	if (k == KEY_ENTER or k == KEY_KP_ENTER) and _caja != null and _caja.visible \
+			and _decir != null and _decir.editable:
+		_decir.grab_focus()
+		get_viewport().set_input_as_handled()
+		return
 	# I y B primero: son acciones del juego, el volumen es un ajuste. Las dos
 	# salen por acá y no por `valle.gd` porque las dos son de esta capa —la
 	# bolsa es un panel, y `buscar` no toca la escena 3D para nada.
@@ -1063,7 +1370,7 @@ func _unhandled_input(evento: InputEvent) -> void:
 		elif _bolsa_panel != null and _bolsa_panel.visible:
 			_bolsa_panel.visible = false
 		elif _caja.visible:
-			_caja.visible = false
+			cerrar_caja()
 		get_viewport().set_input_as_handled()
 		return
 	if k == KEY_C:
