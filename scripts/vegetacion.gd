@@ -246,7 +246,15 @@ var _por_zona := {}
 var _baldosas := 0
 var _ms_construir := 0.0
 var _tris_copa := 0
+var _tris_fronda := 0
+var _tris_arbusto := 0
 var _tris_tronco := 0
+
+## El verde medio de la paleta. Es el divisor que convierte el color por
+## instancia en un multiplicador sobre la malla del kit — ver `_tinte()`. Se
+## calcula una vez, en `_construir()`, porque `copa_humeda()` y `copa_seca()`
+## leen de `Paleta` y no son constantes de compilación.
+var _color_medio := Color(0.30, 0.40, 0.24)
 
 
 # ===========================================================================
@@ -407,6 +415,9 @@ func _plantar(celdas: Dictionary, ix: int, iz: int, x: float, z: float, campo: D
 		var ancho := alto * _entre(ix, iz, 23, 0.55, 0.95)
 		var c := arbusto().lerp(copa_seca(), seco * 0.35)
 		c = c.darkened(_entre(ix, iz, 24, -0.10, 0.14))
+		# La escala en XZ es el DIÁMETRO. Las mallas del kit vienen
+		# normalizadas a un metro de ancho por uno de alto (`_normalizada()`),
+		# así que acá se piensa en el tamaño real de la planta y no en radios.
 		_guardar(celdas, ARBUSTO, x, z,
 			_pose(ix, iz, x, z, 0.0, Vector3(ancho, alto, ancho), 0.05),
 			c, azar(ix, iz, 90))
@@ -417,9 +428,9 @@ func _plantar(celdas: Dictionary, ix: int, iz: int, x: float, z: float, campo: D
 	# Tocones: sólo donde alguien taló. No hay tocones silvestres.
 	if azar(ix, iz, 25) < talado:
 		var alto_t := _entre(ix, iz, 26, 0.45, 0.95)
-		var radio_t := _entre(ix, iz, 27, 0.22, 0.46)
+		var ancho_t := _entre(ix, iz, 27, 0.44, 0.92)
 		_guardar(celdas, TOCON, x, z,
-			_pose(ix, iz, x, z, 0.0, Vector3(radio_t, alto_t, radio_t), 0.06),
+			_pose(ix, iz, x, z, 0.0, Vector3(ancho_t, alto_t, ancho_t), 0.06),
 			Paleta.TRONCO.darkened(0.22), azar(ix, iz, 91))
 		_cuenta["tocon"] += 1
 		_contar_zona(x, z, "tocon")
@@ -451,10 +462,15 @@ func _plantar(celdas: Dictionary, ix: int, iz: int, x: float, z: float, campo: D
 	if reg > 0.0:
 		alto = lerp(alto, 8.4, reg * 0.75)
 
-	var h_tronco: float = alto * (0.34 if conifera else 0.46)
-	var radio_copa := alto * esbeltez
-	var alto_copa: float = alto * (0.76 if conifera else 0.64)
-	var radio_tronco: float = alto * (0.019 if conifera else 0.026)
+	# EL ÁRBOL ES UNA SOLA MALLA. Antes eran dos instancias —copa y tronco, en
+	# dos MultiMesh distintos, apiladas a mano— porque la copa era un cono
+	# torneado y había que ponerle un palo abajo. La malla del kit trae el
+	# tronco adentro, así que el árbol es una instancia y el segundo MultiMesh
+	# se fue: **3.039 instancias menos, que eran el 38% de la vegetación.**
+	#
+	# `ancho` es el diámetro de la copa y `alto` la altura total del árbol.
+	# `esbeltez` seguía siendo radio-sobre-alto, de ahí el 2.
+	var ancho := alto * esbeltez * 2.0
 	var caida: float = _entre(ix, iz, 31, 0.0, 0.10) * (1.0 - reg * 0.8)
 
 	# El tono: seco arriba y lejos del agua, húmedo en la vaguada y la ribera.
@@ -464,13 +480,8 @@ func _plantar(celdas: Dictionary, ix: int, iz: int, x: float, z: float, campo: D
 
 	var orden := azar(ix, iz, 92)
 	_guardar(celdas, CONIFERA if conifera else FRONDA, x, z,
-		_pose(ix, iz, x, z, h_tronco * 0.92,
-			Vector3(radio_copa, alto_copa, radio_copa), caida),
+		_pose(ix, iz, x, z, 0.0, Vector3(ancho, alto, ancho), caida),
 		c, orden)
-	_guardar(celdas, TRONCO, x, z,
-		_pose(ix, iz, x, z, 0.0,
-			Vector3(radio_tronco, h_tronco, radio_tronco), caida),
-		Paleta.TRONCO.darkened(_entre(ix, iz, 33, -0.10, 0.16)), orden)
 	_cuenta["conifera" if conifera else "fronda"] += 1
 	_contar_zona(x, z, "arbol")
 
@@ -676,14 +687,12 @@ func _testigos_de_la_aldea(celdas: Dictionary) -> void:
 			continue
 		var alto := _entre(700, i, 2, 12.5, 16.0)
 		var c := copa_humeda().lerp(copa_seca(), 0.55).darkened(_entre(700, i, 3, -0.06, 0.08))
+		# Una sola instancia, como todos los árboles ahora: la malla del kit
+		# trae su tronco. `alto` es la altura entera del testigo.
 		_guardar(celdas, FRONDA, x, z,
-			_pose(700, i, x, z, alto * 0.44,
-				Vector3(alto * 0.40, alto * 0.62, alto * 0.40), 0.03),
-			c, azar(700, i, 9))
-		_guardar(celdas, TRONCO, x, z,
 			_pose(700, i, x, z, 0.0,
-				Vector3(alto * 0.036, alto * 0.48, alto * 0.036), 0.03),
-			Paleta.TRONCO, azar(700, i, 9))
+				Vector3(alto * 0.72, alto, alto * 0.72), 0.03),
+			c, azar(700, i, 9))
 		_cuenta["fronda"] += 1
 		_contar_zona(x, z, "arbol")
 
@@ -702,11 +711,11 @@ func _secos_del_paramo(celdas: Dictionary) -> void:
 		var x := c_ruina.x + cos(a) * rad
 		var z := c_ruina.z + sin(a) * rad
 		var alto := _entre(800, i, 3, 4.2, 9.2)
-		var radio := _entre(800, i, 4, 0.13, 0.24)
+		var ancho := _entre(800, i, 4, 0.26, 0.48)
 		# Un muerto parado se inclina mucho más que uno vivo.
 		var caida := _entre(800, i, 5, 0.03, 0.30)
 		_guardar(celdas, SECO, x, z,
-			_pose(800, i, x, z, 0.0, Vector3(radio, alto, radio), caida),
+			_pose(800, i, x, z, 0.0, Vector3(ancho, alto, ancho), caida),
 			tronco_seco().darkened(_entre(800, i, 6, -0.06, 0.12)), azar(800, i, 7))
 		_cuenta["seco"] += 1
 		_contar_zona(x, z, "seco")
@@ -716,30 +725,48 @@ func _secos_del_paramo(celdas: Dictionary) -> void:
 # LOS MULTIMESH
 # ===========================================================================
 
+## QUÉ MALLA ES CADA COSA.
+##
+## Esto era el corazón del problema de arte del juego: el pasto eran conos
+## verdes porque eran conos verdes, y no hay material que arregle un cono. Las
+## mallas ahora son de Kenney (CC0, ver `assets/PROCEDENCIA.md`), y son las
+## mismas cinco categorías de siempre — **el sistema de siembra no cambió: la
+## densidad por zona, el campo, las baldosas y el MultiMesh son los de antes.**
+## Lo único que cambió es qué se instancia.
+##
+## **Una malla por categoría, y es a propósito.** Kenney trae quince árboles
+## distintos y la tentación es usarlos todos. Cada malla extra es un MultiMesh
+## extra POR BALDOSA: con dos árboles de fronda, las 104 baldosas pasan de 274
+## nodos a ~380, y las llamadas de dibujo adentro del cono de cámara de ~45 a
+## ~65. La variedad que se ve a 40 metros la da la escala y el giro de cada
+## instancia, que ya estaban. La que daría una segunda malla no se ve, y se
+## paga en cada cuadro.
+const MALLAS := {
+	CONIFERA: "naturaleza/tree_pineSmallC",   #  54 tri
+	FRONDA:   "naturaleza/tree_simple",       #  62 tri
+	ARBUSTO:  "naturaleza/plant_bush",        #  32 tri
+	TOCON:    "naturaleza/stump_round",       #  56 tri
+	SECO:     "naturaleza/stump_oldTall",     # 120 tri, y son catorce
+}
+
+
 func _construir(celdas: Dictionary) -> void:
-	# Cinco gajos y cuatro puntos de perfil. Es el mínimo que todavía se lee
-	# como aguja y como copa, y es una decisión, no un recorte: facetas grandes
-	# y duras, de la misma familia que los techos de cuatro caras del valle.
-	var malla_conifera := _malla_copa([
-		Vector2(0.00, 0.52), Vector2(0.26, 1.00), Vector2(0.58, 0.66),
-		Vector2(1.00, 0.00)], 5, 3)
-	var malla_fronda := _malla_copa([
-		Vector2(0.00, 0.34), Vector2(0.22, 0.92), Vector2(0.58, 1.00),
-		Vector2(1.00, 0.00)], 5, 17)
-	var malla_tronco := _malla_tronco(5)
+	_color_medio = copa_humeda().lerp(copa_seca(), 0.5)
 
-	_tris_copa = _triangulos(malla_conifera)
-	_tris_tronco = _triangulos(malla_tronco)
+	# Las mallas del kit vienen con su propio material y su propio tamaño.
+	# `_normalizada()` devuelve la malla y el Transform3D que la lleva a "un
+	# metro de alto, un metro de ancho, apoyada en y=0", que es la convención
+	# que ya usaban las poses de `_plantar()`.
+	var conifera := _normalizada(CONIFERA)
+	var fronda := _normalizada(FRONDA)
+	var arbusto := _normalizada(ARBUSTO)
+	var tocon := _normalizada(TOCON)
+	var seco := _normalizada(SECO)
 
-	var mat_copa := Paleta.follaje(Color.WHITE)
-	# **Sin este flag el color por instancia se calcula y se tira.** Ya pasó
-	# exactamente eso con el pasto de detalles.gd, que hoy sale todo del mismo
-	# verde. Si el albedo va en blanco y el color lo pone la instancia, el flag
-	# no es opcional: es la mitad del mecanismo.
-	mat_copa.vertex_color_use_as_albedo = true
-
-	var mat_tronco := Paleta.madera(Color.WHITE)
-	mat_tronco.vertex_color_use_as_albedo = true
+	_tris_copa = Kit.triangulos(conifera[0])
+	_tris_fronda = Kit.triangulos(fronda[0])
+	_tris_arbusto = Kit.triangulos(arbusto[0])
+	_tris_tronco = Kit.triangulos(tocon[0])
 
 	var orden := func(a: Array, b: Array) -> bool: return a[2] < b[2]
 
@@ -751,46 +778,176 @@ func _construir(celdas: Dictionary) -> void:
 		var coniferas: Array = bolsa[CONIFERA]
 		coniferas.sort_custom(orden)
 		if not coniferas.is_empty():
-			_nodos_copa.append(_multi(coniferas, 0, malla_conifera, mat_copa,
+			_nodos_copa.append(_multi(coniferas, 0, conifera,
 				centro, celda, "coniferas"))
 
-		# Los arbustos van DETRÁS de los árboles en el mismo buffer: así
-		# `visible_instance_count` ralea el sotobosque y nunca un árbol.
+		# Antes las frondas y los arbustos iban en el MISMO buffer, con los
+		# arbustos atrás, para que `visible_instance_count` raleara el
+		# sotobosque y nunca un árbol. Ahora son mallas distintas —un árbol de
+		# Kenney no es un arbusto escalado— así que van separados y **el
+		# arbusto entero es raleable**, que es más simple y hace lo mismo.
 		var frondas: Array = bolsa[FRONDA]
 		frondas.sort_custom(orden)
+		if not frondas.is_empty():
+			_nodos_copa.append(_multi(frondas, 0, fronda,
+				centro, celda, "frondas"))
+
 		var arbustos: Array = bolsa[ARBUSTO]
 		arbustos.sort_custom(orden)
-		var mezcla := frondas + arbustos
-		if not mezcla.is_empty():
-			_nodos_copa.append(_multi(mezcla, arbustos.size(), malla_fronda,
-				mat_copa, centro, celda, "frondas"))
+		if not arbustos.is_empty():
+			_nodos_copa.append(_multi(arbustos, arbustos.size(), arbusto,
+				centro, celda, "arbustos"))
 
-		var maderas: Array = bolsa[TRONCO] + bolsa[TOCON] + bolsa[SECO]
-		maderas.sort_custom(orden)
-		if not maderas.is_empty():
-			_nodos_tronco.append(_multi(maderas, 0, malla_tronco, mat_tronco,
-				centro, celda, "troncos"))
+		# La madera muerta va con los troncos: se dibuja más cerca porque a
+		# ochenta metros un tocón no existe. Los troncos de los árboles vivos
+		# ya no están acá —**la malla del árbol de Kenney trae el suyo**—, y
+		# ésos eran 3.039 instancias de las 7.900. Se fueron enteras.
+		var tocones: Array = bolsa[TOCON]
+		tocones.sort_custom(orden)
+		if not tocones.is_empty():
+			_nodos_tronco.append(_multi(tocones, 0, tocon,
+				centro, celda, "tocones"))
+
+		var secos: Array = bolsa[SECO]
+		secos.sort_custom(orden)
+		if not secos.is_empty():
+			_nodos_tronco.append(_multi(secos, 0, seco,
+				centro, celda, "secos"))
+
+
+## La malla de una categoría, más el transform que la normaliza, más sus
+## materiales tintables.
+##
+## Devuelve `[Mesh, Transform3D, Array[Material]]`.
+##
+## **La normalización.** `_plantar()` calcula tamaños en metros contra una
+## malla de un metro apoyada en el suelo. Las de Kenney miden lo que miden
+## (`tree_simple` es 0,35 × 1,52). En vez de tocar las cuentas de siembra
+## —que están afinadas por zona y son lo que NO hay que romper— se mide la
+## malla y se la lleva a la convención de antes.
+##
+## **El tinte.** Las mallas del kit traen su color. La paleta traía el suyo,
+## por instancia, y con eso hacía la ribera húmeda más verde que la loma seca.
+## Las dos cosas a la vez se pisan. Lo que se conserva es la **variación**, no
+## el color absoluto: el color por instancia se divide por el color medio de
+## la paleta antes de mandarlo, así que llega como un multiplicador alrededor
+## de 1,0. La malla se ve con el verde de Kenney, movido por donde le tocó
+## crecer. Ver `_tinte()`.
+func _normalizada(tipo: int) -> Array:
+	var m := Kit.malla(MALLAS[tipo])
+	if m == null:
+		# Sin el kit el valle igual tiene que armarse. La geometría primitiva
+		# de antes queda como red: se ve peor, y se ve.
+		push_warning("Vegetación: falta %s, va la malla primitiva" % MALLAS[tipo])
+		return _primitiva(tipo)
+
+	var caja := m.get_aabb()
+	var ancho := maxf(maxf(caja.size.x, caja.size.z), 0.001)
+	var alto := maxf(caja.size.y, 0.001)
+	var s := Vector3(1.0 / ancho, 1.0 / alto, 1.0 / ancho)
+	# Centrada en XZ y apoyada en y=0.
+	var centro := Vector3(caja.position.x + caja.size.x * 0.5, caja.position.y,
+		caja.position.z + caja.size.z * 0.5)
+	var norma := Transform3D(Basis().scaled(s), -centro * s)
+
+	# EL MATERIAL VA EN LA MALLA, NO EN EL NODO. `MultiMeshInstance3D` **no
+	# tiene** `set_surface_override_material()` —es de `MeshInstance3D`— y
+	# `material_override` aplana las dos superficies del árbol (copa y tronco)
+	# a un solo color, que es justo lo que no queremos. La única vía que
+	# respeta la separación es escribir el material en la superficie de la
+	# malla.
+	#
+	# Se hace sobre la malla que cachea `Kit`, o sea UNA vez por categoría: las
+	# 1.664 coníferas comparten la misma malla y el mismo material. Muta el
+	# recurso importado en memoria (nunca en disco), y es seguro porque estas
+	# cinco mallas de árbol no las usa nadie más.
+	#
+	# Con `vertex_color_use_as_albedo` prendido el multiplicador por instancia
+	# llega al shader; sin el flag se calcula y se tira, que es la trampa que
+	# ya se pisó con el pasto.
+	var mats: Array[Material] = []
+	for i in m.get_surface_count():
+		var base := m.surface_get_material(i)
+		var mat: StandardMaterial3D = (base.duplicate() if base is StandardMaterial3D
+			else StandardMaterial3D.new())
+		if not mat.vertex_color_use_as_albedo:
+			mat.vertex_color_use_as_albedo = true
+			m.surface_set_material(i, mat)
+		mats.append(mat)
+
+	return [m, norma, mats]
+
+
+## La malla primitiva de antes, como red para cuando falta el kit. Es la misma
+## copa torneada de cinco gajos y el mismo tronco: facetas grandes y duras,
+## sombreado plano. Se ve a blockout, que es exactamente el problema que el kit
+## vino a resolver — por eso avisa por consola cuando cae acá.
+func _primitiva(tipo: int) -> Array:
+	var m: Mesh
+	match tipo:
+		CONIFERA:
+			m = _malla_copa([Vector2(0.00, 0.52), Vector2(0.26, 1.00),
+				Vector2(0.58, 0.66), Vector2(1.00, 0.00)], 5, 3)
+		FRONDA, ARBUSTO:
+			m = _malla_copa([Vector2(0.00, 0.34), Vector2(0.22, 0.92),
+				Vector2(0.58, 1.00), Vector2(1.00, 0.00)], 5, 17)
+		_:
+			m = _malla_tronco(5)
+	var mat := (Paleta.madera(Color.WHITE) if tipo in [TRONCO, TOCON, SECO]
+		else Paleta.follaje(Color.WHITE))
+	mat.vertex_color_use_as_albedo = true
+	# La primitiva ya venía en la convención (radio 1 → 2 de ancho, alto 1), y
+	# las poses ahora mandan diámetro. De ahí el 0,5 en XZ.
+	var norma := Transform3D(Basis().scaled(Vector3(0.5, 1.0, 0.5)), Vector3.ZERO)
+	var mats: Array[Material] = [mat]
+	return [m, norma, mats]
+
+
+## El color por instancia, llevado de absoluto a multiplicador.
+##
+## `_plantar()` piensa en colores de la paleta —copa húmeda, copa seca,
+## oscurecida un tanto—. La malla del kit ya trae su verde. Dividir por el
+## color medio deja pasar sólo la diferencia: 1,0 donde la paleta pediría su
+## verde medio, más cálido en la loma seca, más oscuro donde sorteó oscuro.
+##
+## Se acota a [0,45 · 1,55] para que un color raro no blanquee ni apague una
+## instancia entera.
+func _tinte(c: Color) -> Color:
+	var ref := _color_medio
+	return Color(
+		clampf(c.r / maxf(ref.r, 0.02), 0.45, 1.55),
+		clampf(c.g / maxf(ref.g, 0.02), 0.45, 1.55),
+		clampf(c.b / maxf(ref.b, 0.02), 0.45, 1.55))
 
 
 ## Una baldosa. El nodo va apoyado en el centro de la baldosa y NO en el origen
 ## del valle: la distancia de dibujado se mide contra la posición del nodo, y
 ## un nodo en (0,0,0) que abarca 350 metros nunca está lejos de la cámara.
-func _multi(lista: Array, raleables: int, malla: Mesh, mat: Material,
+##
+## **No hay `material_override`.** Las mallas del kit tienen dos superficies
+## —copa y tronco, con colores distintos— y un override las aplana a una sola.
+## Los materiales van por superficie, con `set_surface_override_material()`,
+## que respeta la separación. Es al revés que con la geometría primitiva,
+## donde el material era lo único que había.
+func _multi(lista: Array, raleables: int, malla: Array,
 		centro: Vector3, celda: Vector2i, tipo: String) -> MultiMeshInstance3D:
+	var norma: Transform3D = malla[1]
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
-	mm.mesh = malla
+	mm.mesh = malla[0]
 	mm.instance_count = lista.size()
 	for i in lista.size():
 		var t: Transform3D = lista[i][0]
 		t.origin -= centro
-		mm.set_instance_transform(i, t)
-		mm.set_instance_color(i, lista[i][1])
+		mm.set_instance_transform(i, t * norma)
+		mm.set_instance_color(i, _tinte(lista[i][1]))
 
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
-	mmi.material_override = mat      # SurfaceTool.set_material() no aplica
+	# Sin `material_override` a propósito: el material ya está en cada
+	# superficie de la malla, puesto por `_normalizada()`. Ver el comentario
+	# de arriba — un override acá aplanaría copa y tronco al mismo color.
 	mmi.position = centro
 	mmi.name = "%s_%d_%d" % [tipo, celda.x, celda.y]
 	mmi.set_meta("raleables", raleables)
@@ -1095,10 +1252,16 @@ func informe() -> void:
 	print("MultiMesh              %d nodos en %d baldosas de %.0f m  (copas %d · troncos %d)"
 		% [_nodos_copa.size() + _nodos_tronco.size(), _baldosas, BALDOSA,
 			_nodos_copa.size(), _nodos_tronco.size()])
-	print("malla                  copa %d triángulos · tronco %d triángulos"
-		% [_tris_copa, _tris_tronco])
+	print("mallas                 conífera %d tri · fronda %d tri · arbusto %d tri · tocón %d tri"
+		% [_tris_copa, _tris_fronda, _tris_arbusto, _tris_tronco])
+	# El total se arma por categoría porque cada una tiene su malla. La cuenta
+	# vieja multiplicaba todas las copas por la misma malla y ya no vale.
+	var tris_total: int = (_cuenta["conifera"] * _tris_copa
+		+ _cuenta["fronda"] * _tris_fronda
+		+ _cuenta["arbusto"] * _tris_arbusto
+		+ (_cuenta["tocon"] + _cuenta["seco"]) * _tris_tronco)
 	print("triángulos             %d en total (todo el valle junto, sin descartar nada)"
-		% (inst_copa * _tris_copa + inst_tronco * _tris_tronco))
+		% tris_total)
 	print("alcance de dibujado    copas %.0f m · troncos %.0f m"
 		% [_nodos_copa[0].visibility_range_end if not _nodos_copa.is_empty() else 0.0,
 			_nodos_tronco[0].visibility_range_end if not _nodos_tronco.is_empty() else 0.0])

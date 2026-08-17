@@ -24,6 +24,187 @@ extends RefCounted
 const BALDOSA := 34.0
 
 
+# ===========================================================================
+# LA CASA
+#
+# Hasta acá una casa era una caja con un cono de cuatro caras encima. Era lo
+# primero que se veía al entrar al valle y era lo que más se leía como
+# provisorio: nada dice "sin terminar" como una caja con sombrero.
+#
+# Ahora se arma con los módulos del Fantasy Town Kit de Kenney (CC0, ver
+# `assets/PROCEDENCIA.md`). El kit no trae casas enteras: trae muros y techos
+# de una celda, que es mejor, porque significa que las casas del valle no son
+# siete copias del mismo `.glb` —eso se lee tan rápido como la caja— sino
+# combinaciones distintas de las mismas piezas.
+#
+# LA MEDIDA. Una celda del kit es 1 unidad. La casa es de 2×2 celdas y la
+# celda vale `CASA_CELDA` metros, así que la planta es 2,6 × 2,6 m. La caja de
+# antes era 2,7 × 2,5, y eso **no es casualidad**: `valle.gd` empuja a la gente
+# fuera de las casas con `CASA_MEDIA`, media planta, y si la casa cambia de
+# tamaño la gente empieza a caminar por adentro de las paredes. La planta se
+# mantiene; lo que cambia es de qué está hecha.
+#
+# POR QUÉ NO HACEN FALTA PIEZAS DE ESQUINA. Un muro del kit ocupa la cara +X
+# de su celda y abarca la celda entera en Z. Dos muros perpendiculares de
+# celdas vecinas se superponen en el cuadradito de la esquina, así que cierran
+# solos. Las piezas `wall-corner` son para otra cosa (muros de una celda de
+# espesor visible) y acá sobran.
+# ===========================================================================
+
+## Un módulo del kit, en metros. 2 celdas → planta de 2,6 m, que es la caja de
+## antes. Ver `CASA_MEDIA` en `valle.gd`: los dos números están atados.
+const CASA_CELDA := 1.3
+
+## Dos plantas. Con una la casa queda de 1,3 m y parece una casilla; con tres
+## pasa los 4 m y deja de ser un caserío para ser un pueblo de otra escala.
+const CASA_NIVELES := 2
+
+## Las ocho caras del perímetro de una planta de 2×2 celdas: centro de la celda
+## en unidades y giro que lleva la cara del muro (+X en local) a la de afuera.
+const CASA_CARAS: Array = [
+	[Vector2( 0.5, -0.5),  0.0],        # +X
+	[Vector2( 0.5,  0.5),  0.0],
+	[Vector2(-0.5, -0.5),  PI],         # -X
+	[Vector2(-0.5,  0.5),  PI],
+	[Vector2(-0.5,  0.5), -PI / 2.0],   # +Z, el frente
+	[Vector2( 0.5,  0.5), -PI / 2.0],
+	[Vector2(-0.5, -0.5),  PI / 2.0],   # -Z
+	[Vector2( 0.5, -0.5),  PI / 2.0],
+]
+
+## Los índices de `CASA_CARAS` que dan al frente (+Z). Es donde va la puerta,
+## y es la cara que `valle.gd` orienta hacia afuera del círculo de casas —
+## igual que hacía `ventanas_y_puerta()` con la caja.
+const CASA_FRENTE: Array[int] = [4, 5]
+
+
+## Arma una casa y la cuelga de `padre`. Devuelve la altura del alero, que es
+## lo que `valle.gd` necesita para poner la chimenea y el humo.
+##
+## `rng` se pasa de afuera a propósito: las casas ya se sorteaban en
+## `_armar_lugar()` y el sorteo tiene que seguir saliendo de la misma corriente
+## de azar.
+##
+## `piedra` elige la familia de muro —revoque o tabla—. Es la única variación
+## de material: **una sola familia por casa.** Mezclar piedra y madera en la
+## misma pared es lo que hace que un kit modular se vea a kit modular.
+static func casa(padre: Node3D, pos: Vector3, giro: float,
+		rng: RandomNumberGenerator, piedra: bool, quemada: bool) -> float:
+	var g := Node3D.new()
+	g.position = pos
+	g.rotation.y = giro
+	padre.add_child(g)
+
+	var fam := "pueblo/wall" if piedra else "pueblo/wall-wood"
+	# Las plantas no son todas iguales de altas: entre 0,95 y 1,15 de celda hay
+	# la misma variedad que daba el `randf_range(2.4, 3.6)` de la caja, pero
+	# sin que se despegue del kit.
+	var alto_nivel := CASA_CELDA * rng.randf_range(0.95, 1.15)
+
+	# La puerta va en una de las dos celdas del frente; la otra lleva ventana.
+	var i_puerta: int = CASA_FRENTE[rng.randi() % CASA_FRENTE.size()]
+	var luz := _luz_de_ventana()
+
+	for nivel in CASA_NIVELES:
+		for i in CASA_CARAS.size():
+			var celda: Vector2 = CASA_CARAS[i][0]
+			var rot: float = CASA_CARAS[i][1]
+			var pieza := fam
+			var ventana := false
+
+			if quemada:
+				# La Casa Quemada: muros rotos, sin puerta y sin luz. Un
+				# tercio de las caras directamente no está — un muro faltante
+				# dice "esto se cayó" mucho mejor que un muro entero gris.
+				if rng.randf() < 0.34:
+					continue
+				pieza = fam + "-broken"
+			elif nivel == 0 and i == i_puerta:
+				pieza = fam + "-door"
+			elif i in CASA_FRENTE or rng.randf() < 0.34:
+				# Ventanas: siempre al frente, y a veces en los costados. Con
+				# ventana en las ocho caras la casa se vuelve un farol.
+				pieza = fam + "-window-shutters"
+				ventana = true
+
+			var mi := Kit.nodo(pieza)
+			if mi == null:
+				continue
+			mi.position = Vector3(celda.x * CASA_CELDA, nivel * alto_nivel,
+				celda.y * CASA_CELDA)
+			mi.rotation.y = rot
+			mi.scale = Vector3(CASA_CELDA, alto_nivel, CASA_CELDA)
+			g.add_child(mi)
+
+			if ventana:
+				g.add_child(_vidrio(mi, luz))
+
+	var alero := CASA_NIVELES * alto_nivel
+	if not quemada:
+		_techo(g, alero, rng)
+	return alero
+
+
+## El techo: una pirámide de cuatro caras del kit, estirada a la planta entera.
+##
+## Es la misma silueta que tenía el cono de cuatro caras de antes, y eso es
+## deliberado — la familia de techos de cuatro aguas ya es parte del lenguaje
+## del valle, tanto que `vegetacion.gd` la nombra al explicar por qué las copas
+## tienen facetas duras. Lo que cambia no es la forma: son los aleros, el
+## borde y la textura de teja, o sea las tres cosas que un cono no tiene.
+static func _techo(g: Node3D, alero: float, rng: RandomNumberGenerator) -> void:
+	# Dos alturas de techo. El empinado es el que hace que un caserío se lea
+	# como pueblo de montaña y no como galpones.
+	var empinado := rng.randf() < 0.45
+	var mi := Kit.nodo("pueblo/roof-high-point" if empinado else "pueblo/roof-point")
+	if mi == null:
+		return
+	# La pieza mide 1,1 de ancho por celda, o sea que a escala 2 cubre las dos
+	# celdas y sobra 0,1 de alero por lado. Ese sobrante es el punto.
+	var s := 2.0 * CASA_CELDA
+	mi.position = Vector3(0.0, alero, 0.0)
+	mi.scale = Vector3(s, s * rng.randf_range(0.85, 1.15), s)
+	g.add_child(mi)
+
+
+## El vidrio encendido de una ventana del kit.
+##
+## La pieza `wall-window-shutters` trae el marco y los postigos, pero su color
+## sale del atlas y no se enciende. La luz de adentro sigue siendo una placa
+## emisiva nuestra, como en la caja: se cuelga del muro —así hereda su
+## posición, su giro y su escala sin tener que recalcular nada— y entra al
+## grupo "ventanas", que es lo que `ciclo.gd` recorre al caer el sol.
+##
+## **Esto no es un detalle que se pueda perder al migrar.** Una ventana
+## encendida dice "adentro hay alguien" más fuerte que todo el cielo junto, y
+## está anotado como decisión del valle.
+static func _vidrio(muro: MeshInstance3D, luz: StandardMaterial3D) -> MeshInstance3D:
+	var v := BoxMesh.new()
+	v.size = Vector3(0.34, 0.34, 0.06)
+	v.material = luz
+	var mi := MeshInstance3D.new()
+	mi.mesh = v
+	# En el marco local del muro: la cara de afuera está en x = 0,5 y el hueco
+	# de la ventana a media altura. El nodo se coloca en coordenadas del muro y
+	# después se le copia la transformación, porque el muro ya viene escalado.
+	mi.transform = muro.transform * Transform3D(
+		Basis().rotated(Vector3.UP, PI / 2.0), Vector3(0.47, 0.52, 0.0))
+	mi.add_to_group("ventanas")
+	return mi
+
+
+## El material de las ventanas encendidas. Uno por casa: `ciclo.gd` le mueve
+## `emission_energy_multiplier` a cada ventana del grupo, y si todas
+## compartieran un material global le escribiría el mismo número cien veces.
+static func _luz_de_ventana() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(1.0, 0.78, 0.42)
+	m.emission_enabled = true
+	m.emission = Color(1.0, 0.72, 0.34)
+	m.emission_energy_multiplier = 3.4
+	return m
+
+
 static func ventanas_y_puerta(casa: MeshInstance3D, ancho: float, alto: float) -> void:
 	var luz_mat := StandardMaterial3D.new()
 	luz_mat.albedo_color = Color(1.0, 0.78, 0.42)
@@ -188,16 +369,41 @@ static func pasto(padre: Node3D, alturas: Callable, cantidad: int, radio: float)
 		padre.add_child(mmi)
 
 
+## Las piedras sueltas del valle.
+##
+## La roca es del kit y **sale más barata que la esfera que había**: una esfera
+## de 6 gajos por 3 anillos son 48 triángulos, y `rock_smallA` son 16. O sea
+## que acá el arte hecho por alguien no costó nada — descontó. Son 320
+## instancias, así que el ahorro es chico en el total, pero vale decirlo porque
+## es el contraejemplo de lo que se supone que pasa al meter assets.
+##
+## **El pasto NO se cambió, y es a propósito.** La mata de pasto de Kenney son
+## 132 triángulos y acá hay 26.000 matas: 3,4 millones de triángulos contra los
+## ~104.000 de ahora. No hay máquina que lo aguante y no es una decisión de
+## arte, es aritmética. El pasto se queda con las hojas generadas, que a la
+## distancia a la que se juega son una textura de color y no una silueta.
 static func piedras(padre: Node3D, alturas: Callable, cantidad: int, radio: float) -> void:
-	var roca := SphereMesh.new()
-	roca.radius = 0.5
-	roca.height = 0.7
-	roca.radial_segments = 6
-	roca.rings = 3
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.35, 0.34, 0.32)
-	mat.roughness = 1.0
-	roca.material = mat
+	var roca := Kit.malla("naturaleza/rock_smallA")
+	if roca == null:
+		var esfera := SphereMesh.new()
+		esfera.radius = 0.5
+		esfera.height = 0.7
+		esfera.radial_segments = 6
+		esfera.rings = 3
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.35, 0.34, 0.32)
+		mat.roughness = 1.0
+		esfera.material = mat
+		roca = esfera
+
+	# La malla del kit mide 0,36 × 0,19; la esfera de antes medía 1,0 × 0,7.
+	# Este factor la lleva a la misma convención para que el sorteo de escalas
+	# de abajo —que está afinado -— siga dando piedras del mismo tamaño.
+	var caja := roca.get_aabb()
+	var norma := Transform3D(Basis().scaled(Vector3(
+		1.0 / maxf(caja.size.x, 0.001),
+		1.0 / maxf(caja.size.y, 0.001),
+		1.0 / maxf(caja.size.z, 0.001))), Vector3.ZERO)
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 991
@@ -205,7 +411,8 @@ static func piedras(padre: Node3D, alturas: Callable, cantidad: int, radio: floa
 		func(t: Transform3D, r: RandomNumberGenerator) -> Transform3D:
 			t.origin.y -= 0.1
 			return t.rotated_local(Vector3.UP, r.randf() * TAU).scaled_local(Vector3(
-				r.randf_range(0.4, 1.5), r.randf_range(0.3, 0.8), r.randf_range(0.4, 1.5))))
+				r.randf_range(0.4, 1.5), r.randf_range(0.3, 0.8),
+				r.randf_range(0.4, 1.5))) * norma)
 
 	for celda: Vector2i in por_baldosa:
 		var lista: Array = por_baldosa[celda]

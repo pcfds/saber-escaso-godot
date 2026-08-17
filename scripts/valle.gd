@@ -16,12 +16,19 @@ extends Node3D
 ## Ahora hay minuto y pico de caminata entre puntas. Es a propósito: que la
 ## fragua quede lejos es lo que hace que ir hasta ahí sea una decisión, que el
 ## Sotobosque dé cosa de noche, y que valga tener una casa cerca de algo.
+##
+## El `color` de cada lugar sale de `paleta.gd` y es **el peldaño de valor con
+## el que ese lugar se separa del suelo**, no el material del que está hecho:
+## la aldea es una mancha clara (V6) y el Sotobosque una oscura (V2) contra un
+## suelo V4. Hoy sólo lo consume el camino —los otros cuatro lo tienen como
+## identidad declarada y nadie lo lee todavía—, y así y todo tiene que salir de
+## la paleta: el día que alguien lo use, ya está en el escalón correcto.
 const LUGARES := {
-	"aldea":  {"pos": Vector3(0, 0, 0),      "color": Color(0.55, 0.48, 0.37), "casas": 7, "nombre": "Vado Bajo"},
-	"fragua": {"pos": Vector3(62, 0, -18),   "color": Color(0.49, 0.33, 0.26), "casas": 2, "nombre": "La Fragua de Ilde"},
-	"bosque": {"pos": Vector3(-58, 0, -54),  "color": Color(0.18, 0.29, 0.20), "casas": 0, "nombre": "El Sotobosque"},
-	"ruina":  {"pos": Vector3(-26, 0, -108), "color": Color(0.29, 0.28, 0.25), "casas": 3, "nombre": "La Casa Quemada"},
-	"camino": {"pos": Vector3(11, 0, 74),    "color": Color(0.42, 0.38, 0.32), "casas": 0, "nombre": "El Camino del Norte"},
+	"aldea":  {"pos": Vector3(0, 0, 0),      "color": Paleta.MURO_ALDEA,  "casas": 7, "nombre": "Vado Bajo"},
+	"fragua": {"pos": Vector3(62, 0, -18),   "color": Paleta.MURO_FRAGUA, "casas": 2, "nombre": "La Fragua de Ilde"},
+	"bosque": {"pos": Vector3(-58, 0, -54),  "color": Paleta.COPA,        "casas": 0, "nombre": "El Sotobosque"},
+	"ruina":  {"pos": Vector3(-26, 0, -108), "color": Paleta.MURO_RUINA,  "casas": 3, "nombre": "La Casa Quemada"},
+	"camino": {"pos": Vector3(11, 0, 74),    "color": Paleta.LOSA_CAMINO, "casas": 0, "nombre": "El Camino del Norte"},
 }
 
 const RADIO_VALLE := 165.0
@@ -31,7 +38,11 @@ const RADIO_VALLE := 165.0
 ## comparten dos lados y esa coincidencia **es la señal**, no una casualidad.
 ## Un habitante del valle es gris (ver los NPC más abajo); alguien que está del
 ## otro lado de una pantalla tiene tu color y tu altura.
-const COLOR_JUGADOR := Color(0.30, 0.72, 0.62)
+##
+## Es `Paleta.JADE`, la excepción 2 de la paleta: el único color frío y saturado
+## de un valle cálido y apagado, y le pertenece a la gente de carne y hueso. No
+## se lo presta a nada más.
+const COLOR_JUGADOR := Paleta.JADE
 const ALTURA_JUGADOR := 1.85
 
 ## Distancias para decidir en qué lugar estás. SALIR es más grande que ENTRAR
@@ -51,6 +62,9 @@ var _npcs: Dictionary = {}
 ## recorrer el árbol buscando colisionadores porque el dato ya lo tenemos en la
 ## mano en el momento exacto en que existe.
 var _casas: Dictionary = {}
+## A qué distancia del centro se para la gente de cada lugar: slug -> float.
+## Ver `_anillo_de()`.
+var _anillos: Dictionary = {}
 ## La ronda de cada persona, cacheada por nombre. Se calcula una sola vez: sale
 ## del hash del nombre, así que recalcularla daría siempre lo mismo.
 var _rondas: Dictionary = {}
@@ -146,22 +160,20 @@ func _ready() -> void:
 	mapa.jugador = jugador
 	interfaz.add_child(mapa)
 
-	# El lecho de ambiente. Va último a propósito: un error acá no puede
-	# llevarse puesto nada de lo de arriba, y en este archivo ya pasó una vez
-	# que un error en `_ready()` abortó la función entera y el juego arrancó
-	# sin HUD y sin API.
-	#
-	# Se sintetiza al arrancar: cero bytes en disco y cero en la descarga. Los
-	# buses de audio se crean en tiempo de ejecución, así que no hay nada que
-	# registrar en `project.godot`.
-	var sonido := Sonido.new()
-	add_child(sonido)
-	sonido.ciclo = ciclo
-	sonido.oyente = jugador
-	sonido.preparar(LUGARES)
-
 	# El valle suena. Va acá y no antes porque necesita el ciclo para saber la
 	# hora: el lecho de ambiente cambia con el lugar Y con el momento del día.
+	#
+	# Va al final de `_ready()` a propósito: un error acá no puede llevarse
+	# puesto nada de lo de arriba, y en este archivo ya pasó una vez que un
+	# error en `_ready()` abortó la función entera y el juego arrancó sin HUD
+	# y sin API. Se sintetiza al arrancar —cero bytes en disco y cero en la
+	# descarga— y los buses se crean en tiempo de ejecución, así que no hay
+	# nada que registrar en `project.godot`.
+	#
+	# Y va en el miembro `sonido`, no en una variable local: instanciado sin
+	# guardar la referencia queda colgado. Estuvo duplicado unas horas —dos
+	# lechos sonando juntos y uno sin dueño— porque el cableado se hizo dos
+	# veces, desde dos ramas que no se veían entre sí.
 	sonido = Sonido.new()
 	sonido.ciclo = ciclo
 	add_child(sonido)
@@ -194,7 +206,11 @@ func _armar_ambiente() -> void:
 	# hora real es un día del valle, así que en una sesión ves amanecer y
 	# anochecer, y los ves a la misma hora que cualquier otro conectado.
 	var sol := DirectionalLight3D.new()
-	sol.light_color = Color(1.0, 0.82, 0.62)
+	# El valor de arranque, nada más: `ciclo.gd` lo pisa en el primer cuadro con
+	# `Paleta.luz_solar()` según la hora que manda el servidor. Va en LUZ_ALBA
+	# porque un cuadro de sol cálido bajo es lo menos falso que se puede mostrar
+	# antes de saber la hora.
+	sol.light_color = Paleta.LUZ_ALBA
 	sol.light_energy = 2.0
 	sol.shadow_enabled = true
 	sol.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
@@ -208,7 +224,7 @@ func _armar_ambiente() -> void:
 	# Relleno frío desde el cielo, para que las sombras no sean negras.
 	var relleno := DirectionalLight3D.new()
 	relleno.rotation_degrees = Vector3(-58, -40, 0)
-	relleno.light_color = Color(0.55, 0.68, 0.88)
+	relleno.light_color = Paleta.LUZ_CIELO
 	relleno.light_energy = 0.22
 	relleno.shadow_enabled = false
 	add_child(relleno)
@@ -257,11 +273,17 @@ func _armar_terreno() -> void:
 					st.set_color(_color_terreno(p[k], n))
 					st.add_vertex(p[k])
 
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.42, 0.46, 0.30)
-	mat.vertex_color_use_as_albedo = true
-	mat.roughness = 0.97
-	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	# EL TINTE DEL TERRENO IBA EN Color(0.42, 0.46, 0.30) Y ESO ERA UN BUG, NO
+	# UNA DECISIÓN. Con `vertex_color_use_as_albedo` prendido Godot **multiplica**
+	# el albedo por el color de vértice, así que ese tinte le comía dos tercios
+	# del valor a todo lo que calcula `_color_terreno()` y le metía verde encima:
+	# el pasto salía en v0.33 con saturación 0.60 en vez de los v0.30 s0.34 que
+	# dice el código, y los cuatro colores del suelo terminaban apretados entre
+	# v0.30 y v0.36 — un solo peldaño, o sea el 40% de la pantalla convertido en
+	# una papilla gris. `Paleta.terreno()` va casi blanco a propósito: acá el
+	# albedo no es un color, es un multiplicador que tiene que dejar pasar el de
+	# los vértices.
+	var mat := Paleta.terreno()
 	st.generate_normals()
 	st.set_material(mat)
 
@@ -280,11 +302,19 @@ func _armar_terreno() -> void:
 
 ## El color del suelo sale de la altura y la pendiente. Sin texturas, esta
 ## variación es lo único que separa un prado de una alfombra de plástico.
+##
+## **Los cuatro salen de la paleta y están en cuatro peldaños seguidos** —pasto
+## V3, tierra V4, pasto seco V5, roca V6, contra un suelo que promedia V4—, y
+## ésa es la mitad del arreglo de "parece Playmobil". Antes los cuatro vivían
+## entre v0.72 y v0.86: en blanco y negro el suelo entero era una sola mancha y
+## toda la diferencia estaba en el matiz, que a 27 metros no existe. Si alguna
+## vez hay que retocar uno, se retoca en `paleta.gd` y se elige primero el
+## escalón.
 func _color_terreno(p: Vector3, n: Vector3) -> Color:
-	var pasto := Color(0.52, 0.72, 0.44)
-	var pasto_seco := Color(0.86, 0.78, 0.52)
-	var tierra := Color(0.72, 0.55, 0.38)
-	var roca := Color(0.78, 0.78, 0.76)
+	var pasto := Paleta.PASTO
+	var pasto_seco := Paleta.PASTO_SECO
+	var tierra := Paleta.TIERRA
+	var roca := Paleta.ROCA
 
 	var t := clampf((p.y + 4.5) / 6.5, 0.0, 1.0)
 	var c := pasto.lerp(pasto_seco, t)
@@ -303,14 +333,11 @@ func _color_terreno(p: Vector3, n: Vector3) -> Color:
 func _armar_rio() -> void:
 	var agua := PlaneMesh.new()
 	agua.size = Vector2(430, 15.0)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.10, 0.20, 0.24, 0.86)
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.roughness = 0.06
-	mat.metallic = 0.35
-	mat.emission_enabled = true
-	mat.emission = Color(0.05, 0.11, 0.14)
-	mat.emission_energy_multiplier = 0.25
+	# Un río se lee porque es OSCURO, no porque es azul: `Paleta.AGUA` está en V2
+	# contra un suelo V4, y una cinta oscura cruzando el valle es la línea más
+	# fuerte del encuadre. La saturación baja de 0.58 a 0.34 — el azul de antes
+	# competía con el jade del jugador, que es el único frío saturado del juego.
+	var mat := Paleta.agua()
 	agua.material = mat
 
 	var mi := MeshInstance3D.new()
@@ -331,20 +358,26 @@ func _armar_lugar(slug: String, def: Dictionary) -> void:
 
 	var color: Color = def["color"]
 
+	# El Sotobosque no planta nada acá: los árboles del valle entero los pone
+	# `vegetacion.gd`, que los reparte por densidad y no por lugar. Hasta hace
+	# un rato esto llamaba a `_armar_bosque()` y quedaban los dos bosques
+	# encimados en el mismo sitio.
 	if slug == "bosque":
-		_armar_bosque(g, color)
 		return
 	if slug == "camino":
 		_armar_camino(g, color)
 		return
 
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = 0.92
-
-	var techo_mat := StandardMaterial3D.new()
-	techo_mat.albedo_color = Color(0.19, 0.11, 0.09)
-	techo_mat.roughness = 0.95
+	# LAS CASAS SON DEL KIT, NO CAJAS. Ver `Detalles.casa()`.
+	#
+	# El sorteo va con un RNG propio sembrado con el slug del lugar, y eso
+	# arregla de paso algo que estaba anotado como defecto en
+	# `_afuera_de_casas()`: las casas se sorteaban con el `randf()` global, así
+	# que salían distintas en cada máquina y el empujón contra las paredes daba
+	# distinto para cada jugador. Ahora Vado Bajo es el mismo Vado Bajo en la
+	# pantalla de todos, que es el mismo criterio que ya cumplían las figuras.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(slug)
 
 	var n: int = def["casas"]
 	var huellas: Array[Vector3] = []
@@ -356,51 +389,51 @@ func _armar_lugar(slug: String, def: Dictionary) -> void:
 		# círculo de 5 metros. Una casa mide 2,7 de ancho, así que la cuerda
 		# entre dos vecinas tiene que ser mayor que eso con aire.
 		var r: float = maxf(4.5, 2.2 * n / TAU + 4.0)
-		var h := randf_range(2.4, 3.6)
 		# Miran hacia afuera del círculo, como un caserío alrededor de una
 		# plaza. Antes rotaban con el ángulo Y con azar encima, y quedaban
 		# cruzadas entre sí.
 		var px := cos(a) * r
 		var pz := sin(a) * r
 		var py := altura_en(base.x + px, base.z + pz) - base.y
+		var giro := a + rng.randf_range(-0.2, 0.2)
 
-		var caja := BoxMesh.new()
-		caja.size = Vector3(2.7, h, 2.5)
-		caja.material = mat
-		var casa := MeshInstance3D.new()
-		casa.mesh = caja
-		casa.position = Vector3(px, py + h / 2.0, pz)
-		casa.rotation.y = a + randf_range(-0.2, 0.2)
-		Detalles.ventanas_y_puerta(casa, 2.7, h)
-		g.add_child(casa)
+		# La familia de muro es del LUGAR, no de la casa: las siete de Vado
+		# Bajo son de tabla y las dos de la fragua de piedra. Un caserío donde
+		# cada casa es de otro material se lee como muestrario.
+		var quemada := slug == "ruina"
+		var alero := Detalles.casa(g, Vector3(px, py, pz), giro, rng,
+			slug == "fragua", quemada)
+
 		# Para la ronda de la gente: dónde hay una casa y cómo está girada. Se
 		# anota acá, que es el único momento en que el dato existe sin tener que
 		# ir a buscarlo al árbol.
-		huellas.append(Vector3(base.x + px, base.z + pz, casa.rotation.y))
+		huellas.append(Vector3(base.x + px, base.z + pz, giro))
 
+		# La colisión sigue siendo una caja, y está bien que lo sea: es la
+		# planta de la casa, que no cambió (ver `CASA_MEDIA`). Cobrar la
+		# silueta real del kit en el motor de física para que no se pueda
+		# caminar entre dos postigos no le agrega nada a nadie.
 		var col := StaticBody3D.new()
 		var cf := CollisionShape3D.new()
 		var bs := BoxShape3D.new()
-		bs.size = caja.size
+		# La planta real del kit, NO `CASA_MEDIA`. Los dos números están cerca a
+		# propósito, pero `CASA_MEDIA` lleva un margen de holgura para empujar a
+		# la gente antes de que roce la pared; usarlo acá pondría la pared
+		# invisible medio metro afuera de la casa que se ve.
+		var lado := Detalles.CASA_CELDA * 2.0
+		bs.size = Vector3(lado, alero, lado)
 		cf.shape = bs
 		col.add_child(cf)
-		col.position = casa.position
-		col.rotation.y = casa.rotation.y
+		col.position = Vector3(px, py + alero / 2.0, pz)
+		col.rotation.y = giro
 		g.add_child(col)
 
-		if slug != "ruina":
-			Detalles.chimenea(g, Vector3(px + 0.85, py + h + 1.25, pz - 0.65), 2.7)
-			var cono := CylinderMesh.new()
-			cono.top_radius = 0.0
-			cono.bottom_radius = 2.35
-			cono.height = 1.7
-			cono.radial_segments = 4
-			cono.material = techo_mat
-			var techo := MeshInstance3D.new()
-			techo.mesh = cono
-			techo.position = Vector3(px, py + h + 0.82, pz)
-			techo.rotation.y = casa.rotation.y + PI / 4.0
-			g.add_child(techo)
+		if not quemada:
+			Detalles.chimenea(g, Vector3(px + 0.85, py + alero + 1.25, pz - 0.65), 2.7)
+
+		_enseres(g, base, Vector3(px, py, pz), giro, slug, rng)
+
+	_anillos[slug] = _anillo_de(Vector2(base.x, base.z), huellas)
 
 	if slug == "fragua":
 		_armar_fuego(g)
@@ -408,11 +441,80 @@ func _armar_lugar(slug: String, def: Dictionary) -> void:
 		_armar_faroles(g)
 
 
+# ---------------------------------------------------------------------------
+# LOS ENSERES: lo que hace que un lugar parezca habitado
+# ---------------------------------------------------------------------------
+#
+# Una casa vacía es arquitectura; una casa con un barril al lado y la leña
+# apilada contra la pared es la casa de alguien. Es lo mismo que ya hacían las
+# ventanas encendidas y el humo, pero de día.
+#
+# **Van pegados a las casas, no repartidos por la plaza.** Un barril en el
+# medio del descampado se lee como un objeto que quedó ahí; el mismo barril
+# contra una pared se lee como el barril de esa casa. Y de paso no le estorba
+# la ronda a la gente, que camina por el medio.
+
+## Qué tiene cada lugar al lado de sus casas. Sale de qué se hace ahí: en la
+## fragua hay piedra, tablones y un yunque; en Vado Bajo, leña, agua y grano.
+const ENSERES := {
+	"aldea": ["utiles/barrel", "utiles/box", "utiles/box-large",
+		"utiles/bucket", "utiles/chest", "naturaleza/log_stack",
+		"naturaleza/pot_large", "utiles/resource-wood"],
+	"fragua": ["utiles/barrel", "utiles/box", "utiles/resource-stone",
+		"utiles/resource-planks", "naturaleza/log_stack", "utiles/bucket"],
+	# La Casa Quemada tiene dos cosas y están volcadas. Un páramo con la misma
+	# cantidad de trastos que la aldea deja de ser un páramo.
+	"ruina": ["utiles/box", "utiles/barrel"],
+}
+
+## Los cuatro lugares donde puede haber algo, en el marco de la casa. La casa
+## mide 2,6 de lado, así que 1,7 la deja apoyada contra la pared por afuera.
+const ENSERES_SITIOS: Array[Vector3] = [
+	Vector3( 1.72, 0.0,  0.55),
+	Vector3(-1.72, 0.0, -0.55),
+	Vector3( 0.80, 0.0,  1.78),
+	Vector3(-0.95, 0.0, -1.78),
+]
+
+## Las tres escalas del kit. Los packs de Kenney NO comparten unidad: la celda
+## del Fantasy Town Kit es 1 unidad (y en el valle vale `CASA_CELDA` metros),
+## pero un barril del Survival Kit mide 0,24 de ancho y una cerca del Nature
+## Kit mide 1,0. Sin esto los barriles salen del tamaño de un dedal — que es
+## exactamente el tipo de error que hace que un juego con buenos assets se vea
+## mal armado.
+const ESCALA_KIT := {"pueblo": 1.3, "utiles": 2.5, "naturaleza": 2.0}
+
+
+func _enseres(g: Node3D, base: Vector3, local: Vector3, giro: float,
+		slug: String, rng: RandomNumberGenerator) -> void:
+	var lista: Array = ENSERES.get(slug, [])
+	if lista.is_empty():
+		return
+
+	# Una o dos cosas por casa, y a veces ninguna. Que todas las casas tengan
+	# la misma cantidad de trastos se nota tanto como que no tengan ninguno.
+	var cuantos := rng.randi_range(0, 2 if slug == "ruina" else 3)
+	var sitios := ENSERES_SITIOS.duplicate()
+	for k in cuantos:
+		if sitios.is_empty():
+			break
+		var sitio: Vector3 = sitios.pop_at(rng.randi() % sitios.size())
+		var ruta: String = lista[rng.randi() % lista.size()]
+		# Del marco de la casa al del lugar: girar y correr al pie de la casa.
+		var d := Vector3(sitio.x, 0.0, sitio.z).rotated(Vector3.UP, giro)
+		var px := local.x + d.x
+		var pz := local.z + d.z
+		var py := altura_en(base.x + px, base.z + pz) - base.y
+		var e := ESCALA_KIT.get(ruta.get_slice("/", 0), 2.0) as float
+		Kit.poner(g, ruta, Vector3(px, py, pz),
+			giro + rng.randf_range(-PI, PI), e * rng.randf_range(0.9, 1.1))
+
+
 func _armar_fuego(g: Node3D) -> void:
 	# La fragua es el punto cálido del valle. La luz parpadeante contra la
 	# niebla volumétrica es, sola, la mejor postal que tiene el juego.
 	var luz := OmniLight3D.new()
-	luz.light_color = Color(1.0, 0.52, 0.18)
+	luz.light_color = Paleta.LUZ_FRAGUA
 	luz.light_energy = 9.0
 	luz.omni_range = 26.0
 	luz.shadow_enabled = true
@@ -423,73 +525,55 @@ func _armar_fuego(g: Node3D) -> void:
 	var brasa := SphereMesh.new()
 	brasa.radius = 0.55
 	brasa.height = 1.1
-	var bm := StandardMaterial3D.new()
-	bm.albedo_color = Color(1.0, 0.42, 0.10)
-	bm.emission_enabled = true
-	bm.emission = Color(1.0, 0.45, 0.12)
-	bm.emission_energy_multiplier = 7.0
-	brasa.material = bm
+	# Excepción 1 de la paleta: el fuego. Es donde se gasta todo el presupuesto
+	# de saturación del juego, y por eso el resto del valle puede estar apagado.
+	brasa.material = Paleta.brasa()
 	var mi := MeshInstance3D.new()
 	mi.mesh = brasa
 	mi.position = Vector3(0, 1.1, 0)
 	g.add_child(mi)
 
+	# EL YUNQUE. La fragua se llamaba "La Fragua de Ilde" y era una luz naranja
+	# flotando sobre el pasto: el nombre decía que ahí alguien trabajaba y la
+	# pantalla no mostraba con qué. Ahora el fuego tiene un pozo, un yunque y
+	# un banco alrededor, que es lo que vuelve la luz una explicación en vez de
+	# un efecto.
+	Kit.poner(g, "utiles/campfire-pit", Vector3(0, 0, 0), 0.0, 4.0)
+	Kit.poner(g, "utiles/workbench-anvil", Vector3(2.1, 0, 0.9), -0.6, 2.6)
+	Kit.poner(g, "utiles/workbench", Vector3(-1.4, 0, 2.0), 2.3, 2.6)
+	Kit.poner(g, "utiles/resource-stone", Vector3(-2.2, 0, -1.1), 0.9, 2.6)
+
 
 func _armar_faroles(g: Node3D) -> void:
 	for i in 4:
 		var a := TAU * i / 4.0 + 0.8
+		var px := cos(a) * 8.0
+		var pz := sin(a) * 8.0
+		var py := altura_en(g.position.x + px, g.position.z + pz) - g.position.y
+
+		# El farol de verdad, abajo de la luz. Estaban las cuatro luces y no
+		# estaba el poste: de día Vado Bajo tenía cuatro focos invisibles, y de
+		# noche cuatro manchas colgadas del aire. La pieza mide 1,56 de alto y
+		# va a escala de pueblo, así que el fuego le queda a unos dos metros.
+		Kit.poner(g, "pueblo/lantern", Vector3(px, py, pz), a, Detalles.CASA_CELDA)
+
 		var luz := OmniLight3D.new()
-		luz.light_color = Color(1.0, 0.75, 0.45)
+		luz.light_color = Paleta.LUZ_FAROL
 		luz.light_energy = 3.2
 		luz.omni_range = 12.0
-		luz.position = Vector3(cos(a) * 8.0, 3.0, sin(a) * 8.0)
+		luz.position = Vector3(px, py + 1.9, pz)
 		luz.set_script(preload("res://scripts/parpadeo.gd"))
 		g.add_child(luz)
 
 
-func _armar_bosque(g: Node3D, color: Color) -> void:
-	var tronco_mat := StandardMaterial3D.new()
-	tronco_mat.albedo_color = Color(0.20, 0.14, 0.10)
-	tronco_mat.roughness = 1.0
-	var copa_mat := StandardMaterial3D.new()
-	copa_mat.albedo_color = color
-	copa_mat.roughness = 0.98
-
-	for i in 46:
-		var a := randf() * TAU
-		var r := randf_range(2.0, 13.0)
-		var px := cos(a) * r
-		var pz := sin(a) * r
-		var py := altura_en(g.position.x + px, g.position.z + pz) - g.position.y
-		var h := randf_range(4.5, 9.0)
-
-		var cil := CylinderMesh.new()
-		cil.top_radius = 0.16
-		cil.bottom_radius = 0.30
-		cil.height = h * 0.42
-		cil.radial_segments = 6
-		cil.material = tronco_mat
-		var tronco := MeshInstance3D.new()
-		tronco.mesh = cil
-		tronco.position = Vector3(px, py + h * 0.21, pz)
-		g.add_child(tronco)
-
-		var cono := CylinderMesh.new()
-		cono.top_radius = 0.0
-		cono.bottom_radius = randf_range(1.3, 2.1)
-		cono.height = h * 0.78
-		cono.radial_segments = 7
-		cono.material = copa_mat
-		var copa := MeshInstance3D.new()
-		copa.mesh = cono
-		copa.position = Vector3(px, py + h * 0.42 + h * 0.39, pz)
-		g.add_child(copa)
-
 
 func _armar_camino(g: Node3D, color: Color) -> void:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = 1.0
+	# `Paleta.LOSA_CAMINO` está un peldaño arriba del suelo (V5 contra V4): la
+	# línea del camino se ve y no grita. La rugosidad y el especular los pone la
+	# fábrica y no esta función, que es el punto de tener fábricas: si cada
+	# script elige su brillo a ojo, todo termina con el mismo reflejo de
+	# plástico.
+	var mat := Paleta.piedra(color)
 	for i in 26:
 		var t := i / 26.0
 		var pz := -16.0 + t * 34.0
@@ -770,8 +854,9 @@ func _tumbar_a(nodo: Node3D, si: bool, instantaneo: bool) -> void:
 # Cuando el /mundo dice que alguien se mudó, se mueve de lugar y se acabó: la
 # ronda se vuelve a plantar alrededor del anclaje nuevo, sin deslizarse.
 
-## El anillo donde se para la gente del lugar. Los otros jugadores van de 7,5 a
-## 12 m (ver `_punto_de`) y las casas de la aldea están a 5 m: 6,5 es el hueco.
+## El anillo donde se para la gente, cuando el lugar la deja pararse ahí. Los
+## otros jugadores van de 7,5 a 12 m (ver `_punto_de`): 6,5 es el hueco que
+## queda por dentro. Ver `_anillo_de()` para cuándo no alcanza.
 const ANILLO_GENTE := 6.5
 ## Media casa, con el cuerpo de la persona adentro del número: la caja mide
 ## 2,7 × 2,5 (o sea 1,35 × 1,25 de medio lado) y los 30 cm que sobran son para
@@ -780,15 +865,14 @@ const ANILLO_GENTE := 6.5
 ## Es una CAJA ORIENTADA y no un círculo, y la diferencia importa: las siete
 ## casas de la aldea están a 5 m del centro y a 4,34 m una de otra, así que
 ## círculos que las cubran enteras se solapan entre sí y dejan a la gente
-## atrapada contra ellos. Con la caja de verdad hay 1 m de calle entre casa y
-## casa, y hacia afuera la pared termina a 6,25 m: justo adentro del anillo
-## donde se para la gente, que está a 6,5.
+## atrapada contra ellos —medido con el andamio: dos de los tres vecinos de la
+## aldea quedaban clavados—. Con la caja de verdad hay calle entre casa y casa.
 const CASA_MEDIA := Vector2(1.65, 1.55)
 ## Hasta dónde puede llegar alguien haciendo su ronda, medido desde el centro
-## del lugar. Es el límite duro: nadie se va de su lugar, y **nadie se le sube a
-## los otros jugadores**, que empiezan a pararse a 7,5 m. Lo peor que puede
-## pasar es que a alguien lo empuje la esquina de una casa de la aldea: 5,0 más
-## la semidiagonal de la caja (2,26) da 7,26, y ahí este número lo ataja.
+## del lugar. Es el límite duro y tiene la última palabra: nadie se va de su
+## lugar, y **nadie se le sube a los otros jugadores**, que empiezan a pararse a
+## 7,5 m. Si alguna vez pelea con el empujón de una casa, gana éste — quedar
+## rozando una pared es feo, quedar adentro de otra persona es peor.
 const RONDA_LIMITE := 7.3
 
 ## La forma de una ronda. Todo esto sale del nombre y NADA de la máquina.
@@ -803,19 +887,22 @@ const RONDA_QUIETO_MAX := 7.0
 ##
 ## `Figura.animar()` está calibrada para el jugador, que corre a 7,5 m/s. Si se
 ## le pasan los 0,95 m/s de andar por el patio tal cual, sale un balanceo de
-## pierna de SEIS grados y una zancada cada siete segundos: a 27 m eso son tres
-## píxeles de pie moviéndose, o sea que la persona se desliza. Medido, no
-## estimado — con el andamio puesto la intensidad de la caminata daba 0,17.
+## pierna de SEIS grados y una zancada cada siete segundos. Medido, no estimado:
+## con el andamio puesto la intensidad de la caminata daba 0,17 y el pie se
+## movía seis centímetros. **A la distancia a la que se juega eso son dos
+## píxeles, o sea que la persona se desliza en vez de caminar.**
 ##
 ## Así que se le miente la velocidad. No es un parche: es la decisión de arte
 ## del proyecto aplicada al movimiento. **Un caminar estilizado y claro es lo
 ## correcto; uno "más realista" y blando es el error.** Con este factor la
 ## pierna queda en 25° para cada lado, la cadencia en 1,2 pasos por segundo y la
-## zancada en 80 cm. Es una zancada larga para andar por el patio, y es a
-## propósito: pocos pasos grandes se leen a 27 m y un trotecito rápido no.
+## zancada en 80 cm — una zancada larga para andar por el patio, y a propósito:
+## pocos pasos grandes se leen de lejos y un trotecito rápido no.
 ##
-## Medido en pantalla: la pierna mide 55 cm, así que el pie recorre 46 cm, y a
-## 27 m con FOV 42° eso son 24 píxeles. El maniquí que teníamos movía tres.
+## La cuenta, con la cámara donde está (40 m de default, 68 m del todo afuera,
+## FOV 42°, 1080 de alto): un metro son 35 px a 40 m y 21 px a 68 m. La pierna
+## mide 55 cm y el pie recorre 46, o sea 16 px de default y 9,5 con el zoom
+## afuera del todo. Se ve. Lo de antes, no.
 const RONDA_ZANCADA := 4.0
 
 ## Un salto más grande que esto no es caminar, es cambiarse de lugar: no se le
@@ -836,6 +923,25 @@ const RECELO := 9.0
 ## Y cuánto se corre el que te tiene miedo. Medio paso: es un respingo, no una
 ## huida — huir sería irse del lugar, y de eso decide el servidor.
 const RECELO_PASO := 0.9
+
+
+## A qué distancia del centro se para la gente de este lugar.
+##
+## No puede ser un número fijo porque **el caserío se mueve**: `_armar_lugar()`
+## saca el radio del círculo de casas de CUÁNTAS son, así que hoy la aldea de
+## siete las tiene a 6,45 m y la fragua de dos a 4,70, y mañana otra cosa. Con
+## un 6,5 escrito a mano, la gente de la aldea aparecía adentro de las paredes.
+##
+## La regla: **cuatro casas o más son un caserío alrededor de una plaza, y la
+## gente vive en la plaza.** Con menos el círculo no cierra, se sale por los
+## huecos, y conviene el anillo de siempre — que además deja a la herrera del
+## lado de afuera de la fragua y no encima del fuego.
+func _anillo_de(centro: Vector2, huellas: Array[Vector3]) -> float:
+	if huellas.size() < 4:
+		return ANILLO_GENTE
+	var r := centro.distance_to(Vector2(huellas[0].x, huellas[0].y))
+	# Media casa hacia adentro más medio metro de vereda.
+	return minf(ANILLO_GENTE, r - CASA_MEDIA.y - 0.5)
 
 
 ## Los NPC.
@@ -871,6 +977,7 @@ func _sincronizar_gente(gente: Array, lugares: Array) -> void:
 	for slug: String in por_lugar:
 		var lista: Array = por_lugar[slug]
 		var centro: Vector3 = LUGARES[slug]["pos"]
+		var anillo: float = _anillos.get(slug, ANILLO_GENTE)
 		for i in lista.size():
 			var persona: Dictionary = lista[i]
 			var nombre := str(persona.get("name", "?"))
@@ -891,7 +998,7 @@ func _sincronizar_gente(gente: Array, lugares: Array) -> void:
 			nodo.set_meta("lugar", slug)
 			nodo.set_meta("angulo", a)
 			nodo.set_meta("ancla", Vector2(
-				centro.x + cos(a) * ANILLO_GENTE, centro.z + sin(a) * ANILLO_GENTE))
+				centro.x + cos(a) * anillo, centro.z + sin(a) * anillo))
 			if recien:
 				# Que aparezca ya en el punto que le toca de su ronda, sin la
 				# zancada de llegar desde el origen del mundo.
@@ -914,7 +1021,11 @@ func _armar_vecino(nombre: String, oficio: String) -> Node3D:
 	# sacarse el cuerpo del hash del nombre.
 	nodo.set_meta("nombre", nombre)
 	nodo.set_meta("oficio", oficio)
-	var fig := _figura(Color(0.56, 0.60, 0.64), 1.72, false)
+	# `Paleta.ROPA_NPC` es V6, y ese peldaño no es decorativo: `figura.gd` deriva
+	# la ropa multiplicando el VALOR de acá por 0.42–1.40, así que un V6 produce
+	# el abanico V3–V8 que hace que siete vecinos no parezcan la misma persona.
+	# Bajarlo vuelve al pueblo entero una fila de sombras iguales.
+	var fig := _figura(Paleta.ROPA_NPC, 1.72, false)
 	fig.name = "Cuerpo"
 	nodo.add_child(fig)
 	nodo.add_child(_cartel(nombre))
@@ -1000,13 +1111,13 @@ func _ubicar_vecino(nombre: String, nodo: Node3D, t: float, dt: float, yo: Vecto
 			elif cerca > 0.15:
 				rumbo = atan2(hacia_vos.x, hacia_vos.y)
 
-	# Los dos límites, en este orden: primero no salirse del lugar, después no
-	# estar adentro de una casa. Al revés, el recorte por el lugar podría volver
-	# a meter a alguien contra una pared.
-	var fuera := p - centro
-	if fuera.length() > RONDA_LIMITE:
-		p = centro + fuera.normalized() * RONDA_LIMITE
-	p = _afuera_de_casas(slug, p)
+	# Los dos límites. El de la casa va en el medio para que sea él quien
+	# resuelva el caso normal —el empujón contra una pared— y el del lugar va a
+	# los dos lados para que sea él quien tenga la última palabra, que es lo que
+	# corresponde: rozar una pared es feo, meterse adentro de otro jugador es
+	# peor, y la geometría del caserío la decide otro archivo y cambia.
+	p = _afuera_de_casas(slug, _dentro_del_lugar(centro, p))
+	p = _dentro_del_lugar(centro, p)
 
 	var antes := Vector2(nodo.position.x, nodo.position.z)
 	var tramo := p.distance_to(antes)
@@ -1032,17 +1143,27 @@ func _ubicar_vecino(nombre: String, nodo: Node3D, t: float, dt: float, yo: Vecto
 		# larga eso se aleja del cero y se come la precisión del float.
 		cuerpo.rotation.y = wrapf(
 			lerp_angle(cuerpo.rotation.y, rumbo, minf(1.0, 3.5 * dt)), -PI, PI)
-		# El único lugar donde el nivel de calidad puede meterse: la ronda misma
-		# NO puede depender de él —es la identidad de la persona y tiene que dar
-		# igual en las tres máquinas— pero dibujar la zancada de alguien que está
-		# a cien metros sí es opcional. A 90 m un paso mide cinco píxeles, y ahí
-		# ya está detrás del desenfoque de lejanía y de la niebla.
+		# El único lugar donde el nivel de calidad puede meterse, y conviene
+		# decir por qué: la ronda misma NO puede depender de él —es la identidad
+		# de la persona, tiene que dar igual en las tres máquinas, y `nivel` es
+		# justamente lo que cambia de máquina a máquina—. Lo que sí es opcional
+		# es DIBUJARLE la zancada a alguien que está a cien metros: ahí el paso
+		# entero mide seis píxeles y ya está detrás del desenfoque de lejanía y
+		# de la niebla. La persona igual se sigue moviendo; lo que se congela es
+		# la pierna.
 		if p.distance_squared_to(yo) < _ANIMAR_HASTA[Rendimiento.nivel]:
 			cuerpo.animar(dt, vel * RONDA_ZANCADA, true)
 
 
 ## Hasta dónde se le anima la caminata a alguien, al cuadrado (bajo/medio/alto).
 const _ANIMAR_HASTA: Array[float] = [3600.0, 6400.0, 12100.0]
+
+
+## Que nadie se vaya de su lugar. Ver `RONDA_LIMITE`.
+func _dentro_del_lugar(centro: Vector2, p: Vector2) -> Vector2:
+	var fuera := p - centro
+	var l := fuera.length()
+	return (centro + fuera / l * RONDA_LIMITE) if l > RONDA_LIMITE else p
 
 
 ## Empuja un punto fuera de las casas del lugar, por la pared que tenga más
@@ -1372,7 +1493,7 @@ const ALTO_CARTEL := 2.35
 ## cartel es lo único que a 27 m dice de quién es ese bulto.
 const ALTO_CARTEL_CAIDO := 1.05
 
-func _cartel(texto: String, color := Color(0.88, 0.92, 0.89)) -> Node3D:
+func _cartel(texto: String, color := Paleta.UI_TEXTO) -> Node3D:
 	var l := Label3D.new()
 	l.name = "Cartel"
 	l.text = texto
@@ -1382,7 +1503,7 @@ func _cartel(texto: String, color := Color(0.88, 0.92, 0.89)) -> Node3D:
 	l.position.y = ALTO_CARTEL
 	l.modulate = color
 	l.outline_size = 14
-	l.outline_modulate = Color(0.04, 0.06, 0.06, 0.85)
+	l.outline_modulate = Paleta.CARTEL_BORDE
 	l.no_depth_test = false
 	return l
 
@@ -1584,15 +1705,17 @@ func _armar_cordillera() -> void:
 					var v: Vector3 = p[k]
 					# Más alto = más pelado y más frío. Abajo, bosque oscuro.
 					var h: float = clampf(v.y / 48.0, 0.0, 1.0)
-					var c := Color(0.13, 0.17, 0.17).lerp(Color(0.62, 0.66, 0.74), h * h)
-					st.set_color(c.lerp(Color(0.36, 0.44, 0.56), 0.45))
+					# Del bosque oscuro de la base (V2) a la roca pelada de
+					# arriba (V6), y todo lerpeado 0.45 hacia MONTE_AIRE: la
+					# distancia lava el color y lo enfría. La cordillera es el
+					# marco del cuadro, así que abarca la escalera entera menos
+					# las puntas.
+					var c := Paleta.MONTE_BAJO.lerp(Paleta.MONTE_ALTO, h * h)
+					st.set_color(c.lerp(Paleta.MONTE_AIRE, 0.45))
 					st.add_vertex(v)
 
 	st.generate_normals()
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.roughness = 1.0
-	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	var mat := Paleta.monte()
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
 	mi.material_override = mat
