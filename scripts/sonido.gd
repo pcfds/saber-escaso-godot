@@ -29,6 +29,10 @@
 ##                  las cinco voces del trabajo, y ninguna suena por una curva:
 ##                  suenan porque el SERVIDOR dice que esa persona está
 ##                  despierta y en su lugar. Ver `LA GENTE`, más abajo.
+##   Y QUIÉN SOS  · tus pasos. Es la única voz que no habla del valle sino de
+##                  vos, y dice tres cosas a la vez: que te estás moviendo, qué
+##                  estás pisando —pasto, tierra, piedra, agua, las tablas de una
+##                  casa— y cuánto llevás encima. Ver `LOS PASOS`.
 ##
 ## LA LÍNEA QUE NO SE CRUZA, Y ES LA MISMA DEL INVARIANTE 4. El sonido es
 ## presentación y vive entero en el cliente, así que puede inventar timbres,
@@ -62,6 +66,10 @@
 ## pasables. El martillo del yunque y el murmullo de la gente son el techo de
 ## lo que se puede fingir, y son los dos primeros que habría que grabar. Las
 ## palabras no se intentan, y no por límite técnico: el juego es de leer.
+##
+## De los pasos: el pasto, la tierra y el agua salen bien —son ruido filtrado que
+## se apaga, que es lo que la síntesis hace mejor que nada—, la madera sale
+## pasable y la piedra comparte techo con el yunque por el mismo motivo.
 ##
 ## NADIE DEL EQUIPO ESCUCHÓ ESTO TODAVÍA. No hay forma de afirmar cómo suena
 ## desde acá: bajo WSL no hay salida de audio. Lo que se puede verificar es lo
@@ -356,6 +364,120 @@ const MURMULLO_ESPERA := [10.0, 20.0]
 const MURMULLO_DB := -17.0
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  LOS PASOS. La voz que contesta "no puedes mover".
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Es la voz que faltaba y es la más grande que hay, porque es la única que no
+# habla del valle sino de VOS. Hasta hoy cruzabas un valle de trescientos sesenta
+# metros y tu propio cuerpo no hacía un ruido: moverse se veía, no se sentía. Un
+# personaje que se desliza en silencio no es un personaje, es un cursor.
+#
+# QUÉ CONTESTA, con la misma regla de la casa que el resto del archivo — cada voz
+# tiene que decir algo que no se pueda leer en la pantalla:
+#
+#   DÓNDE ESTOY  · el suelo del valle tiene cuatro materiales y **suenan
+#                  distinto**: pasto, tierra en las cuestas, la piedra del
+#                  Camino del Norte y de los escalones, y el agua del río. Sin
+#                  mirar el piso sabés si te metiste en el agua.
+#                · y **entrar a una casa se OYE**: el zócalo tiene el piso de
+#                  tablas arriba, y las tablas suenan a hueco. Es el mismo aviso
+#                  de "entraste" que el Sotobosque da apagando el ambiente.
+#   QUÉ ESTOY    · caminar y correr no suenan igual de fuerte ni de seguido, y
+#     HACIENDO     una caída y una rodada suenan a cuerpo entero contra el piso.
+#   QUÉ LLEVO    · cargado pisás más fuerte y más grave. Es la mitad audible de
+#                  *"lo que llevás encima, sí"* (`DISENO.md` §8.3, regla 2).
+#
+# EL PRESUPUESTO, Y ACÁ HAY QUE SER HONESTO. El freno de este archivo es 48
+# eventos/min para las seis voces de la gente. **Los pasos se pasan de eso solos
+# y por lejos**: la cadencia sale de la zancada de `figura.gd` y da unos 170
+# pasos/min caminando y 280 corriendo (medido, ver `_medir_la_cadencia()`). No es
+# un descuido y no entra en el mismo presupuesto, por tres razones que valen:
+#
+#   1. **Los causás vos.** El oído descuenta lo que uno mismo produce; lo que
+#      cansa es el ruido que llega sin que hayas hecho nada, que es justo lo que
+#      mide el techo de la gente (parado, sin tocar una tecla).
+#   2. **Se apagan cuando parás**, en el mismo cuadro. El martillo que motivó la
+#      queja sonaba solo, a 260 m, mientras mirabas el cielo.
+#   3. **Van bajos y a su propio bus** (`SE_Pasos`), así que se pueden bajar o
+#      callar enteros sin tocar una sola voz del valle.
+#
+# Igual se mide y se imprime al lado del resto, que es la única forma de que
+# alguien pueda discutirlo con un número en la mano.
+
+## El freno. Dos pasos no pueden salir a menos de esto, pase lo que pase con la
+## fase de la caminata. Es el mismo seguro que `GENTE_FRENO` y está por el mismo
+## motivo: no para diseñar el ritmo —el ritmo lo pone la zancada— sino para que
+## un bug de animación no se convierta en una ametralladora en el oído de nadie.
+## 0,12 s son 8 pasos por segundo, casi el doble de lo que da correr.
+const PASO_FRENO := 0.12
+
+## Cada superficie, con su volumen y su tono. **El volumen es una decisión de
+## diseño, no una propiedad del material**: la piedra y la madera van más arriba
+## porque son las dos que dicen "estás en otro lado" y tienen que llegar; el
+## pasto va abajo porque es el 90% de lo que vas a pisar en tu vida y es
+## exactamente el que no puede cansar.
+##
+## Todos los bucles salen a −20 dBFS eficaces (`RMS_VOZ`, la convención de la
+## casa), así que estos números quieren decir lo mismo en las cinco voces.
+## LOS NÚMEROS SALEN DE UNA MEDICIÓN, NO DE UN GUSTO, y no podían salir de otra
+## cosa: bajo WSL nadie oye nada, así que un −12 dB elegido a ojo no quiere decir
+## nada. La primera tanda estaba **catorce decibeles por debajo del lecho del
+## valle** —o sea que los pasos existían y no se oían, que es lo mismo que no
+## hacerlos— y lo dijo `_medir_cuanto_pesan()`, que los pone al lado del lecho en
+## campo abierto. Ahora quedan entre 5 y 8 dB por debajo en nivel eficaz y unos 2
+## dB POR ENCIMA en pico, que es lo que corresponde: cuando te movés, tus pasos
+## son lo más presente que hay; cuando parás, vuelve el valle.
+const PASOS := {
+	"pasto":  {"db": [-8.0, -4.5], "tono": [0.92, 1.10]},
+	"tierra": {"db": [-7.0, -3.5], "tono": [0.90, 1.08]},
+	"piedra": {"db": [-5.5, -2.0], "tono": [0.94, 1.12]},
+	"madera": {"db": [-6.0, -2.5], "tono": [0.90, 1.06]},
+	"agua":   {"db": [-8.5, -5.0], "tono": [0.93, 1.09]},
+}
+
+## DOS MUESTRAS POR SUPERFICIE, Y NO UNA. Es lo más barato que hay contra el
+## efecto ametralladora: se alternan pie a pie, así que lo que se repite no es
+## un sonido sino un PAR, y un par con dos timbres distintos se lee como dos
+## pies y no como un bucle. Con el tono y el volumen sorteados encima, dos
+## pasadas iguales no existen.
+##
+## Tres no aportan: el paso dura 200 ms y lo que el oído agarra en ese rato es el
+## timbre, no el detalle. Diez muestras serían diez veces el trabajo de generar
+## para algo que nadie puede distinguir.
+const PASO_VARIANTES := 2
+
+## Tres reproductores en rueda. Un paso dura hasta 300 ms (el chapoteo) y a la
+## carrera salen cada 215 ms, así que dos se pisan: con uno solo, cada paso
+## cortaría la cola del anterior y la carrera sonaría entrecortada.
+const PASO_JUGADORES := 3
+
+## LA GEOMETRÍA DEL SUELO, copiada de `valle.gd` por el mismo motivo que `POS`:
+## que este archivo corra solo en la escena de prueba.
+##
+## El río es un plano de 430 × 15 m centrado en (0, −1,7, 26) y girado 9°
+## (`valle.gd::_armar_rio`). Se pisa agua si estás adentro de esa cinta Y a la
+## altura del agua: el puente de la orilla pasa por arriba y no chapotea.
+const RIO_NIVEL := -1.7
+const RIO_ANCHO := 7.5
+
+## El empedrado del Camino del Norte: 26 losas de 3,6 × 1,5 m serpenteando ±2,2 m
+## entre z −16 y +18 del centro del lugar (`valle.gd::_armar_camino`). No tienen
+## cuerpo de colisión —se caminan como si fueran el pasto— así que la única forma
+## de saber que las estás pisando es la caja donde están.
+const CAMINO_ANCHO := 4.2
+const CAMINO_DESDE := -17.0
+const CAMINO_HASTA := 19.0
+
+## Debajo de este coseno de pendiente el suelo muestra tierra en vez de pasto.
+## **Es el mismo número que el color**: `valle.gd::_color_terreno()` mezcla
+## tierra con `pendiente * 3.4` y por lo tanto la tierra gana la mitad de la
+## mezcla cuando la pendiente pasa de 0,147, o sea con la normal en 0,853. Que el
+## oído y el ojo cambien en la misma línea del terreno no es prolijidad: si no
+## coinciden, el sonido dice una cosa y el suelo muestra otra.
+const PASO_CUESTA := 0.853
+
+
 ## Interpola una curva de [fracción, valor]. La hora da la vuelta sola.
 static func curva(puntos: Array, f: float) -> float:
 	var x := fposmod(f, 1.0)
@@ -511,6 +633,7 @@ var _listo := false
 var _reloj := 0.0
 var _prox_crujido := 12.0
 var _ms_generacion := 0.0
+var _ms_pasos := 0.0
 
 ## LA GENTE, tal cual la manda el servidor. Cada entrada:
 ##   nombre, familia ("" si el oficio no tiene una), trabajando (bool),
@@ -631,6 +754,21 @@ var _hay_salida := true
 var _bufs: Dictionary = {}
 var _nativo: Dictionary = {}
 
+## Los pasos. Van aparte de `_jug` a propósito: no son una voz del valle sino del
+## cuerpo del jugador, no tienen ganancia de lecho, no van en el reparto por
+## lugar y no se les aplica la compensación de −3 dB que llevan las voces que
+## suenan en dos emisores a la vez. Meterlos en `_jug` los hubiera arrastrado a
+## las cinco máquinas que ese diccionario alimenta, y a ninguna le corresponden.
+var _pasos: Dictionary = {}                    ## superficie → Array[AudioStreamWAV]
+var _pasos_jug: Array[AudioStreamPlayer] = []
+var _pasos_turno := 0
+var _pasos_pie := 0                            ## alterna izquierdo/derecho
+var _ultimo_paso := -99.0
+var _pasos_dados := 0
+## Cuántas cosas lleva encima el jugador, tal cual las manda `/mundo`. Ver
+## `carga()`.
+var _carga := 0
+
 
 func _ready() -> void:
 	# `_ready()` no hace NADA en el juego: el valle llama a `preparar()` cuando
@@ -668,6 +806,13 @@ func preparar(lugares: Dictionary = {}) -> void:
 	var t0 := Time.get_ticks_usec()
 	var bufs := _generar_todo()
 	_montar(bufs)
+	# Los pasos se cronometran aparte y no dentro del total: el total varía 300 ms
+	# entre corridas bajo WSL, así que no sirve para juzgar un agregado chico.
+	# Ésa es la lección que ya dejó escrita `_pasabanda_var()` — hay que medir la
+	# parte que cambió, no la suma.
+	var t1 := Time.get_ticks_usec()
+	_pasos = _generar_los_pasos()
+	_ms_pasos = (Time.get_ticks_usec() - t1) / 1000.0
 	_ms_generacion = (Time.get_ticks_usec() - t0) / 1000.0
 	# Sólo la prueba se queda con los bucles sueltos, para medirlos. En el
 	# juego los referencian los emisores y nadie más.
@@ -737,6 +882,15 @@ func enterarse(mundo: Dictionary) -> void:
 			print("  no porque lo diga el servidor. Esta corrida no es el juego.")
 
 	_gente = nueva
+	# LO QUE LLEVÁS ENCIMA. Está acá porque el peso ES una propiedad del sonido —
+	# un cuerpo cargado pisa más fuerte y más grave— y porque este módulo es el
+	# único al que `valle.gd` le pasa `/mundo` entero. Sale de la MISMA bolsa que
+	# la interfaz dibuja y que le pone el arma en la mano a la figura, así que no
+	# hay dos verdades sobre lo que llevás.
+	#
+	# **Y no decide nada.** No hay un tope acá ni puede haberlo: cuánto se puede
+	# llevar es una regla del mundo y las reglas del mundo son del servidor.
+	_carga = (mundo.get("objetos", []) as Array).size()
 	if _origen_gente.begins_with("nadie"):
 		_origen_gente = "/mundo"
 	# UNA SOLA VEZ, y en el juego de verdad. El cableado de este módulo se puede
@@ -878,6 +1032,10 @@ func apagar() -> void:
 			if is_instance_valid(p):
 				p.call("stop")
 				p.set("stream", null)
+	for p in _pasos_jug:
+		if is_instance_valid(p):
+			p.stop()
+			p.stream = null
 	_listo = false
 	_soltar_buses()
 
@@ -924,8 +1082,19 @@ func _armar_buses() -> void:
 	# El murmullo, aparte del resto: es lo único con cuerpo humano que hay en el
 	# valle y hay que poder callarlo sin tocar nada más si se decide que no va.
 	_bus(PREFIJO + "Voz", PREFIJO + "Valle", _filtro_bajo(2200.0, 0.0))
+	# Tus pasos. Bus propio porque son la única voz que sale de tu cuerpo y no
+	# del valle: es la que más veces suena por minuto de todo el juego, así que
+	# tiene que poder bajarse o callarse entera sin tocar nada más.
+	#
+	# El pasabajos está a 4.200 y no más arriba por la misma razón que el de los
+	# oficios: la banda de 2 a 5 kHz es donde el oído se cansa, y algo que suena
+	# tres veces por segundo durante toda la partida es exactamente lo que no
+	# puede vivir ahí. Lo que se pierde arriba de 4,2 kHz de un paso es el
+	# "chas" del pasto, que igual no es lo que lo identifica.
+	_bus(PREFIJO + "Pasos", PREFIJO + "Valle", _filtro_bajo(4200.0, 0.0))
 	_volumen(PREFIJO + "Oficio", 1.0)
 	_volumen(PREFIJO + "Voz", 1.0)
+	_volumen(PREFIJO + "Pasos", 1.0)
 	_volumen(PREFIJO + "Valle", volumen_general)
 	# El eco de la Puerta del Norte. Va en el bus del valle entero —o sea que
 	# le vuelve TODO, el río, el viento y el martillo— y arranca en seco: la
@@ -1087,6 +1256,18 @@ func _armar_emisores() -> void:
 	# en el pueblo". A 22 m ya no llega, y eso es lo que lo salva de ser el
 	# ruido de multitud genérico que este archivo no quiere tener.
 	_mundo("murmullo", PREFIJO + "Voz", f_aldea + Vector3(0, 1.5, 0), 5.0, 22.0, 1.0)
+
+	# TUS PASOS NO SON EMISORES DEL MUNDO. Van sin posición y a propósito: tus
+	# propios pies están siempre a la misma distancia de tus oídos, y ponerlos en
+	# el espacio los haría subir y bajar con el giro de la cámara —que orbita a
+	# cuarenta metros— o sea que caminar en línea recta sonaría a que alguien te
+	# camina alrededor. El eco de la Puerta les llega igual: cuelgan del bus del
+	# valle, como todo.
+	for _i in PASO_JUGADORES:
+		var p := AudioStreamPlayer.new()
+		p.bus = PREFIJO + "Pasos"
+		add_child(p)
+		_pasos_jug.append(p)
 
 	# DOS EMISORES DEL MISMO RUIDO SUENAN 3 dB MÁS FUERTE QUE UNO.
 	#
@@ -1462,6 +1643,102 @@ func _crujir(dt: float, pos: Vector3) -> void:
 	_prox_crujido = randf_range(9.0, 26.0)
 
 
+# ── LOS PASOS, EN VIVO ───────────────────────────────────────────────────
+
+## Cuántas cosas lleva encima el jugador, según el último `/mundo`.
+##
+## Sale de acá y no de `jugador.gd` porque acá es donde llega la bolsa. Ver el
+## comentario de `enterarse()` y la deuda anotada en `jugador.gd`.
+func carga() -> int:
+	return _carga
+
+
+## UN PIE TOCÓ EL PISO. Lo llama `jugador.gd` cuando `figura.gd` avisa que la
+## zancada pasó por la vertical, o cuando el cuerpo cae o rueda.
+##
+##   `piso_crudo`  contra qué chocaron los pies, tal cual lo ve la física:
+##                 `"terreno"` (la malla del valle), `"tabla"` (el piso de una
+##                 casa) o `"losa"` (un escalón, el tronco de un fogón).
+##   `fuerza`      0 a 1. Sale de la intensidad de la caminata, así que un paso
+##                 al trote pesa más que uno al arrancar. Una caída vale 1.
+##   `llano`       el coseno de la pendiente del piso, 1 plano.
+##
+## Este módulo no le pregunta nada al cuerpo: lo que sabe el cuerpo lo manda el
+## cuerpo y lo que sabe el mapa lo pone acá. Es el mismo reparto que con la
+## gente — el servidor dice quién trabaja, este archivo dice cómo suena.
+func pisar(piso_crudo: String, fuerza := 1.0, llano := 1.0) -> void:
+	if not _listo or _pasos.is_empty() or not _hay_salida or _midiendo:
+		return
+	# El freno. Ver `PASO_FRENO`: no es diseño de ritmo, es un seguro.
+	if _reloj - _ultimo_paso < PASO_FRENO:
+		return
+	_ultimo_paso = _reloj
+	_pasos_dados += 1
+	var pos := oyente.global_position if oyente != null else Vector3.ZERO
+	var sup := superficie(pos, piso_crudo, llano)
+	var lista: Array = _pasos.get(sup, [])
+	if lista.is_empty():
+		return
+	var p := _pasos_jug[_pasos_turno]
+	_pasos_turno = (_pasos_turno + 1) % _pasos_jug.size()
+	# Pie a pie: el izquierdo y el derecho no son la misma muestra. Ver
+	# `PASO_VARIANTES`.
+	_pasos_pie = (_pasos_pie + 1) % lista.size()
+	p.stream = lista[_pasos_pie]
+	var d: Dictionary = PASOS[sup]
+	var t: Array = d["tono"]
+	var v: Array = d["db"]
+	# EL PESO, que es la mitad audible de la regla 2 de §8.3. Cargado pisás más
+	# fuerte y más grave, que es lo que hace un cuerpo con veinte kilos encima.
+	# Los números son chicos a propósito: +3 dB y −7% de tono con la carga
+	# llena. Más que eso deja de ser el mismo cuerpo y empieza a ser otro
+	# personaje, y el peso no tiene que gritar — tiene que notarse.
+	var c := clampf(float(_carga) / 12.0, 0.0, 1.0)
+	# `fuerza` recorre la franja de volumen: un paso al ras del arranque sale en
+	# el piso y uno a la carrera en el techo.
+	p.volume_db = lerpf(float(v[0]), float(v[1]), clampf(fuerza, 0.0, 1.0)) \
+		+ 3.0 * c + randf_range(-1.5, 1.5)
+	p.pitch_scale = randf_range(float(t[0]), float(t[1])) * (1.0 - 0.07 * c)
+	p.play()
+
+
+## De qué está hecho el suelo que estás pisando.
+##
+## Es lo único de este archivo que mira la FORMA del valle además del eco de la
+## Puerta, y por eso las cuatro respuestas del terreno salen de la misma
+## geometría con la que `valle.gd` lo dibuja: si el sonido dijera piedra donde se
+## ve pasto, estaría mintiendo — que es exactamente lo que este archivo dejó de
+## hacer con el martillo.
+func superficie(pos: Vector3, piso_crudo: String, llano := 1.0) -> String:
+	# Lo construido lo decide la física y no el mapa. La cara de arriba del
+	# basamento de una casa es su piso de tablas; cualquier otra caja del valle
+	# —escalones, losas, el tronco de un fogón— es dura.
+	if piso_crudo == "tabla":
+		return "madera"
+	if piso_crudo == "losa":
+		return "piedra"
+
+	# El río. Adentro de la cinta Y a la altura del agua: cruzar por arriba de la
+	# barranca no chapotea.
+	var giro := deg_to_rad(RIO_GIRO)
+	var a_traves := Vector3(sin(giro), 0.0, cos(giro))
+	var d := absf((pos - Vector3(RIO_CENTRO.x, pos.y, RIO_CENTRO.z)).dot(a_traves))
+	if d < RIO_ANCHO and pos.y < RIO_NIVEL + 0.35:
+		return "agua"
+
+	# El empedrado del Camino del Norte. No tiene colisión propia, así que la
+	# única forma de saber que lo estás pisando es dónde estás parado.
+	var c: Vector3 = _tabla.get("camino", POS["camino"])["pos"]
+	if absf(pos.x - c.x) < CAMINO_ANCHO \
+			and pos.z - c.z > CAMINO_DESDE and pos.z - c.z < CAMINO_HASTA:
+		return "piedra"
+
+	# Y la cuesta, con el mismo umbral con el que el terreno se pinta de tierra.
+	if llano < PASO_CUESTA:
+		return "tierra"
+	return "pasto"
+
+
 # ─────────────────────────────────────────────────────────────────────────
 #  LA SÍNTESIS. Cero bytes en disco.
 #
@@ -1482,8 +1759,11 @@ func _crujir(dt: float, pos: Vector3) -> void:
 #    EL TECHO · el yunque. Un golpe metálico es síntesis modal y se puede
 #               fingir, pero el impacto real tiene una densidad de parciales
 #               que cuatro senos no dan. Es lo primero que hay que grabar.
-#    NO       · voces, pasos y cualquier cosa con cuerpo humano. Ver la
-#               entrega: no se intentan acá.
+#    NO       · las palabras. No se intentan y no es un límite técnico: el
+#               juego es de leer, y una voz que intenta decir algo y no lo dice
+#               suena a juguete.
+#    (Los pasos SÍ se hacen acá desde el 19 de agosto — ver `LOS PASOS,
+#     SINTETIZADOS`. Este renglón decía que no y quedó viejo.)
 # ─────────────────────────────────────────────────────────────────────────
 
 ## LARGOS PRIMOS ENTRE SÍ. No es un detalle: es la mitad de por qué un lecho
@@ -2165,6 +2445,249 @@ static func _murmullo(semilla: int) -> PackedFloat32Array:
 	return o
 
 
+# ── LOS PASOS, SINTETIZADOS ──────────────────────────────────────────────
+#
+#  HASTA DÓNDE LLEGA ESTO, por adelantado y sin maquillaje:
+#    BIEN     · el pasto, la tierra y el agua. Un paso en material blando es un
+#               golpe de ruido filtrado que se apaga, y eso es literalmente lo
+#               que hace la síntesis. El chapoteo comparte receta con el río, y
+#               el río salió bien.
+#    PASABLE  · la madera. Los dos modos graves leen a hueco, que es lo que
+#               dice "estás adentro", pero una tabla real cruje distinto en cada
+#               junta y eso no está.
+#    EL TECHO · la piedra. Comparte techo con el yunque y por el mismo motivo:
+#               un impacto duro tiene una densidad de parciales que cuatro
+#               osciladores no dan. Suena a golpe seco, no a bota sobre losa.
+#
+#  UN PASO SON TRES COSAS Y SIEMPRE LAS MISMAS, cambia el reparto:
+#    1. el CONTACTO — el ataque, de 2 a 8 ms. Es lo que dice qué tan duro es;
+#    2. el CUERPO   — una o dos resonancias graves. Es lo que dice qué hay
+#                     debajo: tierra apagada, tabla hueca, losa timbrada;
+#    3. la COLA     — ruido filtrado que se apaga. Es lo que dice de qué está
+#                     hecha la superficie: pasto agudo y corto, agua larga.
+#  Cambiando el reparto de esos tres salen las cinco. No hay una sexta receta.
+
+## Cuánto dura cada paso. La piedra y el pasto son cortos porque un pie sobre
+## material duro o sobre hierba se apaga rápido; el agua es la más larga porque
+## un chapoteo es una cola de gotas, y ésa es toda su identidad.
+const PASO_LARGO := {
+	"pasto": 0.20, "tierra": 0.22, "piedra": 0.20, "madera": 0.24, "agua": 0.34,
+}
+
+
+func _generar_los_pasos() -> Dictionary:
+	var d := {}
+	# Las semillas son primos y distintos de los de arriba: dos voces con la
+	# misma semilla comparten la forma del ruido y se oyen emparentadas.
+	var semillas := {
+		"pasto": 307, "tierra": 331, "piedra": 353, "madera": 379, "agua": 401,
+	}
+	for sup: String in PASO_LARGO:
+		var lista: Array[AudioStreamWAV] = []
+		for k in PASO_VARIANTES:
+			var s: int = int(semillas[sup]) + k * 17
+			var m: PackedFloat32Array = PackedFloat32Array()
+			match sup:
+				"pasto": m = _paso_pasto(s)
+				"tierra": m = _paso_tierra(s)
+				"piedra": m = _paso_piedra(s)
+				"madera": m = _paso_madera(s)
+				"agua": m = _paso_agua(s)
+			# A −20 dBFS eficaces con techo de pico, igual que la muela y el
+			# murmullo: es lo que hace que la franja de dB de `PASOS` quiera decir
+			# lo mismo en las cinco superficies. Un paso normalizado por pico —que
+			# es lo que uno haría por ser un transitorio— dejaría la piedra al
+			# doble de volumen que el pasto sin que nadie lo hubiera decidido.
+			lista.append(_voz_wav("paso_%s_%d" % [sup, k], m, 0.85))
+		d[sup] = lista
+	return d
+
+
+## PASTO. Lo que se pisa el 90% del tiempo, así que es el que no puede cansar:
+## corto, sin nada agudo que se clave y con el cuerpo apenas insinuado.
+##
+## La banda BAJA mientras se apaga (1.500 → 550 Hz) y eso es el gesto entero: el
+## pie aplasta hierba —agudo— y después se apoya en la tierra de abajo —grave—.
+## Con la banda fija suena a un "sh" y no a un pie.
+static func _paso_pasto(semilla: int) -> PackedFloat32Array:
+	var n := int(PASO_LARGO["pasto"] * HZ)
+	# 1.150 y no 1.500 de arranque, Y ESTO SE MIDIÓ. Con la banda arrancando en
+	# 1.500 el pasto dejaba **el 26% de su energía en 2–5 kHz**, que es la banda
+	# donde el oído se cansa — y es la voz que suena ciento setenta veces por
+	# minuto durante toda la partida. Ahí es donde nace "el sonido molesta": no
+	# en el volumen, en la banda. Bajando el barrido queda en la mitad de eso y
+	# sigue leyendo como hierba, porque lo que dice hierba es que la banda BAJE,
+	# no dónde empieza.
+	var o := _pasabanda_var(_ruido(n, semilla), 1150.0, 440.0, 0.75)
+	# El cuerpo: la tierra debajo del pasto. Poquísimo, y ése es el punto — si
+	# pesa, el pasto se convierte en tierra.
+	var w := TAU * 96.0 / float(HZ)
+	for j in n:
+		o[j] += sin(w * float(j)) * exp(-52.0 / float(HZ) * float(j)) * 0.10
+	# El contacto y la caída. `pow(t, 0.35)` da un ataque de unos 4 ms: un pie
+	# sobre hierba no tiene filo, entra amortiguado.
+	for i in n:
+		var t := float(i) / float(n)
+		o[i] *= minf(1.0, pow(t / 0.02, 0.35)) * exp(-t * 11.0)
+	return o
+
+
+## TIERRA. Es el pasto sin el pasto: la misma receta una octava más abajo, sin
+## nada arriba de 900 Hz y con el cuerpo pesando de verdad.
+##
+## Aparece en las cuestas, que es donde el terreno se pinta de tierra, así que su
+## trabajo es decir "estás subiendo" sin que nadie mire el suelo.
+static func _paso_tierra(semilla: int) -> PackedFloat32Array:
+	var n := int(PASO_LARGO["tierra"] * HZ)
+	var o := _pasabanda_var(_ruido(n, semilla), 760.0, 240.0, 0.9)
+	var w := TAU * 74.0 / float(HZ)
+	for j in n:
+		o[j] += sin(w * float(j)) * exp(-38.0 / float(HZ) * float(j)) * 0.30
+	# El cascote: dos o tres piedritas sueltas en los primeros 60 ms. Es lo único
+	# agudo que tiene y es lo que la separa de un golpe en una alfombra.
+	var r := RandomNumberGenerator.new()
+	r.seed = semilla + 3
+	for _k in r.randi_range(2, 3):
+		var pos := r.randi_range(int(0.004 * HZ), int(0.06 * HZ))
+		var dur := r.randi_range(60, 180)
+		var amp := r.randf_range(0.05, 0.12)
+		for j in dur:
+			if pos + j >= n:
+				break
+			o[pos + j] += r.randf_range(-1.0, 1.0) * exp(-5.0 / float(dur) * float(j)) * amp
+	for i in n:
+		var t := float(i) / float(n)
+		o[i] *= minf(1.0, pow(t / 0.02, 0.30)) * exp(-t * 9.5)
+	return o
+
+
+## PIEDRA. El empedrado del Camino del Norte y los escalones de cada puerta.
+##
+## Todo el trabajo está en el ATAQUE: 2 ms de ruido crudo, sin filtrar y sin
+## rampa. Lo que dice "duro" no es el timbre, es que empieza de golpe — la misma
+## razón por la que el yunque abre con 4 ms de ruido pelado.
+##
+## Y dos modos INARMÓNICOS encima (1.180 y 1.970 Hz, razón 1,669), que es la losa
+## timbrando. Inarmónicos a propósito: con una razón de números enteros suena a
+## campana, y una campana en el piso es un error que se oye a la primera.
+static func _paso_piedra(semilla: int) -> PackedFloat32Array:
+	var n := int(PASO_LARGO["piedra"] * HZ)
+	var o := PackedFloat32Array()
+	o.resize(n)
+	var r := RandomNumberGenerator.new()
+	r.seed = semilla
+	# El contacto, sin rampa. 0,45 y no 0,85, Y ESTO TAMBIÉN SE MIDIÓ: con 0,85
+	# la cresta de la muestra daba **21x** —el pico se comía la normalización y
+	# el resto del paso quedaba 8 dB por debajo de las otras cuatro
+	# superficies—, o sea que la losa no timbraba: hacía un clic y nada más. Lo
+	# que dice "duro" es que EMPIECE de golpe, no que el golpe sea enorme.
+	var tr := int(0.002 * HZ)
+	for j in tr:
+		o[j] += r.randf_range(-1.0, 1.0) * (1.0 - float(j) / float(tr)) * 0.30
+	# La losa.
+	for par: Array in [[1180.0, 0.40, 62.0], [1970.0, 0.22, 96.0]]:
+		var w := TAU * float(par[0]) / float(HZ)
+		var dec := float(par[2]) / float(HZ)
+		for j in n:
+			o[j] += sin(w * float(j)) * exp(-dec * float(j)) * float(par[1])
+	# El cuero de la suela contra la piedra: banda alta y muy corta.
+	var roce := _pasabanda_var(_ruido(n, semilla + 5), 2900.0, 1600.0, 0.8)
+	for j in n:
+		o[j] += roce[j] * exp(-float(j) * 44.0 / float(HZ)) * 0.42
+	# Y el peso, que en piedra casi no existe: la piedra no se hunde.
+	var wg := TAU * 124.0 / float(HZ)
+	for j in n:
+		o[j] += sin(wg * float(j)) * exp(-58.0 / float(HZ) * float(j)) * 0.16
+	for i in n:
+		o[i] *= exp(-float(i) / float(n) * 13.0)
+	return o
+
+
+## MADERA. El piso de tablas de las doce casas.
+##
+## **Es la voz que más información da de las cinco**, porque es la única que no
+## habla del material sino del LUGAR: cuando el paso se vuelve hueco, entraste.
+## Es el mismo aviso que da el Sotobosque apagando el ambiente, dicho con el
+## cuerpo en vez de con el volumen.
+##
+## Lo hueco son dos modos graves inarmónicos (118 y 187 Hz, razón 1,585) que
+## duran bastante más que el golpe: eso es una cavidad debajo del pie. Con una
+## caída corta suena a mesada, no a entrepiso.
+static func _paso_madera(semilla: int) -> PackedFloat32Array:
+	var n := int(PASO_LARGO["madera"] * HZ)
+	var o := PackedFloat32Array()
+	o.resize(n)
+	var r := RandomNumberGenerator.new()
+	r.seed = semilla
+	for par: Array in [[118.0, 0.34, 21.0], [187.0, 0.22, 30.0]]:
+		var w := TAU * float(par[0]) / float(HZ)
+		var dec := float(par[2]) / float(HZ)
+		for j in n:
+			o[j] += sin(w * float(j)) * exp(-dec * float(j)) * float(par[1])
+	# El contacto: la suela sobre la tabla. Más blando que la piedra —la madera
+	# cede— así que el ataque tiene 4 ms y no 2.
+	var tr := int(0.004 * HZ)
+	for j in tr:
+		o[j] += r.randf_range(-1.0, 1.0) * (1.0 - float(j) / float(tr)) * 0.45
+	# EL REPARTO ENTRE LOS MODOS Y EL ROCE ESTÁ MEDIDO. Con los modos a 0,58 la
+	# muestra daba **81% de su energía en los graves** y el paso se leía como un
+	# portazo, no como una tabla: lo hueco estaba, y encima estaba solo. Una
+	# tabla también tiene la suela arriba, y ese medio es lo que la separa de un
+	# tambor. Ahora los graves quedan cerca de la mitad, que es lo que hace que
+	# se oiga hueco Y se oiga madera.
+	var roce := _pasabanda_var(_ruido(n, semilla + 7), 1100.0, 520.0, 1.0)
+	for j in n:
+		o[j] += roce[j] * exp(-float(j) * 30.0 / float(HZ)) * 0.62
+	# El crujido de la junta, y sólo en una de las dos muestras: una tabla que
+	# cruje SIEMPRE deja de ser una tabla vieja y pasa a ser un efecto.
+	if semilla % 2 == 1:
+		var pos := int(0.05 * HZ)
+		var dur := int(0.07 * HZ)
+		var cru := _pasabanda_var(_ruido(dur, semilla + 11), 620.0, 980.0, 5.5)
+		for j in dur:
+			if pos + j >= n:
+				break
+			o[pos + j] += cru[j] * sin(PI * float(j) / float(dur)) * 0.55
+	for i in n:
+		o[i] *= exp(-float(i) / float(n) * 7.5)
+	return o
+
+
+## AGUA. Meterse en el río.
+##
+## Es el único paso que no se apaga: los otros cuatro mueren en dos décimas y
+## éste tiene una cola de 340 ms, que es lo que hace que el agua se sienta
+## agua. La receta es la del río —transitorios que SUBEN de tono mientras se
+## apagan, o sea gotas— pero con seis u ocho en vez de ciento y pico: la
+## cantidad es la diferencia entre un río corriendo y un pie entrando.
+static func _paso_agua(semilla: int) -> PackedFloat32Array:
+	var n := int(PASO_LARGO["agua"] * HZ)
+	# El chapoteo: banda ancha que cae de 3.000 a 800 mientras se abre. El
+	# ataque es LENTO (8 ms) y ésa es la firma del agua — un líquido no golpea,
+	# se desplaza.
+	var o := _pasabanda_var(_ruido(n, semilla), 2400.0, 700.0, 0.55)
+	for i in n:
+		var t := float(i) / float(n)
+		o[i] *= minf(1.0, t / 0.024) * exp(-t * 6.5)
+	# Las gotas que vuelven a caer.
+	var r := RandomNumberGenerator.new()
+	r.seed = semilla + 13
+	for _k in r.randi_range(6, 8):
+		var dur := r.randi_range(500, 1500)
+		var pos := r.randi_range(int(0.05 * HZ), maxi(int(0.05 * HZ) + 1, n - dur - 1))
+		var f := r.randf_range(620.0, 2100.0)
+		var amp := r.randf_range(0.06, 0.20)
+		var sube := r.randf_range(0.5, 1.8)
+		var w := TAU * f / float(HZ)
+		var dec := 6.0 / float(dur)
+		for j in dur:
+			if pos + j >= n:
+				break
+			var tt := float(j)
+			o[pos + j] += sin(w * tt * (1.0 + sube * tt / float(dur))) * exp(-dec * tt) * amp
+	return o
+
+
 # ─────────────────────────────────────────────────────────────────────────
 #  EL INFORME. Lo único de todo esto que se puede verificar sin oír nada.
 # ─────────────────────────────────────────────────────────────────────────
@@ -2192,6 +2715,7 @@ func _informe_de_prueba() -> void:
 	_revisar_la_cadena()
 	print("")
 	_medir_las_voces(_bufs)
+	_medir_los_pasos()
 	_medir_la_repeticion()
 	_medir_los_niveles()
 	_medir_las_zonas()
@@ -2370,6 +2894,192 @@ func _medir_las_voces(bufs: Dictionary) -> void:
 			("%.2f ¡!" % npk) if npk > 1.0 else "%.2f" % npk, texto])
 	print("  total generado: %.0f s de audio, %.1f MB en RAM, 0 bytes en disco."
 		% [total_s, total_s * float(HZ) * 2.0 / 1048576.0])
+	print("")
+
+
+## LOS PASOS, MEDIDOS. Es lo único que se puede afirmar de ellos desde acá: bajo
+## WSL el driver es Dummy y nadie los oyó.
+func _medir_los_pasos() -> void:
+	print("── TUS PASOS, MEDIDOS")
+	print("  Generados en %.0f ms (cronometrados aparte del total: el total varía"
+		% _ms_pasos)
+	print("  300 ms entre corridas y no sirve para juzgar un agregado chico).")
+	print("  `crudo pk` es el pico ANTES de normalizar, y acá no puede recortar:")
+	print("  el techo de pico se aplica después. Está para ver cuánta cabeza")
+	print("  tiene cada receta — la misma columna de arriba, con otro sentido.")
+	print("  Lo que SÍ hay que mirar es `cresta`: cuanto más alta, más se come el")
+	print("  pico la normalización y más abajo queda el cuerpo del paso. La")
+	print("  piedra llegó a 21x —el clic tapaba a la losa entera— y bajó a 12–16")
+	print("  achicándole el ataque; los 2,4 dB que quedan entre sus dos muestras")
+	print("  no se corrigen a propósito: una pisada no pesa lo mismo que la otra.")
+	var cab := "  %-9s %3s %7s %8s %8s %8s %9s   %s"
+	print(cab % ["superficie", "var", "largo", "eficaz", "pico", "cresta",
+		"crudo pk", "reparto por banda (%)"])
+	var total_s := 0.0
+	for sup: String in PASO_LARGO:
+		for k in PASO_VARIANTES:
+			var w: AudioStreamWAV = (_pasos[sup] as Array)[k]
+			var m := _muestras(w)
+			var seg := float(m.size()) / float(HZ)
+			total_s += seg
+			var r := _rms(m)
+			var p := _pico(m)
+			var partes: Array[float] = []
+			var suma := 0.0
+			for b: Array in BANDAS:
+				var e := _banda(m, float(b[1]), float(b[2]))
+				partes.append(e * e)
+				suma += e * e
+			var texto := ""
+			for i in BANDAS.size():
+				texto += "%s %2.0f  " % [(BANDAS[i] as Array)[0],
+					100.0 * partes[i] / maxf(suma, 0.0000001)]
+			var nat: Dictionary = _nativo.get("paso_%s_%d" % [sup, k], {})
+			var npk := float(nat.get("pico", 0.0))
+			print(cab % [sup, str(k), "%.2fs" % seg, "%.1f dB" % _dbfs(r),
+				"%.1f dB" % _dbfs(p), "%.1fx" % (p / maxf(r, 0.000001)),
+				("%.2f ¡!" % npk) if npk > 1.0 else "%.2f" % npk, texto])
+	print("  total: %d muestras, %.2f s de audio, %.0f kB en RAM, 0 bytes en disco."
+		% [PASO_LARGO.size() * PASO_VARIANTES, total_s,
+			total_s * float(HZ) * 2.0 / 1024.0])
+	print("")
+	_medir_cuanto_pesan()
+	_medir_el_suelo()
+	_medir_la_cadencia()
+
+
+## CUÁNTO PESAN LOS PASOS AL LADO DEL LECHO.
+##
+## Es la medición que decide la franja de dB de `PASOS`, y hace falta porque
+## **elegir el volumen "a ojo" acá no es posible**: bajo WSL nadie oye nada, y
+## sin un número al lado del lecho un −12 dB no quiere decir nada. Lo que se
+## calcula es el nivel eficaz que dejan los pasos en un segundo de caminata
+## —duración de la muestra por cadencia— contra lo que ese mismo segundo le
+## llega al oído del lecho del valle en campo abierto.
+##
+## LA VARA: los pasos tienen que quedar POR DEBAJO del lecho y no muy lejos.
+## Encima del lecho tapan el valle, que es lo contrario de lo que este archivo
+## quiere; quince dB por debajo no existen y el jugador vuelve a deslizarse en
+## silencio. Entre 3 y 8 dB por debajo es donde se oyen y no mandan.
+func _medir_cuanto_pesan() -> void:
+	print("── CUÁNTO PESAN AL LADO DEL LECHO (dBFS eficaces en un segundo de caminata)")
+	# La cadencia real, contada sobre la figura de verdad más abajo. Acá alcanza
+	# con la de caminar: correr sube el ciclo de trabajo y baja el tono medio.
+	var por_seg := 2.83
+	var lecho_campo := _nivel_en(PUNTO_CAMPO, 0.50)
+	# Y el pico del lecho, que es contra lo que hay que comparar un transitorio.
+	# Los bucles del lecho tienen cresta 4x medida (ver LOS BUCLES), o sea 12 dB
+	# entre su nivel eficaz y su pico.
+	var pico_lecho := lecho_campo + 12.0
+	var cab := "  %-9s %10s %10s %10s %11s   %s"
+	print(cab % ["superficie", "en 1 s", "vs lecho", "su pico", "vs pico", "veredicto"])
+	for sup: String in PASO_LARGO:
+		var m := _muestras((_pasos[sup] as Array)[0] as AudioStreamWAV)
+		var v: Array = (PASOS[sup] as Dictionary)["db"]
+		# El volumen medio de la franja, el bus de pasos en 1,0 y el general.
+		var medio := (float(v[0]) + float(v[1])) / 2.0
+		var suelto := linear_to_db(volumen_general) + medio
+		# El ciclo de trabajo: cuánto del segundo está sonando un paso.
+		var duty: float = minf(1.0, float(PASO_LARGO[sup]) * por_seg)
+		var seg := _dbfs(_rms(m)) + suelto + 10.0 * log(duty) / log(10.0)
+		var pico := _dbfs(_pico(m)) + suelto
+		var dif := seg - lecho_campo
+		print(cab % [sup, "%.1f dB" % seg, "%+.1f dB" % dif, "%.1f dB" % pico,
+			"%+.1f dB" % (pico - pico_lecho),
+			"OK" if dif < -3.0 and dif > -10.0 else
+			("TAPA EL VALLE" if dif >= -3.0 else "no se oye")])
+	print("  el lecho en campo abierto al mediodía vale %.1f dBFS eficaces y unos"
+		% lecho_campo)
+	print("  %.1f de pico. **Un paso se juzga por el pico y no por el nivel"
+		% pico_lecho)
+	print("  eficaz**: dura dos décimas y el oído lo mide como un golpe, no como")
+	print("  un ruido sostenido. Que quede debajo en eficaz y apenas encima en")
+	print("  pico es exactamente el reparto que se quiere.")
+	print("")
+
+
+## LA CLASIFICACIÓN DEL SUELO, punto por punto.
+##
+## Existe por la lección que ya pagó esta rama con el cabeceo del animal medido
+## en −0,3 píxeles: **una sonda mal montada da un número y el número convence.**
+## Que el pasto suene a pasto no se puede oír desde acá, pero que la función diga
+## "pasto" parado en el pasto y "agua" parado en el río SÍ se puede comprobar, y
+## si eso está mal no hay timbre que lo arregle.
+func _medir_el_suelo() -> void:
+	print("── QUÉ SUENA DÓNDE (la clasificación, comprobada punto por punto)")
+	var rio_dentro := Vector3(RIO_CENTRO.x, RIO_NIVEL - 0.1, RIO_CENTRO.z)
+	# 12 m al costado de la cinta, medidos perpendiculares al río de verdad.
+	var giro := deg_to_rad(RIO_GIRO)
+	var orilla := rio_dentro + Vector3(sin(giro), 0.0, cos(giro)) * 12.0
+	orilla.y = 0.0
+	var camino: Vector3 = _tabla["camino"]["pos"]
+	var casos: Array = [
+		["campo abierto", PUNTO_CAMPO, "terreno", 1.0, "pasto"],
+		["una cuesta del cuenco", PUNTO_CAMPO, "terreno", 0.80, "tierra"],
+		["el empedrado del camino", camino, "terreno", 1.0, "piedra"],
+		["adentro del río", rio_dentro, "terreno", 1.0, "agua"],
+		["la orilla, 12 m al lado", orilla, "terreno", 1.0, "pasto"],
+		["arriba del río, en la barranca", Vector3(RIO_CENTRO.x, 0.6, RIO_CENTRO.z),
+			"terreno", 1.0, "pasto"],
+		["adentro de una casa", _tabla["aldea"]["pos"], "tabla", 1.0, "madera"],
+		["un escalón de la puerta", _tabla["aldea"]["pos"], "losa", 1.0, "piedra"],
+		["un tronco del fogón", _tabla["aldea"]["pos"], "losa", 1.0, "piedra"],
+	]
+	var mal := 0
+	for c: Array in casos:
+		var dio := superficie(c[1], str(c[2]), float(c[3]))
+		if dio != str(c[4]):
+			mal += 1
+		print("  %-32s → %-7s %s" % [c[0], dio,
+			"OK" if dio == str(c[4]) else "MAL, se esperaba " + str(c[4])])
+	print("  %s" % ["las nueve dan lo que tienen que dar"
+		if mal == 0 else "¡%d de %d MAL!" % [mal, casos.size()]])
+	print("")
+
+
+## LA CADENCIA, MEDIDA SOBRE LA FIGURA DE VERDAD Y NO SOBRE UNA COPIA.
+##
+## Acá había una trampa lista para caer: escribir la fórmula de la zancada en
+## esta sonda y sacar la cuenta. Habría dado un número creíble y habría dejado de
+## valer el día que alguien toque `figura.gd`. Así que lo que se hace es armar
+## una figura de verdad, animarla treinta segundos y CONTAR las señales que
+## emite. Si mañana cambia la caminata, este número se mueve solo.
+##
+## Y el número importa porque es incómodo: los pasos son, por lejos, la voz que
+## más veces suena por minuto de todo el juego. Está discutido arriba, en el
+## bloque LOS PASOS.
+func _medir_la_cadencia() -> void:
+	print("── LA CADENCIA (contada sobre una `Figura` real, 30 s por caso)")
+	var f := Figura.new()
+	f.altura = 1.85
+	f.construir()
+	var cuenta := [0]
+	f.piso.connect(func(_x: float) -> void: cuenta[0] += 1)
+	var cab := "  %-13s %7s %10s %11s %14s"
+	print(cab % ["cómo", "m/s", "pasos/s", "pasos/min", "cada"])
+	# Las velocidades salen de `jugador.gd` y no de dos números copiados acá: si
+	# mañana el valle se cruza más rápido, la cadencia medida lo sigue.
+	for caso: Array in [["parado", 0.0], ["caminando", Jugador.VELOCIDAD],
+			["corriendo", Jugador.VELOCIDAD_CORRIENDO]]:
+		cuenta[0] = 0
+		for _i in 1800:
+			f.animar(1.0 / 60.0, float(caso[1]), true)
+		var por_seg := float(cuenta[0]) / 30.0
+		print(cab % [caso[0], "%.1f" % float(caso[1]), "%.2f" % por_seg,
+			"%.0f" % (por_seg * 60.0),
+			"%.0f ms" % (1000.0 / maxf(por_seg, 0.001)) if por_seg > 0.0 else "—"])
+	f.free()
+	print("  El freno de seguridad está en %.0f ms (%.1f pasos/s): no diseña el"
+		% [PASO_FRENO * 1000.0, 1.0 / PASO_FRENO])
+	print("  ritmo —lo diseña la zancada— sino que impide que un bug de animación")
+	print("  se convierta en una ametralladora.")
+	print("  Y sí: esto se pasa del techo de %.0f eventos/min de la gente, por"
+		% TECHO_POR_MINUTO)
+	print("  lejos. No entra en ese presupuesto y el motivo está escrito arriba:")
+	print("  los causás vos, se apagan en el mismo cuadro en que soltás la tecla,")
+	print("  y van a un bus propio que se puede callar entero. El martillo que")
+	print("  motivó la queja hacía 42/min SOLO, a 260 m y sin que vos hicieras")
+	print("  nada — eso es lo que molesta, no la cantidad.")
 	print("")
 
 
@@ -2972,6 +3682,21 @@ func _revisar_la_cadena() -> void:
 			var deberia_repetir := not VOCES_SUELTAS.has(voz)
 			if deberia_repetir and s.loop_mode != AudioStreamWAV.LOOP_FORWARD:
 				fallas.append("%s: es un lecho y no está en bucle" % voz)
+	# Los pasos son otra cadena: no tienen ganancia de lecho ni bucle, se les
+	# cuelga el stream en el momento de sonar. Lo que hay que revisar es que el
+	# bus exista y que las diez muestras tengan datos adentro.
+	if AudioServer.get_bus_index(PREFIJO + "Pasos") == -1:
+		fallas.append("pasos: el bus %sPasos no existe" % PREFIJO)
+	for sup: String in PASO_LARGO:
+		var lista: Array = _pasos.get(sup, [])
+		if lista.size() != PASO_VARIANTES:
+			fallas.append("paso %s: %d muestras y no %d" % [sup, lista.size(), PASO_VARIANTES])
+			continue
+		for w: AudioStreamWAV in lista:
+			if w == null or w.data.size() < 2:
+				fallas.append("paso %s: muestra vacía" % sup)
+			else:
+				muestras += w.data.size() / 2
 	print("Cadena: %d emisores, %d buses, %d muestras (%.1f s de audio, %.1f MB en RAM) · %s"
 		% [emisores, _buses.size(), muestras, float(muestras) / float(HZ),
 			float(muestras * 2) / 1048576.0,

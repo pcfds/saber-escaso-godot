@@ -17,6 +17,9 @@ signal quiere_golpear
 ## Rodaste. Lleva cuánto falta para poder hacerlo de nuevo, para que la
 ## interfaz pueda dibujar la espera en vez de dejarte apretando una tecla muda.
 signal esquivo(espera: float)
+## Te sentaste o te paraste. Existe para que la interfaz pueda cambiar el cartel
+## sin preguntar todos los cuadros; hoy no lo escucha nadie y no pasa nada.
+signal sentado(si: bool)
 
 const VELOCIDAD := 7.5
 ## Correr con shift. El valle se agrandó a propósito —que haya distancia es
@@ -154,6 +157,56 @@ var _cam_suave := Vector3.ZERO
 ## rozamiento; ver `empujar()`.
 var _empuje := Vector3.ZERO
 
+## ── SENTARSE ────────────────────────────────────────────────────────────────
+##
+## QUÉ SIGNIFICA, que es la pregunta que manda `CLAUDE.md` antes de agregar nada:
+## **el mundo es multijugador y la gente aparece y desaparece.** Si estás
+## esperando a alguien que se está conectando, hoy el juego te deja parado en un
+## prado apretando teclas. Sentarse al fuego es cómo se espera a alguien, y al
+## anochecer el fogón de la plaza es lo único encendido al aire libre en el medio
+## de un anillo de puertas cerradas. La razón la puso la rama de arquitectura al
+## poner los asientos y la comparto: es un lugar donde estar sin hacer nada, y un
+## mundo donde no se puede estar sin hacer nada se juega apurado.
+##
+## **Y no hace nada más.** No cura, no pasa el tiempo, no manda nada. Cualquiera
+## de esas tres cosas sería estado del mundo y el estado del mundo es del
+## servidor: sentarse es una postura, y una postura vive entera en el cliente.
+##
+## El radio es el mismo de `Interiores.asiento_cerca()` y por el mismo motivo:
+## un asiento que se ofrece a tres metros hace que la plaza entera sea un botón.
+const ASIENTO_RADIO := 1.5
+## Cuánto tarda el cuerpo en llegar al asiento. 8 cuadros: menos se lee como un
+## teletransporte y más se lee como que el juego te arrastra.
+const SENTARSE_VEL := 18.0
+## A cuánto del asiento se da por perdido el asiento. Al sentarte podés estar
+## hasta 1,5 m (el radio de búsqueda); tres metros sólo pasan si te movió otro.
+const SENTADO_LEJOS := 3.0
+
+## ── EL PESO DE LO QUE LLEVÁS ────────────────────────────────────────────────
+##
+## Cuántas cosas encima hacen falta para que el cuerpo se vea cargado del todo.
+## Doce y no cuarenta porque la carga tiene que empezar a notarse mucho antes del
+## techo: con cuarenta, las primeras diez cosas no cambiarían un píxel.
+##
+## **Esto NO es un límite de carga.** El límite es una regla del mundo y las
+## reglas del mundo son del servidor (INVARIANTE 4): acá no se rechaza levantar
+## nada, no se descuenta velocidad y no se prohíbe nada. Lo único que pasa es que
+## el cuerpo se ve cargado, que es la mitad que faltaba de la regla 2 de
+## `DISENO.md` §8.3 —*"lo que llevás encima, sí"*— y la única mitad que es mía.
+const CARGA_LLENA := 12.0
+
+var _sentado := false
+var _asiento := Vector3.ZERO       ## dónde queda el cuerpo
+var _asiento_mira := 0.0           ## hacia dónde mira el que se sienta
+var _antes_de_sentarse := Vector3.ZERO  ## dónde estabas parado, para volver ahí
+var _en_piso_antes := true         ## para oír la caída
+## Un paso que hay que hacer sonar en el próximo cuadro de FÍSICA. Ver
+## `_esquivar()`: saber qué hay bajo los pies es una consulta al espacio físico.
+var _paso_pendiente := 0.0
+var _cableado := false             ## ¿ya escuchamos los pasos de la figura?
+var _son: Node = null              ## el módulo de sonido, buscado por grupo
+var _refresco_carga := 0.0
+
 @onready var _pivote: Node3D = $Pivote
 @onready var _camara: Camera3D = $Pivote/Camara
 @onready var _malla: Node3D = $Malla
@@ -213,9 +266,14 @@ func _unhandled_input(evento: InputEvent) -> void:
 	elif evento.is_action_pressed("interactuar"):
 		quiere_interactuar.emit()
 	elif evento.is_action_pressed("golpear"):
+		# Pegar te para. Es lo mismo que el WASD: cualquier cosa que hagas con el
+		# cuerpo te saca del asiento, y así no hay ningún estado del que no se
+		# sepa salir.
+		if _sentado:
+			pararse()
 		# No se pega en el medio de una rodada. Es el costo que hace que
 		# esquivar sea una elección: mientras te sacás, no estás pegando.
-		if _esquive <= 0.0:
+		elif _esquive <= 0.0:
 			quiere_golpear.emit()
 	elif evento is InputEventKey and (evento as InputEventKey).pressed \
 			and not (evento as InputEventKey).echo \
@@ -223,6 +281,11 @@ func _unhandled_input(evento: InputEvent) -> void:
 		# Tecla cruda y no una acción del mapa de entrada porque `project.godot`
 		# no se toca en esta rama. Cuando se agregue, esto pasa a "esquivar".
 		_esquivar()
+	elif evento is InputEventKey and (evento as InputEventKey).pressed \
+			and not (evento as InputEventKey).echo \
+			and (evento as InputEventKey).keycode == KEY_F:
+		# La F la propuso la rama de arquitectura. Cruda por lo mismo que la Q.
+		_tentar_asiento()
 
 
 ## Un solo arrastre, dos efectos. Arriba del piso de la órbita mueve la cámara;
@@ -257,6 +320,10 @@ func _repartir_mirada() -> void:
 ## camino: eso es lo que la vuelve una decisión en vez de un botón de "no me
 ## pegues".
 func _esquivar() -> void:
+	# Sentado no se rueda: primero te parás. Una tecla, una cosa.
+	if _sentado:
+		pararse()
+		return
 	if _esquive > 0.0 or _espera_esquive > 0.0 or not is_on_floor():
 		return
 	var eje := Input.get_vector("izquierda", "derecha", "adelante", "atras")
@@ -288,11 +355,21 @@ func _esquivar() -> void:
 	_esquive = ESQUIVE_DURA
 	_espera_esquive = ESQUIVE_ESPERA
 	esquivo.emit(ESQUIVE_ESPERA)
+	# Un cuerpo que se tira al piso suena, y suena más que un paso: mismo sonido
+	# y mismo suelo, lo que cambia es la fuerza. **Se anota y no se dispara acá**:
+	# esto corre en el manejo de teclas y averiguar qué hay bajo los pies es una
+	# consulta al espacio físico, que sólo se pide adentro del proceso de física.
+	_paso_pendiente = 1.0
 
 
 func _physics_process(dt: float) -> void:
 	var mudo := _tecleando()
 	_espera_esquive = maxf(0.0, _espera_esquive - dt)
+	_escuchar_los_pasos()
+	_pesar_lo_que_llevo(dt)
+	if _sentado:
+		_estar_sentado(dt, mudo)
+		return
 	if not is_on_floor():
 		velocity.y -= GRAVEDAD * dt
 	elif Input.is_action_just_pressed("saltar") and not mudo:
@@ -362,8 +439,20 @@ func _physics_process(dt: float) -> void:
 	move_and_slide()
 	velocity.x -= empujon.x
 	velocity.z -= empujon.z
+	# LA CAÍDA. Va entre `move_and_slide()` y `animar()` a propósito: acá el
+	# choque con el piso es de ESTE cuadro y las colisiones que mira
+	# `_piso_bajo_los_pies()` todavía están frescas. Un cuerpo de 1,85 m que cae
+	# y no hace ruido es de las cosas que más rápido delatan que el mundo es una
+	# maqueta, y era gratis.
+	var en_piso := is_on_floor()
+	if en_piso and not _en_piso_antes:
+		_paso_pendiente = 1.0
+	_en_piso_antes = en_piso
+	if _paso_pendiente > 0.0:
+		_al_pisar(_paso_pendiente)
+		_paso_pendiente = 0.0
 	if figura != null:
-		figura.animar(dt, Vector2(velocity.x, velocity.z).length(), is_on_floor())
+		figura.animar(dt, Vector2(velocity.x, velocity.z).length(), en_piso)
 
 	# 7 cuadros de sacudida con la amplitud bajando lineal. La fase sigue
 	# corriendo aparte para que el temblor no se congele con la amplitud.
@@ -389,6 +478,271 @@ func sacudir(fuerza: float) -> void:
 ## Empujón de retroceso, en m/s. Se apaga solo.
 func empujar(v: Vector3) -> void:
 	_empuje = Vector3(v.x, 0.0, v.z)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SENTARSE
+# ─────────────────────────────────────────────────────────────────────────────
+
+## ¿Hay dónde sentarse acá al lado? Devuelve `{"nodo", "pos", "mirando"}` o `{}`.
+##
+## **Es el mismo grupo y las mismas metas que `Interiores.asiento_cerca()`**, que
+## es la función gemela y la que escribió la rama de arquitectura para esto. La
+## copia no es por gusto: el `Interiores` del valle es un miembro de `valle.gd` y
+## este archivo no lo tiene a mano, y **buscarlo entre los hermanos del árbol es
+## exactamente el cable que funciona por casualidad** que este repo ya se sacó de
+## encima una vez (el `Sonido` enganchándose solo al `Api` que colgaba del mismo
+## padre). El grupo `asientos`, en cambio, es el contrato publicado: es el mismo
+## mecanismo con el que `ciclo.gd` encuentra las ventanas.
+##
+## Queda pública para que la interfaz pueda dibujar el cartel sin tener que
+## repetir la búsqueda por tercera vez.
+##
+## LA DEUDA, dicha para que no se pierda: el radio y las metas están escritos en
+## dos archivos. El día que `valle.gd` se pueda tocar, esto es
+## `interiores.asiento_cerca(global_position)` y se borran quince líneas.
+func asiento_cerca(radio := ASIENTO_RADIO) -> Dictionary:
+	var mejor: Node3D = null
+	var d_min := radio
+	for n in get_tree().get_nodes_in_group("asientos"):
+		var nodo := n as Node3D
+		if nodo == null or not is_instance_valid(nodo):
+			continue
+		var d := global_position.distance_to(nodo.global_position)
+		if d < d_min:
+			d_min = d
+			mejor = nodo
+	if mejor == null:
+		return {}
+	return {
+		"nodo": mejor,
+		"pos": mejor.global_position
+			+ Vector3(0.0, float(mejor.get_meta("asiento_alto", 0.45)), 0.0),
+		# El giro guardado es relativo al padre. Ver `Detalles.asiento()`.
+		"mirando": mejor.global_rotation.y + float(mejor.get_meta("asiento_mira", 0.0)),
+	}
+
+
+func _tentar_asiento() -> void:
+	if _sentado:
+		pararse()
+		return
+	var a := asiento_cerca()
+	if a.is_empty():
+		return
+	sentarse(a["pos"], float(a["mirando"]))
+
+
+## Clavar el cuerpo en un asiento y mirar hacia `mirando`.
+##
+## `pos` es donde se apoya el cuerpo —la cara de arriba del tronco—, tal cual lo
+## devuelve `asiento_cerca()`. El nodo del jugador tiene el origen en los PIES,
+## así que lo que se le pasa a la física es esa altura menos la cadera: la
+## constante sale de `figura.gd` para que el cuerpo y el hueco donde se sienta
+## salgan del mismo número.
+func sentarse(pos: Vector3, mirando: float) -> void:
+	if _sentado:
+		return
+	# Dónde estabas parado. Al pararte volvés exactamente ahí, y eso no es
+	# comodidad: el tronco tiene un cuerpo estático alrededor (`Detalles._tope`)
+	# y el asiento está ADENTRO de él. Mientras estás sentado el cuerpo no pasa
+	# por `move_and_slide()` —está clavado— pero en el cuadro en que te parás sí,
+	# y si te soltara adentro de la caja el motor te escupiría para cualquier
+	# lado. Volver al punto de donde saliste es la única posición de la que se
+	# sabe con certeza que está libre.
+	_antes_de_sentarse = global_position
+	_asiento = Vector3(pos.x, pos.y - Figura.SENTADO_ALTO, pos.z)
+	_asiento_mira = mirando
+	_sentado = true
+	# Nada a medio hacer entra al asiento: ni un swing, ni una rodada. La
+	# estocada y la vuelta de campana escriben en el contenedor `Malla` y se
+	# apagan solas contando el tiempo; cortadas de una hay que devolverlo a cero,
+	# y una sola vez — dejarlo clavado todos los cuadros le comería a `valle.gd`
+	# la inclinación con la que te tumba.
+	_golpe = 0.0
+	_esquive = 0.0
+	_malla.position = Vector3.ZERO
+	_malla.rotation.x = 0.0
+	_malla.rotation.z = 0.0
+	velocity = Vector3.ZERO
+	if figura != null:
+		figura.sentado(true)
+	sentado.emit(true)
+
+
+func pararse() -> void:
+	_soltar_asiento(true)
+
+
+## `volver` dice si el cuerpo vuelve a donde estaba parado. Es true cuando te
+## parás vos y false cuando el asiento se soltó porque el mundo te movió.
+func _soltar_asiento(volver: bool) -> void:
+	if not _sentado:
+		return
+	_sentado = false
+	if volver:
+		global_position = _antes_de_sentarse
+	velocity = Vector3.ZERO
+	if figura != null:
+		figura.sentado(false)
+	sentado.emit(false)
+
+
+## El cuadro del que está sentado. No pasa por la física: el cuerpo está clavado.
+##
+## **La cámara sigue viva**, y no es un detalle: si sentarse apagara la cámara,
+## sentarse sería un menú. Podés girar, alejarte y mirar el cielo sentado al
+## fuego, que es más o menos todo lo que uno quiere hacer sentado al fuego.
+func _estar_sentado(dt: float, mudo: bool) -> void:
+	# **Cualquier intención de moverse te para**, y se comprueba antes de mover
+	# nada: el primer WASD tiene que soltar el cuerpo en el mismo cuadro en que
+	# se apretó. Un asiento del que cuesta salir es una trampa, no un asiento.
+	if not mudo and (Input.get_vector("izquierda", "derecha", "adelante", "atras").length_squared() > 0.01
+			or Input.is_action_pressed("saltar")):
+		pararse()
+		return
+	# **Si alguien te movió, el asiento se suelta solo y NO te devuelve.** Pasa de
+	# verdad: cuando te tumban, `valle.gd` te reaparece en otro lado, y sin esto
+	# el cuerpo se volvería arrastrando al tronco desde donde el mundo lo puso.
+	# Quien te movió tenía un motivo y este archivo no lo conoce.
+	if global_position.distance_to(_asiento) > SENTADO_LEJOS:
+		_soltar_asiento(false)
+		return
+	velocity = Vector3.ZERO
+	global_position = global_position.lerp(_asiento, 1.0 - exp(-dt * SENTARSE_VEL))
+	_malla.rotation.y = lerp_angle(_malla.rotation.y, _asiento_mira, 10.0 * dt)
+	_en_piso_antes = true
+	if figura != null:
+		figura.animar(dt, 0.0, true)
+	_dist = lerp(_dist, _dist_objetivo, 8.0 * dt)
+	_recolocar_camara(false)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  LOS PASOS
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Quién decide QUÉ suena es `sonido.gd`; lo que decide este archivo son las dos
+# cosas que sólo sabe el cuerpo: CUÁNDO toca el piso un pie (lo avisa `figura.gd`
+# con la señal `piso`, sacada de la fase de la zancada) y QUÉ HAY DEBAJO.
+#
+# El "qué hay debajo" sale de la COLISIÓN de verdad y no de una tabla de zonas, y
+# ésa es la parte que vale: el motor ya sabe contra qué chocaron los pies, y la
+# forma del colisionador dice de qué está hecho sin tener que preguntarle nada a
+# nadie. El terreno del valle es una malla de triángulos
+# (`ConcavePolygonShape3D`, la arma `valle.gd::_armar_terreno`); todo lo
+# construido son cajas. Y entre las cajas, la única que mide más de cuatro metros
+# de lado es el basamento de una casa —5,64 m: `CASA_LADO` más dos veces
+# `ZOCALO_VUELO`, en `detalles.gd`— cuya cara de arriba es, literalmente, el piso
+# de tablas del cuarto. Los escalones de la puerta miden 2,11 y los troncos del
+# fogón 1,2: ésos son piedra y madera suelta, que suenan igual de duro.
+const CAJA_CASA := 4.0
+
+
+## Enganchar la señal de la figura. Una vez, y en el proceso de física porque la
+## figura la cuelga `valle.gd` DESPUÉS de construir el jugador: en `_ready()`
+## todavía no está.
+func _escuchar_los_pasos() -> void:
+	if _cableado or figura == null or not is_instance_valid(figura):
+		return
+	_cableado = true
+	if not figura.piso.is_connected(_al_pisar):
+		figura.piso.connect(_al_pisar)
+
+
+## El módulo de sonido, por el grupo en el que se anota solo. Si no está —la
+## escena de prueba, un arranque a medias— no suena nada y no se rompe nada.
+func _sonido() -> Node:
+	if _son != null and is_instance_valid(_son):
+		return _son
+	_son = get_tree().get_first_node_in_group("sonido")
+	return _son
+
+
+func _al_pisar(fuerza: float) -> void:
+	var s := _sonido()
+	if s == null or not s.has_method("pisar"):
+		return
+	var suelo := _suelo_bajo_los_pies()
+	s.call("pisar", str(suelo["piso"]), fuerza, float(suelo["llano"]))
+
+
+## Qué hay bajo los pies: `{"piso", "llano"}`.
+##
+## **Va por rayo y no por `get_slide_collision()`, y eso es el arreglo de un bug
+## que encontró la sonda y no el razonamiento.** Lo natural era leer la colisión
+## que ya hizo `move_and_slide()` —el motor acaba de tocar el piso, para qué
+## preguntar de nuevo— y está mal: caminando en llano el cuerpo **no choca
+## contra el suelo**. `move_and_slide()` le come la componente vertical a la
+## velocidad al aterrizar, y a partir de ahí el movimiento es horizontal puro y
+## no genera ninguna colisión con el piso. Medido con una sonda de física de
+## verdad: parado arriba del zócalo de una casa la función contestaba
+## `"terreno"`, o sea que **el piso de tablas no iba a sonar nunca** y no había
+## forma de notarlo mirando el código.
+##
+## El rayo cuesta una consulta al espacio físico por paso, o sea tres por
+## segundo, contra los ochenta mil que ya hace el valle por cuadro.
+func _suelo_bajo_los_pies() -> Dictionary:
+	var espacio := get_world_3d().direct_space_state
+	# Desde medio metro arriba de los pies hasta un metro abajo: agarra el
+	# escalón que estás subiendo sin agarrar el piso de la casa de al lado.
+	var consulta := PhysicsRayQueryParameters3D.create(
+		global_position + Vector3.UP * 0.6, global_position - Vector3.UP * 1.0)
+	consulta.exclude = [get_rid()]
+	var r := espacio.intersect_ray(consulta)
+	if r.is_empty():
+		return {"piso": "terreno", "llano": 1.0}
+	var llano := clampf((r.get("normal", Vector3.UP) as Vector3).y, 0.0, 1.0)
+	var cuerpo := r.get("collider") as CollisionObject3D
+	if cuerpo == null:
+		return {"piso": "terreno", "llano": llano}
+	var duenio := cuerpo.shape_find_owner(int(r.get("shape", 0)))
+	if duenio < 0 or cuerpo.shape_owner_get_shape_count(duenio) == 0:
+		return {"piso": "terreno", "llano": llano}
+	var forma := cuerpo.shape_owner_get_shape(duenio, 0)
+	if forma is BoxShape3D:
+		var caja := forma as BoxShape3D
+		return {"piso": "tabla" if caja.size.x > CAJA_CASA else "losa", "llano": llano}
+	# La malla de triángulos del terreno, y cualquier otra cosa: el valle.
+	return {"piso": "terreno", "llano": llano}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  EL PESO
+# ─────────────────────────────────────────────────────────────────────────────
+
+## Cuántas cosas llevás encima. Lo llama quien tenga la bolsa en la mano.
+##
+## **No hay límite acá y no puede haberlo**: cuánto se puede llevar es una regla
+## del mundo, y las reglas del mundo son del servidor. Esto sólo hace que el
+## cuerpo se vea cargado.
+func cargar(cosas: int) -> void:
+	if figura != null:
+		figura.cargado(clampf(float(cosas) / CARGA_LLENA, 0.0, 1.0))
+
+
+## De dónde sale hoy ese número, dicho sin maquillaje.
+##
+## La bolsa llega en `/mundo` y el único archivo de esta rama al que `valle.gd`
+## se la pasa entera es `sonido.gd`, que la necesita igual —un cuerpo cargado
+## pisa más fuerte—. Así que el peso se PIDE, no se recibe: es una consulta a un
+## módulo público, guardada por `has_method`, y si el módulo no está el cuerpo se
+## queda liviano y no se rompe nada.
+##
+## **No es donde tiene que vivir.** Lo correcto es una línea en
+## `valle.gd::_al_recibir_mundo()` —`jugador.cargar(bolsa.size())`, al lado del
+## `figura.empunar()` que ya está ahí— y entonces esta función se borra entera.
+## Está pedido en el informe. Se hace cuatro veces por segundo porque la bolsa
+## cambia una vez por minuto y esto es un rebote de diccionario, no un cálculo.
+func _pesar_lo_que_llevo(dt: float) -> void:
+	_refresco_carga -= dt
+	if _refresco_carga > 0.0:
+		return
+	_refresco_carga = 0.25
+	var s := _sonido()
+	if s == null or not s.has_method("carga"):
+		return
+	cargar(int(s.call("carga")))
 
 
 func _recolocar_camara(inmediato: bool) -> void:

@@ -34,6 +34,22 @@
 class_name Figura
 extends Node3D
 
+## UN PIE TOCÓ EL PISO. `fuerza` va de 0 a 1 y sale de la intensidad de la
+## caminata, o sea que un paso al trote pesa más que uno al ras del arranque.
+##
+## **Sale de la fase de la zancada y no de un temporizador**, y ésa es toda la
+## diferencia: el sonido del paso tiene que caer en el MISMO cuadro en que la
+## pierna pasa por la vertical, que es cuando el pie se apoya. Un paso que suena
+## dos cuadros tarde se lee como que el sonido va por su cuenta — es la misma
+## regla que el golpe, que suena en el cuadro del contacto y no cuando termina
+## la animación.
+##
+## Quién lo escucha: `jugador.gd`, que es el único que sabe qué hay abajo (pasto,
+## tabla, losa) y tiene al módulo de sonido a mano. Los NPC y los bichos emiten
+## esto igual y hoy no lo escucha nadie: cuando alguien quiera oír los pasos del
+## monstruo que se te viene encima, la señal ya está.
+signal piso(fuerza: float)
+
 # Medidas de la cara. Están acá arriba y con nombre porque son la decisión de
 # diseño, no un detalle de implementación: se ajustan mirando el juego de
 # lejos, no leyendo el código.
@@ -82,6 +98,17 @@ var _golpe := 0.0
 var _arma: MeshInstance3D
 var _juntando := false
 var _agache := 0.0
+## Sentado. `_sentado` es la orden y `_sentada` el cruce, 0 de pie y 1 sentado.
+## Se cruza suave por lo mismo que el agache: sentarse es un movimiento, no un
+## cambio de pose, y a 40 m lo único que se lee es el cuerpo bajando.
+var _sentado := false
+var _sentada := 0.0
+## Lo que llevás encima, de 0 (manos vacías) a 1 (cargado). Ver `cargado()`.
+var _carga := 0.0
+var _carga_suave := 0.0
+## En qué media zancada va el cuerpo. Cada vez que cambia, un pie tocó el piso.
+## Arranca en un número imposible para que la primera vuelta no dispare un paso.
+var _media_zancada := -999999
 ## El amago: 0 cuerpo normal, 1 cuerpo encabritado. Sube en `AMAGO_ALZA` y baja
 ## en `AMAGO_SUELTA`, o sea que no es un `lerp` con rapidez: es una rampa con
 ## los cuadros de `impacto.gd`. Ver `amagar()`.
@@ -623,6 +650,7 @@ func animar(dt: float, velocidad: float, en_piso: bool) -> void:
 	var v := clampf(velocidad / 7.5, 0.0, 1.4)
 	_intensidad = lerp(_intensidad, v, 9.0 * dt)          # (4) arranque y freno suaves
 	_fase += dt * (5.6 + v * 3.4) * clampf(v, 0.15, 1.4)
+	_avisar_el_paso(en_piso)
 
 	var amplitud := _intensidad * 0.85
 	var s := sin(_fase)
@@ -682,6 +710,18 @@ func animar(dt: float, velocidad: float, en_piso: bool) -> void:
 		_brazo_d.rotation.x = lerp(_brazo_d.rotation.x, 1.15, _agache)
 		_pierna_i.rotation.x = lerp(_pierna_i.rotation.x, -0.45, _agache)
 		_pierna_d.rotation.x = lerp(_pierna_d.rotation.x, -0.25, _agache)
+
+	# Sentado y cargado, en este orden y los dos acá: son ESTADOS del cuerpo —
+	# duran minutos— y por eso van antes que todo lo que dura un tercio de
+	# segundo, con la misma regla de lo más permanente a lo más instantáneo que
+	# ordena el bloque de abajo. Un tipo sentado al que le pegan sigue sentado
+	# mientras se queja.
+	_sentada = lerp(_sentada, 1.0 if _sentado else 0.0, 9.0 * dt)
+	if _sentada > 0.01:
+		_pose_de_sentado(_sentada)
+	_carga_suave = lerp(_carga_suave, _carga, 2.4 * dt)
+	if _carga_suave > 0.01:
+		_pose_de_carga(_carga_suave)
 
 	# El orden de acá abajo no es casual y tiene DOS reglas, no una.
 	#
@@ -1349,6 +1389,127 @@ func empunar(cosa: String) -> void:
 	_brazo_d.add_child(_arma)
 
 
+# ─────────────────────────────────────────────────────────────────────────
+#  EL PASO. Cuándo toca el piso un pie.
+# ─────────────────────────────────────────────────────────────────────────
+#
+# El ciclo de la caminata es `sin(_fase)`: las piernas van en contrafase, así
+# que en `_fase = 0` la izquierda está adelante del todo y la derecha atrás, y
+# en `_fase = PI` al revés. **El pie se apoya cuando la pierna pasa por la
+# vertical**, o sea en cada múltiplo de PI. Dos apoyos por vuelta, que es lo que
+# tiene una zancada.
+#
+# Por eso esto no es un temporizador: si mañana alguien le cambia la fórmula de
+# la fase, la cadencia del sonido lo sigue sola. Un temporizador aparte se
+# desincroniza del cuerpo y ahí el paso se oye "al lado" de la pierna, que es
+# peor que no tenerlo.
+
+## Debajo de esta intensidad no hay paso. Existe porque `_fase` avanza SIEMPRE
+## —el `clampf(v, 0.15, 1.4)` de `animar()` la deja corriendo aunque estés
+## quieto, para que el cuerpo no se congele— y sin este piso un personaje parado
+## caminaría en el oído del jugador para siempre.
+const PASO_DESDE := 0.18
+
+
+func _avisar_el_paso(en_piso: bool) -> void:
+	var media := floori(_fase / PI)
+	if media == _media_zancada:
+		return
+	_media_zancada = media
+	if not en_piso or _intensidad < PASO_DESDE:
+		return
+	# La fuerza sale de la intensidad y no de la velocidad cruda: es la misma
+	# curva que mueve las piernas, así que un paso suena tan fuerte como se ve.
+	piso.emit(clampf(_intensidad / 1.4, 0.25, 1.0))
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  SENTARSE
+# ─────────────────────────────────────────────────────────────────────────
+
+## A qué altura queda la cadera del que se sienta, medida del piso.
+##
+## Es una constante y no un parámetro a propósito: los tres troncos del fogón se
+## apoyan a 0,50 / 0,50 / 0,42 y la banqueta de las casas a 0,44 (están en
+## `detalles.gd` y en `interiores.gd`). Ocho centímetros de diferencia entre el
+## más alto y el más bajo son **2,3 píxeles a cuarenta metros**: pasarlos por el
+## verbo sería precisión que nadie puede ver, y el verbo que pidió arquitectura
+## es `sentado(si: bool)`.
+##
+## `jugador.gd` la usa para saber a qué altura dejar el cuerpo, así que las dos
+## mitades salen del mismo número.
+const SENTADO_ALTO := 0.45
+
+
+## La pose de sentado. `s` cruza de 0 a 1.
+##
+## Lo que tiene que leerse a cuarenta metros es UNA cosa: **la silueta baja y se
+## acorta.** Todo lo demás es relleno a esa distancia, así que el grueso del
+## presupuesto va a la cadera —que baja hasta el asiento— y a las piernas, que
+## se van para adelante y le sacan al cuerpo un tercio de su altura.
+##
+## No hay rodilla: los miembros de esta figura son un solo segmento. Así que las
+## piernas no se doblan, se inclinan, y el ángulo está elegido para que el pie
+## quede casi tocando el piso en vez de quedar flotando a media altura —a −0,90
+## rad el pie de un cuerpo de 1,85 queda a 8 cm del suelo y 46 cm adelante, que
+## es alguien sentado en un tronco bajo.
+func _pose_de_sentado(s: float) -> void:
+	# La cadera vive a `_alto * 0.32` cuando estás de pie (el torso está a 0,52 y
+	# la pierna cuelga desde −0,20 de ahí). Bajarla hasta el asiento es todo el
+	# efecto. Nunca sube: un enano en un tronco alto queda de pie, no colgado.
+	_torso.position.y -= maxf(0.0, _alto * 0.32 - SENTADO_ALTO) * s
+	# El cuerpo se afloja hacia adelante. Poco: un tipo doblado no está
+	# descansando, está buscando algo en el piso.
+	_torso.rotation.x += 0.16 * s
+	_pierna_i.rotation.x = lerpf(_pierna_i.rotation.x, -0.92, s)
+	_pierna_d.rotation.x = lerpf(_pierna_d.rotation.x, -0.84, s)
+	# Los brazos caen a los costados y un poco adelante, apoyados en las rodillas.
+	# Son dos píxeles a esta distancia: están para que no queden rígidos.
+	_brazo_i.rotation.x = lerpf(_brazo_i.rotation.x, -0.30, s)
+	_brazo_d.rotation.x = lerpf(_brazo_d.rotation.x, -0.26, s)
+
+
+## Sentarse o pararse. El cruce lo hace `animar()`.
+##
+## **No hace nada más que esto, y es a propósito.** Sentarse no cura, no pasa el
+## tiempo y no le avisa a nadie: es una postura. Todo lo demás sería estado del
+## mundo, y el estado del mundo vive en el servidor.
+func sentado(si: bool) -> void:
+	_sentado = si
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  EL PESO DE LO QUE LLEVÁS
+# ─────────────────────────────────────────────────────────────────────────
+
+## Cuánto llevás encima, de 0 (manos vacías) a 1 (cargado).
+##
+## **Esto NO limita nada y no puede limitarlo**: cuánto se puede llevar es una
+## regla del mundo y las reglas del mundo son del servidor (INVARIANTE 4). Lo
+## que hace acá es que se VEA, que es lo que faltaba: hasta hoy podías llevar
+## cuarenta cosas y tener exactamente el mismo cuerpo que con las manos vacías.
+func cargado(f: float) -> void:
+	_carga = clampf(f, 0.0, 1.0)
+
+
+## El cuerpo cargado. `c` es la carga ya suavizada.
+##
+## MEDIDO, porque a esta distancia la mitad de las ideas de animación no existen:
+## con la cámara a 40 m y FOV 42° sobre 900 px, un metro son 29 píxeles. Una
+## inclinación de 0,20 rad corre la cabeza 37 cm, o sea **11 píxeles de silueta**
+## — se lee. El brazo que deja de oscilar son 2 px y no se lee solo, pero es lo
+## que hace que la inclinación no parezca que vas cuesta arriba.
+func _pose_de_carga(c: float) -> void:
+	# El peso te tira para adelante y te hunde los hombros.
+	_torso.rotation.x += 0.20 * c
+	_torso.position.y -= _alto * 0.022 * c
+	# Y los brazos dejan de balancearse: van pegados al cuerpo sosteniendo. Es
+	# un factor sobre lo que puso la caminata, no una pose nueva, así que cuando
+	# estás quieto no hace nada.
+	_brazo_i.rotation.x *= 1.0 - 0.45 * c
+	_brazo_d.rotation.x *= 1.0 - 0.45 * c
+
+
 ## Agacharse a juntar algo. Dura lo que dura el pedido al servidor.
 ##
 ## Existe porque apretar B y leer "buscando…" no es una acción: es un cartel.
@@ -1380,6 +1541,11 @@ func caer() -> void:
 	_amago_on = false
 	_amago = 0.0
 	_maltrecho = 0.0
+	# Y sentado. Un cadáver sentado en el aire es de la misma familia que el
+	# cadáver con los brazos levantados: `animar()` deja de llamarse justo con la
+	# pose puesta y no vuelve nunca.
+	_sentado = false
+	_sentada = 0.0
 	for m: Node3D in [_brazo_i, _brazo_d, _pierna_i, _pierna_d]:
 		if m != null:
 			m.rotation.z = 0.0
