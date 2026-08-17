@@ -26,6 +26,11 @@ signal preparado(datos: Dictionary)
 signal lanzado(datos: Dictionary)
 signal grimorio_recibido(datos: Dictionary)
 
+## Lo que hay en el mostrador de donde estás parado, con precios y con cuántos
+## quedan vivos que sepan hacer cada cosa. Ese último número es el que hace que
+## un mercado sepa decir «no hay».
+signal mostrador_recibido(datos: Dictionary)
+
 ## Se sobreescriben desde la línea de comandos o el archivo de config.
 var base_url := "https://saber-escaso.vercel.app"
 var token := ""
@@ -174,8 +179,59 @@ func pedir(a_quien: String, que: String = "") -> void:
 	actuar("pedir", ("%s a %s" % [que, a_quien]) if que != "" else a_quien)
 
 
+## ─────────────────────────────────────────────────────────────
+## La plata
+## ─────────────────────────────────────────────────────────────
+##
+## **Son DOS economías y no se cruzan nunca.** Puedes comprar una hoja templada;
+## no puedes comprar saber hacerla. Ninguna de estas tres llamadas puede
+## terminar en un saber nuevo, y el servidor no tiene por dónde hacerlo.
+##
+## Lo que sí hacen es lo que faltaba: que se pueda ganar y gastar, y que el
+## valle sepa decir «no hay» — que es distinto de un menú con un botón gris.
+
+## Venderle algo a alguien. Te compran dos: **el que lo necesita** —tiene una
+## meta abierta pidiendo eso, y paga bien— y **el que atiende un mostrador**,
+## que compra para revender y por eso paga menos.
+##
+## Ojo con la elección, que es la mitad del juego: regalarlo con `dar` mueve el
+## aprecio +25 y venderlo +3. **Un favor y un pago no son lo mismo**, y como el
+## saber sólo se consigue de la gente, cobrar tiene precio.
+func vender(que: String, a_quien: String = "") -> void:
+	actuar("vender", ("%s a %s" % [que, a_quien]) if a_quien != "" else que)
+
+
+## Comprar. Del mostrador si lo hay, o pagándole a alguien para que te lo haga.
+##
+## Lo que NO se compra es lo que otro lleva en la mano: eso es suyo y para eso
+## está `pedir`, que cuesta el favor en vez de plata. **La mano se pide, el
+## mostrador se compra.**
+func comprar(que: String, a_quien: String = "") -> void:
+	actuar("comprar", ("%s a %s" % [que, a_quien]) if a_quien != "" else que)
+
+
+## Cambiar marcos por la moneda que acepta ese mostrador.
+##
+## Va en una sola dirección a propósito: **la plata del monte se gasta en el
+## monte.** Y el tipo de cambio no es un número fijo — sale de lo que ese pueblo
+## piensa del valle, así que arreglar un agravio abarata su moneda.
+func cambiar(cuantos: int, a_quien: String = "") -> void:
+	actuar("cambiar", ("%d a %s" % [cuantos, a_quien]) if a_quien != "" else str(cuantos))
+
+
+## Qué hay en el mostrador de donde estás parado, con precios.
+##
+## **No viaja en `/mundo`** y es a propósito: esa ruta se pega cada pocos
+## segundos y calcular precios cuesta dos consultas más. Esto se pide al abrir
+## el puesto, igual que el grimorio.
+func pedir_mostrador() -> void:
+	_hacer_get("/j/%s/mostrador" % token,
+		func(d: Dictionary) -> void: mostrador_recibido.emit(d))
+
+
 ## Mandar una acción del mundo: `buscar`, `aprender`, `trabajar`, `encargarse`,
-## `dar`, `ensenar`, `ir`, `soltar`, `levantar`, `pedir`.
+## `dar`, `ensenar`, `ir`, `soltar`, `levantar`, `pedir`, `vender`, `comprar`,
+## `cambiar`.
 ##
 ## MEDIDO CONTRA PRODUCCIÓN EL 17 DE AGOSTO, y da vuelta lo que se creía:
 ## **`/act` NO espera al tick.** El servidor llama a `resolverAcciones()` en el

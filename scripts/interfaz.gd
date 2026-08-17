@@ -191,6 +191,35 @@ var _marca_npc: Label
 var _marca_piso: Label
 var _marca_bicho: Label
 var _marca_puesto: Label
+
+## ─────────────────────────────────────────────────────────────
+## El mostrador
+## ─────────────────────────────────────────────────────────────
+##
+## **`mostrador` y no `puesto`, y el nombre importa.** `puesto` ya significa
+## otra cosa en este archivo desde hace días: el puesto de trabajo de adentro de
+## una casa —el yunque, la olla— que la E acciona como `trabajar`. Dos cosas con
+## el mismo nombre es cómo se llega a que el jugador quiera comprar y se ponga a
+## martillar.
+##
+## Se abre con **T** (de trato) y no con la E. La E ya elige entre tres cosas
+## por contexto, y el que atiende un mostrador está parado justo al lado: con la
+## E, acercarte a comprar te abriría la charla y nunca el puesto. Una tecla
+## propia para un panel entero es distinto de una tecla por verbo.
+var _marca_mostrador: Label
+var _mostrador_nodo: Node3D
+## De quién es el mostrador que tienes al lado, ya resuelto por `valle.gd`:
+## `{}` si no hay ninguno cerca. Trae `atiende`, `moneda_nombre`, `abierto` y
+## `hay_quien` — un mostrador sin quien lo atienda **no es lo mismo** que uno
+## cerrado por la hora, y el cartel lo dice.
+var mostrador_cerca: Dictionary = {}
+var _mostrador_panel: PanelContainer
+var _mostrador_texto: RichTextLabel
+var _mostrador_botones: VBoxContainer
+var _mostrador_pidiendo := false
+
+## Lo que llevas encima, por tipo de moneda. Ya viene en palabras del servidor.
+var _plata: Array = []
 var _marca_suelo: Label
 var _vida_ultima := -1
 
@@ -293,6 +322,11 @@ func _ready() -> void:
 	# la bolsa, visto desde afuera.
 	_marca_suelo = _marca()
 	_marca_suelo.add_theme_color_override("font_color", AMBAR)
+	# El del mostrador va en verde: es lo único de los cinco que no es una
+	# acción del cuerpo sino un trato, y el valor lo separa de los otros cuatro
+	# a la distancia a la que se juega.
+	_marca_mostrador = _marca()
+	_marca_mostrador.add_theme_color_override("font_color", VERDE)
 
 	# La línea de teclas, en dos renglones y ordenada por para qué sirve cada
 	# una: primero lo que hacés con el cuerpo, después lo que abre algo, y al
@@ -326,7 +360,7 @@ func _ready() -> void:
 		# interfaz, así que la pantalla vosea mientras la crónica tutea. Se
 		# midió del otro lado (`pnpm registro`) y se barrieron trece cadenas
 		# del servidor; el resto de este archivo se barrió después.
-		"I bolsa · M mapa · C quién eres · P runas del día · R trazar"
+		"I bolsa · M mapa · C quién eres · T tratar · P runas del día · R trazar"
 			+ " · G grimorio · Esc cerrar · F1 calidad · +/− volumen",
 	])
 	ayuda.add_theme_font_size_override("font_size", 12)
@@ -337,6 +371,7 @@ func _ready() -> void:
 	_armar_vida()
 	_armar_caja()
 	_armar_bolsa()
+	_armar_mostrador()
 	_cargar_volumen()
 	# Último a propósito: un error acá no puede dejar el juego sin HUD. Es la
 	# trampa de `_ready()` que ya costó una tarde —una excepción aborta la
@@ -438,6 +473,9 @@ func _process(_dt: float) -> void:
 	# Más bajo todavía: está tirado en el suelo. Medio metro es lo que hace que
 	# el cartel se lea como "eso de ahí abajo" y no como algo flotando.
 	_colocar(_marca_suelo, _suelo_nodo, 0.55, tapado, false)
+	# El mostrador es una mesa con un toldo, y el toldo queda a 3,3 m: el cartel
+	# va por encima o lo tapa la tela.
+	_colocar(_marca_mostrador, _mostrador_nodo, 3.7, tapado, false)
 
 
 ## Poner un cartel encima de un punto del mundo. `alto` son los metros por
@@ -531,6 +569,21 @@ func _refrescar_marcas() -> void:
 			if dias >= 3:
 				t += ", hace %d días" % dias
 			_marca_suelo.text = t
+	if _marca_mostrador != null:
+		# **El cartel dice lo que la tecla va a hacer, o no está** — la misma
+		# regla que la E, y por eso acá se distingue el mostrador cerrado del
+		# mostrador que ya no tiene quien lo atienda. No son lo mismo: el
+		# primero abre mañana; el segundo no abre nunca más, porque el que
+		# atendía se murió y con él se fue la moneda que aceptaba.
+		_marca_mostrador.text = ""
+		if not mostrador_cerca.is_empty():
+			var de := str(mostrador_cerca.get("atiende", ""))
+			if not bool(mostrador_cerca.get("hay_quien", false)):
+				_marca_mostrador.text = "mostrador cerrado — no queda quien lo atienda"
+			elif not bool(mostrador_cerca.get("abierto", false)):
+				_marca_mostrador.text = "el mostrador de %s está cerrado a esta hora" % de
+			else:
+				_marca_mostrador.text = "[T] tratar en el mostrador de %s" % de
 	if _marca_piso == null:
 		return
 	if lugar_da == "":
@@ -931,6 +984,10 @@ func conectar_api(api: Api) -> void:
 	# botón que no dice nada es indistinguible de un botón roto. Ver el
 	# comentario largo en `Api.actuar()` — la respuesta llegaba y se tiraba.
 	_api.aviso_recibido.connect(_al_aviso)
+	# La vidriera. No viaja en `/mundo` a propósito —esa ruta se pega cada pocos
+	# segundos y los precios cuestan dos consultas más—, así que llega por su
+	# propia señal al abrir el puesto, igual que el grimorio.
+	_api.mostrador_recibido.connect(_al_mostrador)
 
 
 func _al_aviso(texto: String) -> void:
@@ -1556,7 +1613,34 @@ func _pintar_bolsa() -> void:
 			lineas.append("[color=#5f6864]Lo que no lleva nombre creció solo y lo junta cualquiera.[/color]")
 		_bolsa.text = "\n".join(lineas)
 
+	_pintar_plata()
 	_pintar_dar()
+
+
+## La plata, al pie de la bolsa.
+##
+## **Por tipo, nunca un número solo.** Lo que acepta la aldea no vale del otro
+## lado del valle: un contador de oro convertiría tres geografías en una barra.
+## Y va aquí abajo y no arriba a propósito — lo que llevas encima es lo que
+## importa; la plata es con qué lo cambias.
+##
+## Se dibuja siempre, aunque no lleves nada: llegar sin nada y con quince
+## marcos es exactamente el comienzo que el juego cuenta, y una bolsa que no
+## dice que los tienes es una bolsa que te esconde tu única opción.
+func _pintar_plata() -> void:
+	if _bolsa == null or _plata.is_empty():
+		return
+	var t := _bolsa.text
+	t += "\n\n[color=#98a29c]PLATA[/color]"
+	for p in _plata:
+		var d: Dictionary = p
+		var l := "  %s" % str(d.get("como", ""))
+		# De qué lado del valle sirve. Es el renglón que hace que la moneda sea
+		# geografía y no un número, y sin él las tres se leen como la misma.
+		if d.get("pueblo") != null:
+			l += "  [color=#7d867f](sólo del otro lado)[/color]"
+		t += "\n" + l
+	_bolsa.text = t
 
 
 ## Dar algo a quien tengas al lado.
@@ -1643,6 +1727,188 @@ func _pintar_dar() -> void:
 			_gesto_de_dar()
 			_api.actuar("dar", "%s a %s" % [cosa, a_quien]))
 		_bolsa_dar.add_child(b)
+
+
+## ─────────────────────────────────────────────────────────────
+## El mostrador: la vidriera, lo que te pagan, y la plata de otro pueblo
+## ─────────────────────────────────────────────────────────────
+##
+## **Son dos economías y no se cruzan.** Aquí se compran cosas y no se compra
+## un oficio: no hay, ni va a haber, un botón que diga "pagar por que me lo
+## enseñe". Lo que hay es el otro lado de la misma moneda — que el valle sepa
+## decir **«no hay»**. Cuando el último que sabía forjar se muera, este panel va
+## a estar vacío y la plata en tu bolsa no va a servir para nada. Eso es lo que
+## un menú no sabe hacer.
+func _armar_mostrador() -> void:
+	_mostrador_panel = PanelContainer.new()
+	# A la izquierda, al revés que la bolsa: los dos paneles se abren juntos —
+	# miras el precio y decides qué vendes— y encimados no sirve ninguno.
+	_mostrador_panel.anchor_left = 0.0; _mostrador_panel.anchor_right = 0.0
+	_mostrador_panel.offset_left = X_MARGEN
+	_mostrador_panel.offset_right = X_MARGEN + ANCHO_COLUMNA
+	_mostrador_panel.offset_top = Y_COLUMNA
+	_mostrador_panel.add_theme_stylebox_override("panel", _caja_de(VERDE))
+	_mostrador_panel.visible = false
+
+	_mostrador_texto = RichTextLabel.new()
+	_mostrador_texto.bbcode_enabled = true
+	_mostrador_texto.fit_content = true
+	_mostrador_texto.scroll_active = false
+	_mostrador_texto.add_theme_color_override("default_color", TINTA)
+	_mostrador_texto.add_theme_constant_override("line_separation", 3)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 10)
+	col.add_child(_mostrador_texto)
+	_mostrador_botones = VBoxContainer.new()
+	_mostrador_botones.add_theme_constant_override("separation", 4)
+	col.add_child(_mostrador_botones)
+	_mostrador_panel.add_child(col)
+	add_child(_mostrador_panel)
+
+
+## Lo que llevas de cada moneda. Viene ya en palabras del servidor, con el
+## plural puesto: armarlo aquí es cómo se llega a «3 cuenta de huesos».
+##
+## **Nunca un contador único de oro.** Lo que acepta la aldea no vale del otro
+## lado del valle, así que la bolsa tiene que decir CUÁL — un número solo sería
+## justo el menú que este sistema evita.
+func mostrar_plata(lista: Array) -> void:
+	_plata = lista
+	_pintar_bolsa()
+
+
+## De quién es el mostrador que tienes delante. Lo calcula `valle.gd`: esta capa
+## no sabe dónde hay nada.
+func mostrar_mostrador_cerca(d: Dictionary, nodo: Node3D) -> void:
+	var antes := str(mostrador_cerca.get("atiende", ""))
+	mostrador_cerca = d
+	_mostrador_nodo = nodo
+	if str(d.get("atiende", "")) != antes:
+		# Te alejaste del puesto: el panel de otro mostrador no puede quedar
+		# abierto mientras caminas por el valle.
+		if _mostrador_panel != null and d.is_empty():
+			_mostrador_panel.visible = false
+	_refrescar_marcas()
+
+
+func _abrir_mostrador() -> void:
+	if _api == null or _mostrador_panel == null:
+		return
+	if _mostrador_panel.visible:
+		_mostrador_panel.visible = false
+		return
+	if mostrador_cerca.is_empty():
+		avisar("Aquí no hay mostrador. Los hay en la aldea, en el bosque y en la casa quemada.")
+		return
+	_mostrador_pidiendo = true
+	_mostrador_texto.text = "[color=#98a29c]mirando el mostrador…[/color]"
+	for h in _mostrador_botones.get_children():
+		h.queue_free()
+	_mostrador_panel.visible = true
+	_api.pedir_mostrador()
+
+
+func _al_mostrador(d: Dictionary) -> void:
+	_mostrador_pidiendo = false
+	if _mostrador_panel == null or not _mostrador_panel.visible:
+		return
+	for h in _mostrador_botones.get_children():
+		h.queue_free()
+
+	if not bool(d.get("hay", false)) or not bool(d.get("abierto", false)):
+		_mostrador_texto.text = "[color=#98a29c]%s[/color]" % str(
+			d.get("porque", "El mostrador está cerrado."))
+		return
+
+	var de := str(d.get("atiende", ""))
+	var moneda := str(d.get("moneda_nombre", "monedas"))
+	var tenes := int(d.get("tenes", 0))
+	var lineas := [
+		"[color=#c9a227]EL MOSTRADOR DE %s[/color]" % de.to_upper(),
+		"[color=#7d867f]Aquí se paga en %s. Llevas %d.[/color]" % [moneda, tenes],
+	]
+	var pueblo := str(d.get("quien_la_acepta", ""))
+	if pueblo != "":
+		lineas.append("[color=#5f6b64]%s[/color]" % pueblo)
+
+	var vende: Array = d.get("vende", [])
+	lineas.append("")
+	if vende.is_empty():
+		# **Éste es el renglón que justifica todo el sistema.** Un mostrador
+		# vacío no es un error de contenido: es el valle diciendo que no hay, y
+		# diciéndolo con tu plata en la mano.
+		lineas.append("[color=#98a29c]No hay nada en el mostrador.[/color]")
+	else:
+		lineas.append("[color=#98a29c]EN EL MOSTRADOR[/color]")
+		for v in vende:
+			var o: Dictionary = v
+			var hizo: Variant = o.get("made_by")
+			# `str(null)` en Godot da "<null>", y el servidor manda `made_by`
+			# nulo para todo lo que creció solo. Ya salió un panel diciendo,
+			# literal, "la hizo <null>".
+			var quien := "" if hizo == null else str(hizo).strip_edges()
+			var l := "  %s — %d" % [str(o.get("kind", "")), int(o.get("precio", 0))]
+			if quien != "":
+				l += "  [color=#c9a227](la hizo %s)[/color]" % quien
+			var saben: Variant = o.get("saben")
+			# **La última.** Cuando no queda nadie que sepa hacerla, eso no es
+			# un dato de inventario: es lo que hace que comprarla signifique
+			# algo. Lo que vale más caro es lo que no se va a volver a hacer.
+			if saben != null and int(saben) == 0:
+				l += "  [color=#cf8b84]— ya nadie sabe hacerla[/color]"
+			lineas.append(l)
+
+	var compra: Array = d.get("compra", [])
+	if not compra.is_empty():
+		lineas.append("")
+		lineas.append("[color=#98a29c]TE PAGA POR LO TUYO[/color]"
+			+ ("  [color=#7d867f](le quedan %d)[/color]" % int(d.get("tiene", 0))))
+	_mostrador_texto.text = "\n".join(lineas)
+
+	for v in vende:
+		var o: Dictionary = v
+		var que := str(o.get("kind", ""))
+		var cuesta := int(o.get("precio", 0))
+		if que == "":
+			continue
+		var b := Button.new()
+		b.text = "comprar %s   (%d)" % [que, cuesta]
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.add_theme_font_size_override("font_size", 13)
+		b.disabled = cuesta > tenes
+		b.pressed.connect(func() -> void:
+			b.disabled = true
+			_api.comprar(que, de))
+		_mostrador_botones.add_child(b)
+
+	for v in compra:
+		var o: Dictionary = v
+		var que := str(o.get("kind", ""))
+		if que == "":
+			continue
+		var b := Button.new()
+		b.text = "vender %s   (te dan %d)" % [que, int(o.get("precio", 0))]
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.add_theme_font_size_override("font_size", 13)
+		b.add_theme_color_override("font_color", TINTA_APAGADA)
+		b.pressed.connect(func() -> void:
+			b.disabled = true
+			_api.vender(que, de))
+		_mostrador_botones.add_child(b)
+
+	# Y cambiar plata, sólo donde tiene sentido: un mostrador que ya cobra en
+	# marcos no tiene nada que cambiarte. **Aquí es donde la geografía se ve**:
+	# cruzaste el valle y tu dinero no vale.
+	if str(d.get("moneda", "")) != "marco":
+		var c := Button.new()
+		c.text = "cambiar 20 marcos por %s" % moneda
+		c.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		c.add_theme_font_size_override("font_size", 13)
+		c.pressed.connect(func() -> void:
+			c.disabled = true
+			_api.cambiar(20, de))
+		_mostrador_botones.add_child(c)
 
 
 func _alternar_bolsa() -> void:
@@ -1989,6 +2255,14 @@ func _unhandled_input(evento: InputEvent) -> void:
 		_buscar()
 		get_viewport().set_input_as_handled()
 		return
+	# T de trato. Tecla propia y no la E: la E ya elige entre tres cosas por
+	# contexto y el que atiende el mostrador está parado justo al lado, así que
+	# acercarte a comprar te abriría la charla y nunca el puesto. Una tecla para
+	# un panel entero no es lo mismo que una tecla por verbo.
+	if k == KEY_T:
+		_abrir_mostrador()
+		get_viewport().set_input_as_handled()
+		return
 	if k == KEY_ESCAPE:
 		# Escape cierra lo que esté encima, de arriba hacia abajo. Es lo que
 		# cualquiera aprieta cuando algo no se va, y hasta hoy no hacía nada
@@ -1996,6 +2270,8 @@ func _unhandled_input(evento: InputEvent) -> void:
 		if _bienvenida != null and is_instance_valid(_bienvenida):
 			_bienvenida.queue_free()
 			_bienvenida = null
+		elif _mostrador_panel != null and _mostrador_panel.visible:
+			_mostrador_panel.visible = false
 		elif _ficha != null and _ficha.visible:
 			_ficha.visible = false
 		elif _bolsa_panel != null and _bolsa_panel.visible:

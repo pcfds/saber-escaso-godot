@@ -38,6 +38,7 @@ scripts/api.gd          habla con el servidor; el token sale de token.txt o --to
 scripts/interfaz.gd     HUD, diálogo, campo para escribirle a los NPCs
 scripts/runas.gd        la magia: ritual de la mañana (P), trazo radial (R),
                         grimorio (G) y las marcas que quedan en el suelo
+                        los MOSTRADORES viven en valle.gd + interfaz.gd (tecla T)
 desplegar.sh            probar → exportar → cerrar el juego → instalar. UNA carpeta.
 ```
 
@@ -253,6 +254,29 @@ agosto y están en `DISENO.md` §6.
   (`Interiores.punto_de()` / `punto_en_casa()`), porque el reparto de hoy tira
   las cosas entre 3 y 11 m del centro del lugar y las casas están a doce: sin
   eso, el martillo de Ilde aparece en el medio de la plaza.
+
+- **Los puestos de mercado dejaron de mentir, y eso le toca a la rama de arte.**
+  `detalles.gd` los tenía en "lo que se miró y no entró" con este argumento, que
+  era correcto entonces: *"no hay comercio en este juego. No hay dinero, no hay
+  precios y no hay intercambio. Un puesto de mercado es exactamente hacer por
+  hacer, y encima MIENTE sobre lo que el mundo tiene"*. **Ahora hay comercio**:
+  hay monedas, hay precios y hay una tabla `mostradores` en el servidor que dice
+  quién atiende, dónde y en qué moneda cobra.
+
+  Lo que hay hoy es el mínimo y lo puso la rama de economía en `valle.gd`, no en
+  `detalles.gd`, porque **no es decoración: es un sitio del mundo que manda el
+  servidor.** `pueblo/stall-green` para el que cobra en lo del valle y
+  `pueblo/stall-red` para el que cobra en lo de un pueblo que no es humano —
+  misma silueta, distinto color, que es exactamente para lo que sirve el color
+  acá. Medido: `stall` a secas es 0,65 × 0,37 × 1,0 (una mesa pelada, sin toldo,
+  ilegible a cuarenta metros) y los otros dos son 1,0 × 1,24 × 1,0, o sea que
+  **traen el toldo, que es lo único que se lee a la distancia a la que se
+  juega.** Van a `Detalles.CASA_CELDA`, con el toldo a 3,3 m.
+
+  Lo que le queda a la rama de arte, si quiere: cajones y género encima del
+  mostrador, y que se note de lejos si está abierto o cerrado sin leer el
+  cartel. Un mostrador cerrado **no vuelve a abrir** hasta que llegue alguien
+  nuevo por el Camino del Norte, así que es un estado que dura días.
 
 **Ya está hecho, no lo rehagas:** **las cosas se pueden dejar y levantar del
 suelo** — `/mundo` manda `suelo` (lo que hay tirado en cada lugar, con quién lo

@@ -939,6 +939,53 @@ var _suelo: Dictionary = {}
 var _suelo_cerca: Dictionary = {}
 
 
+## ─────────────────────────────────────────────────────────────
+## Los mostradores
+## ─────────────────────────────────────────────────────────────
+##
+## **La rama de arte tenía razón cuando dijo que no.** `detalles.gd` lista las
+## tres mallas de puesto de mercado (`stall`, `stall-green`, `stall-red`) entre
+## "lo que se miró y no entró", con este argumento: *"no hay comercio en este
+## juego. No hay dinero, no hay precios y no hay intercambio. Un puesto de
+## mercado es exactamente hacer por hacer, y encima MIENTE sobre lo que el
+## mundo tiene"*.
+##
+## Ahora hay comercio —hay monedas, hay precios y hay mostradores en la base—
+## así que el puesto dejó de mentir. Se dibuja acá y no en `detalles.gd` porque
+## **no es decoración: es un sitio del mundo que manda el servidor**, con quién
+## atiende y qué moneda acepta, y por eso vive con lo demás que sale de
+## `/mundo`. El día que la rama de arte quiera darle mejor forma, la pieza y el
+## motivo ya están.
+##
+## Se llaman MOSTRADORES y no puestos: `puesto` ya significa el puesto de
+## trabajo de adentro de una casa —el yunque, la olla— y la E lo acciona como
+## `trabajar`. Dos cosas con el mismo nombre es cómo se llega a que el jugador
+## apriete comprar y se ponga a martillar.
+## Y las dos que se usan, que no es lo mismo que las tres que hay. Medidas:
+## `stall` es 0,65 × 0,37 × 1,0 —una mesa pelada, sin toldo— y a cuarenta metros
+## no se distingue de un banco. `stall-green` y `stall-red` son 1,0 × 1,24 × 1,0:
+## **traen el toldo, que es lo único que se lee a la distancia a la que se
+## juega.** La silueta hace el trabajo pesado, dice `CLAUDE.md`, y acá se nota.
+##
+## Que sean dos y no una es la moneda: **verde el que cobra en lo del valle,
+## rojo el que cobra en lo de un pueblo que no es humano.** Misma silueta,
+## distinto color — «lo mismo, de otro bando», que es exactamente para lo que
+## sirve el color según el criterio de arte. No inventa ningún color nuevo: son
+## las dos mallas que ya estaban descargadas y sin usar.
+const MALLA_MOSTRADOR := "pueblo/stall-green"
+const MALLA_MOSTRADOR_AJENO := "pueblo/stall-red"
+
+## Hasta dónde llega el trato. Generoso como todo lo demás: con la cámara a
+## cuarenta metros no se ve la diferencia entre tres y seis, y acercarse y que
+## no aparezca el cartel es el peor resultado posible.
+const ALCANCE_MOSTRADOR := 6.5
+
+## place_slug -> Node3D. Los datos van en el metadato `mostrador` del nodo, como
+## el suelo: quién atiende y si está abierto cambian con la hora del valle y se
+## refrescan en cada latido sin volver a armar la malla.
+var _mostradores: Dictionary = {}
+
+
 ## Dibuja lo que el servidor dice que hay tirado.
 ##
 ## **Ninguna coordenada viaja, y es a propósito.** El mundo del servidor está
@@ -1001,6 +1048,88 @@ func _sincronizar_suelo(cosas: Array) -> void:
 			viejo.queue_free()
 	if not _suelo.has(str(_suelo_cerca.get("id", ""))):
 		_suelo_cerca = {}
+
+
+## Planta los mostradores que el servidor dice que hay.
+##
+## **Ninguna coordenada viaja**, igual que con el suelo y con las amenazas: el
+## servidor guarda el LUGAR y el punto exacto sale del slug de ese lugar, que es
+## el mismo para todos. Dos jugadores ven el mismo puesto en el mismo pasto.
+##
+## Y la malla se arma UNA vez; lo que se refresca en cada latido es el metadato,
+## porque quién atiende y si está abierto cambian con la hora del valle y con
+## quién siga vivo.
+func _sincronizar_mostradores(lista: Array) -> void:
+	var vistos := {}
+	for c in lista:
+		var d: Dictionary = c
+		var slug := str(d.get("place_slug", ""))
+		if slug == "" or not LUGARES.has(slug):
+			continue
+		vistos[slug] = true
+		if _mostradores.has(slug):
+			var ya: Node3D = _mostradores[slug]
+			if is_instance_valid(ya):
+				ya.set_meta("mostrador", d)
+			continue
+
+		var centro: Vector3 = LUGARES[slug]['pos']
+		var h := slug.hash()
+		var ang := float(h % 1000) / 1000.0 * TAU
+		# A ocho metros del centro: afuera del fuego y del pozo que hay en el
+		# medio de cada sitio, y adentro del anillo de casas de la aldea, que
+		# cae en unos doce.
+		var px := centro.x + cos(ang) * 8.0
+		var pz := centro.z + sin(ang) * 8.0
+		var nodo := Node3D.new()
+		nodo.name = "mostrador_" + slug
+		nodo.position = Vector3(px, altura_en(px, pz), pz)
+		# Mirando hacia el centro del lugar: un puesto de espaldas a la plaza no
+		# le vende a nadie, y la silueta es lo único que se lee de lejos.
+		var malla := MALLA_MOSTRADOR if str(d.get("moneda", "marco")) == "marco" \
+			else MALLA_MOSTRADOR_AJENO
+		# A escala de casa: la pieza mide 1,24 de alto, así que el toldo queda a
+		# 3,3 m. Es más alto que una persona y más bajo que un techo, que es
+		# donde tiene que estar un toldo para leerse como toldo.
+		Kit.poner(nodo, malla, Vector3.ZERO, ang + PI, Detalles.CASA_CELDA)
+		nodo.set_meta("mostrador", d)
+		add_child(nodo)
+		_mostradores[slug] = nodo
+
+	# Un mostrador que el servidor deja de mandar es un mostrador que ya no
+	# está. Hoy no pasa —no se borran filas— pero el que se queda sin quien lo
+	# atienda sí sigue viniendo, con `hay_quien` en falso: la mesa queda ahí y
+	# el cartel dice que no abre más. Una mesa vacía dice eso mejor que nada.
+	for slug: String in _mostradores.keys():
+		if vistos.has(slug):
+			continue
+		var viejo: Node3D = _mostradores[slug]
+		_mostradores.erase(slug)
+		if is_instance_valid(viejo):
+			viejo.queue_free()
+
+
+## El mostrador que tenés delante, y el cartel que lo dice. Mismo reparto que
+## todo lo demás: la interfaz no sabe dónde hay nada, este archivo sí.
+func _mirar_el_mostrador() -> void:
+	if jugador == null or not is_instance_valid(jugador):
+		return
+	var elegido: Node3D = null
+	var mejor := ALCANCE_MOSTRADOR
+	for slug: String in _mostradores:
+		var n: Node3D = _mostradores[slug]
+		if not is_instance_valid(n):
+			continue
+		var dist := n.global_position.distance_to(jugador.global_position)
+		if dist < mejor:
+			mejor = dist
+			elegido = n
+	if elegido == null:
+		if not interfaz.mostrador_cerca.is_empty():
+			interfaz.mostrar_mostrador_cerca({}, null)
+		return
+	var d: Dictionary = elegido.get_meta("mostrador", {})
+	interfaz.mostrar_mostrador_cerca(d, elegido)
 
 
 ## Lo que tenés al alcance de los pies, y el cartel que lo dice.
@@ -1916,8 +2045,16 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 	# levantás algo, el objeto sale del suelo y entra a la bolsa en la misma
 	# respuesta, y el orden hace que no parpadee en los dos lados a la vez.
 	_sincronizar_suelo(datos.get("suelo", []))
+	# Los mostradores del valle. Van antes que la bolsa por el mismo motivo que
+	# el suelo: cuando comprás algo, la cosa sale de la vidriera y entra a la
+	# bolsa en la misma respuesta.
+	_sincronizar_mostradores(datos.get("mostradores", []))
 	var bolsa: Array = datos.get("objetos", [])
 	interfaz.mostrar_inventario(bolsa)
+	# Y la plata, POR TIPO. Lo que acepta la aldea no vale del otro lado del
+	# valle, así que un contador solo sería tres geografías aplastadas en un
+	# número.
+	interfaz.mostrar_plata(datos.get("bolsa", []))
 	# La misma bolsa la mira la magia: el frasco de raíz es lo único que hace
 	# aparecer la cuarta ranura del ritual de la mañana, y no se pide dos veces.
 	if runas != null and is_instance_valid(runas):
@@ -2135,6 +2272,11 @@ func _process(dt: float) -> void:
 
 	# Y lo que haya tirado a tus pies. Es lo que habilita levantarlo con E.
 	_mirar_el_suelo()
+
+	# Y el mostrador, si estás parado delante de uno. Va aparte de la E: el que
+	# atiende está justo al lado, así que con la E acercarte a comprar te
+	# abriría la charla y nunca el puesto.
+	_mirar_el_mostrador()
 
 	# Que te reconozcan al pasar. Una sola vez por acercamiento: si se
 	# disparara cada cuadro sería un cartel, y si no se reseteara al alejarte
