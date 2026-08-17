@@ -891,6 +891,9 @@ func _puesto(c: Dictionary, oficio: String) -> void:
 # ---------------------------------------------------------------------------
 
 func _recortar(c: Dictionary, si: bool, camara: Vector3) -> void:
+	# El techo y la planta alta SÍ se pueden ocultar del todo: nadie camina
+	# contra un techo. El fantasma es sólo para los muros de abajo, que son los
+	# que te frenan sin que los veas — ver el comentario largo abajo.
 	var modo := (GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY if si
 		else GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
 	if bool(c["recortada"]) != si:
@@ -924,8 +927,25 @@ func _recortar(c: Dictionary, si: bool, camara: Vector3) -> void:
 		if bool(_muros_fuera.get(gi.get_instance_id(), false)) == tapa:
 			continue
 		_muros_fuera[gi.get_instance_id()] = tapa
-		gi.cast_shadow = (GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY if tapa
-			else GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
+		# ── FANTASMA, NO INVISIBLE. Esto es el arreglo de un bug de verdad ──
+		#
+		# Estos muros se hacían invisibles (`SHADOWS_ONLY`) **y seguían
+		# sólidos**, porque el descarte es de dibujo y no de física. Resultado,
+		# dicho por quien lo jugó: *"se traba cuando pasás paredes"*. Veías la
+		# casa abierta de frente, caminabas hacia ahí, y te frenaba una pared
+		# que no estaba dibujada. **Un obstáculo que no se ve es lo peor que
+		# puede tener un juego**: no parece una pared, parece que el juego está
+		# roto.
+		#
+		# Ahora se desvanecen en vez de desaparecer. `GeometryInstance3D
+		# .transparency` es por instancia, así que no hay que duplicar un solo
+		# material — la casa entera comparte el suyo con las otras once.
+		#
+		# El 0,86 no es libre: con menos no se ve el interior, y con 1,0
+		# volvemos al bug. Lo que queda es un vidrio sucio: ves lo de adentro y
+		# ves que hay algo entre vos y eso.
+		gi.transparency = 0.86 if tapa else 0.0
+		gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 
 ## Corre lo liviano que tengas encima. Ver el bloque `LO QUE SE CORRE CUANDO LO

@@ -195,6 +195,8 @@ func _ready() -> void:
 	add_child(jugador)
 	jugador.quiere_interactuar.connect(_al_interactuar)
 	jugador.quiere_golpear.connect(_al_golpear)
+	jugador.sin_asiento.connect(func() -> void:
+		interfaz.avisar("Acá no hay dónde sentarse. Probá junto al fuego de la plaza."))
 
 
 	interfaz = preload("res://escenas/interfaz.tscn").instantiate()
@@ -2295,6 +2297,11 @@ func _process(dt: float) -> void:
 	# hoy `trabajar` sólo existía como opción de una charla, así que podías
 	# saber forjar, estar pegado al yunque, y tener que ir a buscar a alguien
 	# para hablarle.
+	# Dónde te podés sentar. Lo busca el jugador —es quien conoce el grupo— y
+	# la interfaz sólo lo dibuja.
+	var asiento := jugador.asiento_cerca()
+	interfaz.mostrar_asiento(asiento.get("nodo") if not asiento.is_empty() else null)
+
 	if interiores != null:
 		var puesto := interiores.puesto_cerca(jugador.global_position)
 		interfaz.mostrar_puesto(str(puesto.get("de", "")), puesto.get("nodo"))

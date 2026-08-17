@@ -191,6 +191,8 @@ var _marca_npc: Label
 var _marca_piso: Label
 var _marca_bicho: Label
 var _marca_puesto: Label
+var _marca_asiento: Label
+var _asiento_nodo: Node3D
 
 ## ─────────────────────────────────────────────────────────────
 ## El mostrador
@@ -316,6 +318,7 @@ func _ready() -> void:
 	_marca_bicho = _marca()
 	_marca_bicho.add_theme_color_override("font_color", HOSTIL)
 	_marca_puesto = _marca()
+	_marca_asiento = _marca()
 	# El de lo tirado en el suelo va en ámbar como el de la bolsa, y por el mismo
 	# motivo: **es de la familia de "esto tiene el nombre de alguien"**. Un
 	# cuchillo tirado que dice "lo hizo Ilde" es lo mismo que el renglón ámbar de
@@ -470,6 +473,9 @@ func _process(_dt: float) -> void:
 	# Bajo: el yunque está a la altura de la cintura y el cartel tiene que
 	# quedar sobre la cosa, no flotando sobre el techo del cuarto.
 	_colocar(_marca_puesto, _puesto_nodo, 1.2, tapado, false)
+	# Bajo, como el puesto: un tocón y una banqueta están a la altura de la
+	# rodilla y el cartel tiene que quedar sobre la cosa.
+	_colocar(_marca_asiento, _asiento_nodo, 0.9, tapado, false)
 	# Más bajo todavía: está tirado en el suelo. Medio metro es lo que hace que
 	# el cartel se lea como "eso de ahí abajo" y no como algo flotando.
 	_colocar(_marca_suelo, _suelo_nodo, 0.55, tapado, false)
@@ -533,6 +539,8 @@ func _refrescar_marcas() -> void:
 		# puede estar muerto.
 		_marca_puesto.text = ("[E] trabajar en el puesto de %s" % puesto_de) \
 			if puesto_de != "" and npc_cercano == "" and not hay_suelo else ""
+	if _marca_asiento != null:
+		_marca_asiento.text = "[F] sentarte" if _asiento_nodo != null else ""
 	if _marca_bicho != null:
 		# «pegarle a Kerrak el que quedó», con el nombre propio que la base ya
 		# tiene y que hasta hoy no salía de ahí. Un bicho con nombre no es un
@@ -1114,6 +1122,17 @@ func _gesto_de_ensenar() -> void:
 func mostrar_puesto(de: String, nodo: Node3D) -> void:
 	puesto_de = de
 	_puesto_nodo = nodo
+	_refrescar_marcas()
+
+
+## Dónde te podés sentar, si hay algo cerca. Lo calcula `jugador.gd`, que es
+## quien conoce el grupo `asientos`.
+##
+## **Existe porque una tecla muda es una tecla rota.** La F sentaba desde hace
+## un rato y no había forma de saber dónde ni cuándo: se apretaba en todos
+## lados y no pasaba nada, sin una palabra.
+func mostrar_asiento(nodo: Node3D) -> void:
+	_asiento_nodo = nodo
 	_refrescar_marcas()
 
 

@@ -174,7 +174,12 @@ var _empuje := Vector3.ZERO
 ##
 ## El radio es el mismo de `Interiores.asiento_cerca()` y por el mismo motivo:
 ## un asiento que se ofrece a tres metros hace que la plaza entera sea un botón.
-const ASIENTO_RADIO := 1.5
+## **1,5 m era imposible.** La cámara juega a cuarenta metros, el personaje mide
+## 1,85, y no hay ningún cartel que avise que hay un asiento cerca: apretabas F
+## en todos lados y no pasaba nada, sin una palabra. Dicho por quien lo jugó:
+## *"no te podés sentar"*. A 3,2 m se acierta caminando, que es como se tiene
+## que sentir.
+const ASIENTO_RADIO := 3.2
 ## Cuánto tarda el cuerpo en llegar al asiento. 8 cuadros: menos se lee como un
 ## teletransporte y más se lee como que el juego te arrastra.
 const SENTARSE_VEL := 18.0
@@ -523,12 +528,19 @@ func asiento_cerca(radio := ASIENTO_RADIO) -> Dictionary:
 	}
 
 
+## Apretaste F y no había dónde sentarse. Lo escucha la interfaz para decirlo.
+signal sin_asiento
+
+
 func _tentar_asiento() -> void:
 	if _sentado:
 		pararse()
 		return
 	var a := asiento_cerca()
 	if a.is_empty():
+		# **Callarse es lo peor.** Una tecla que a veces hace algo y a veces no
+		# dice nada es indistinguible de una tecla rota, y así se sintió.
+		sin_asiento.emit()
 		return
 	sentarse(a["pos"], float(a["mirando"]))
 
