@@ -1961,6 +1961,14 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 
 	_sincronizar_gente(datos.get("people", []), datos.get("places", []))
 
+	# Y el sonido se entera de quién está despierto y dónde. **Va explícito y
+	# no por una señal capturada al vuelo**: sin esta línea, `sonido.gd` se
+	# enganchaba solo al `Api` que colgaba del mismo padre, y eso anda hasta el
+	# día que alguien mueve un nodo. Un cable que funciona por casualidad es
+	# peor que uno que no está, porque nadie lo va a buscar cuando se corte.
+	if sonido != null:
+		sonido.enterarse(datos)
+
 
 ## A qué le puede apuntar un hechizo ahora mismo.
 ##

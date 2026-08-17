@@ -25,6 +25,22 @@
 ##                  cuando se cocina, y baja al mediodía
 ##                · la fragua nunca se apaga del todo, pero de noche es brasa
 ##                  sin martillo: alguien duerme y el fuego no
+##   QUIÉN HAY    · el martillo, la muela, el caldero, el hacha y la cota son
+##                  las cinco voces del trabajo, y ninguna suena por una curva:
+##                  suenan porque el SERVIDOR dice que esa persona está
+##                  despierta y en su lugar. Ver `LA GENTE`, más abajo.
+##
+## LA LÍNEA QUE NO SE CRUZA, Y ES LA MISMA DEL INVARIANTE 4. El sonido es
+## presentación y vive entero en el cliente, así que puede inventar timbres,
+## ráfagas y ecos todo lo que quiera. **Lo que no puede inventar son HECHOS.**
+## Un martillo sonando donde el servidor no dice que haya nadie forjando es una
+## afirmación falsa sobre el mundo, y da igual que la haga el director o el
+## oído: el jugador camina hasta la fragua y no hay nadie.
+##
+## Hasta el 18 de agosto este archivo cruzaba esa línea sin saberlo: el yunque
+## salía de `CURVA_YUNQUE`, o sea de la hora y nada más. Si Ilde se moría, si se
+## iba al Sotobosque o si la absorbían, el martillo seguía sonando al mediodía
+## igual que siempre. **Ahora el martillo es de Ilde, no del mediodía.**
 ##
 ## EL SILENCIO ES MATERIAL. La noche del valle es más callada que el día — no
 ## por gusto de tono, sino porque si todo suena todo el tiempo nada pesa. Lo
@@ -34,13 +50,18 @@
 ## POR QUÉ TODO SINTETIZADO. Igual que el cielo (un shader escrito a mano) y
 ## que los cuerpos (animados sin archivos de animación): no hay assets y el
 ## .exe se baja por internet. Esto pesa CERO en disco y CERO en la descarga.
-## Lo que cuesta son 103 ms de CPU una sola vez, al arrancar — medidos, no
-## estimados: los imprime la escena de prueba cada vez que corre.
+## Lo que cuesta es medio segundo de CPU una sola vez, al arrancar — medido, no
+## estimado: lo imprime la escena de prueba cada vez que corre. **Y varía mucho
+## entre corridas bajo WSL** (350 a 630 ms para el mismo código sin tocar), así
+## que ese número no sirve para comparar dos versiones: para eso hay que
+## cronometrar la parte que cambió, y no el total.
 ##
 ## HASTA DÓNDE LLEGA LA SÍNTESIS — está dicho sin maquillaje en cada función:
-## el viento, el río, el fuego, los grillos y el lamento de la ruina salen
-## bien por síntesis. Los pájaros salen pasables. El martillo del yunque es el
-## techo de lo que se puede fingir. Las voces no se intentan.
+## el viento, el río, el fuego, los grillos, el lamento de la ruina, la muela,
+## el caldero y la cota salen bien por síntesis. Los pájaros y el hacha salen
+## pasables. El martillo del yunque y el murmullo de la gente son el techo de
+## lo que se puede fingir, y son los dos primeros que habría que grabar. Las
+## palabras no se intentan, y no por límite técnico: el juego es de leer.
 ##
 ## NADIE DEL EQUIPO ESCUCHÓ ESTO TODAVÍA. No hay forma de afirmar cómo suena
 ## desde acá: bajo WSL no hay salida de audio. Lo que se puede verificar es lo
@@ -113,6 +134,26 @@ const RIO_CENTRO := Vector3(0, -1.0, 26)
 const RIO_GIRO := 9.0
 const RIO_SEPARACION := 70.0
 
+## LA PUERTA DEL NORTE. Sesenta metros de roca a cada lado y una sola abertura
+## en toda la cordillera — es la única pieza del valle cuya forma tendría que
+## oírse, porque un desfiladero no cambia lo que suena: cambia cómo vuelve.
+##
+## Así que la Puerta no tiene un sonido propio (eso sería un adorno, y encima
+## uno que miente: no hay nada ahí haciendo ruido). Lo que tiene es un ECO que
+## se le pone al lecho ENTERO cuando te acercás. El río, el viento y tus
+## propios pasos empiezan a volver de la piedra, y el jugador no piensa "hay un
+## efecto": piensa "esto es un lugar cerrado". Es la misma idea que el
+## `brillo` — el timbre dice el lugar cuando el volumen ya no puede.
+##
+## Los números salen de `hitos.gd`, que no es de esta rama: la jamba está en
+## x −14 y el muñón en x 46, los dos en z 162. El centro del vano es el punto
+## medio. Se copian y no se importan por la misma razón que `POS`: que este
+## archivo corra solo en la escena de prueba.
+const PUERTA := Vector3(16.0, 0.0, 162.0)
+const PUERTA_LLENO := 34.0    ## adentro del vano, el eco está entero
+const PUERTA_CERO := 120.0    ## pasado esto, el valle es campo abierto otra vez
+const PUERTA_ECO := 0.34      ## cuánto de lo que oís vuelve de la piedra
+
 ## Las curvas del día. 0 es medianoche, 0.25 el amanecer, 0.5 el mediodía.
 ## Cada par es [fracción, valor] y tienen que empezar en 0.0 y terminar en 1.0.
 
@@ -148,9 +189,15 @@ const CURVA_MAESTRO := [[0.00, 0.72], [0.20, 0.74], [0.28, 0.88], [0.45, 1.00],
 const CURVA_FUEGO := [[0.00, 0.42], [0.22, 0.45], [0.30, 0.95], [0.55, 1.00],
 	[0.75, 0.95], [0.84, 0.60], [1.00, 0.42]]
 
-## El martillo. Ilde trabaja de día: entre 0.26 y 0.84 y nada afuera. Si de
-## madrugada oís el yunque, algo pasó — pero eso es una ronda posterior, hoy
-## simplemente calla.
+## El martillo. **ESTA CURVA YA NO DECIDE SI SUENA EL YUNQUE**, y el renglón es
+## importante porque decirlo mal fue el defecto: quien decide es el servidor,
+## que manda a Ilde despierta o dormida (ver `LA GENTE`). Si Ilde se muere, esta
+## curva sigue valiendo 1.00 al mediodía y no suena un solo martillazo.
+##
+## Queda acá por una sola razón y es la medición: para saber cuánto PESA el
+## yunque en la mezcla de un lugar hay que suponer que alguien está forjando, y
+## la hora en que un herrero forja es ésta. O sea que hoy es una hipótesis de la
+## prueba, no una fuente de sonido.
 const CURVA_YUNQUE := [[0.00, 0.00], [0.26, 0.00], [0.32, 0.85], [0.50, 1.00],
 	[0.70, 0.90], [0.80, 0.25], [0.84, 0.00], [1.00, 0.00]]
 
@@ -162,6 +209,151 @@ const CURVA_HOGAR := [[0.00, 0.55], [0.18, 0.60], [0.26, 0.95], [0.38, 0.55],
 
 ## Las voces del lecho de fondo (sin lugar en el mundo, suenan en la cabeza).
 const VOCES_FONDO: Array[String] = ["viento", "pajaros", "grillos", "hojas", "hueco"]
+
+## Las voces que NO son lecho: suenan de a un golpe y hay que dispararlas.
+const VOCES_SUELTAS: Array[String] = ["yunque", "crujido", "muela", "caldero",
+	"hacha", "cota", "murmullo"]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  LA GENTE. El valle tiene siete personas y hasta hoy no hacía ruido
+#  ninguna. Lo que sigue es lo único de este archivo que depende del
+#  SERVIDOR, y depende a propósito.
+#
+#  LA REGLA DE LA CASA APLICADA ACÁ. "Todo tiene vida o tiene algún sentido.
+#  No hacemos por hacer." Un murmullo de aldea genérico es relleno: suena
+#  igual con siete personas que con cero, así que no dice nada. El martillo de
+#  la fragua es INFORMACIÓN — te dice que Ilde está despierta, que está en la
+#  fragua y para qué lado queda— y esa diferencia es la que decide qué entra.
+#
+#  Por eso el reparto de este archivo es:
+#    · el FUEGO de la fragua y el HOGAR de la aldea son del LUGAR. La fragua
+#      es "el único techo de la región que nunca se apaga del todo" — eso lo
+#      dice el servidor en la descripción del lugar, no una persona. Siguen
+#      colgados de su curva y está bien.
+#    · el MARTILLO, la MUELA, el CALDERO, el HACHA y la COTA son de una
+#      PERSONA. No suenan si el servidor no manda a esa persona despierta y en
+#      su lugar. Si Ilde se muere, la fragua se queda con el fuego y sin el
+#      martillo, que es exactamente lo que pasa.
+#
+#  CUÁNDO SUENA UNA PERSONA — las tres condiciones, y las tres salen de
+#  `/mundo` sin que este archivo deduzca nada:
+#    1. está en la lista de `people` (el servidor no manda muertos),
+#    2. `durmiendo == false`,
+#    3. `place_id == home_place_id`, o sea que está en su lugar.
+#
+#  La tercera es la que más se discute y es la que evita la mentira más fácil.
+#  Odila es destiladora y HOY está en el Sotobosque juntando: si el caldero
+#  sonara por su oficio, sonaría un alambique en el bosque. Marta es cazadora y
+#  está en el monte, así que su hacha tampoco suena — y ahí sí se pierde algo
+#  real (una cazadora en el bosque es justo cuando la oirías). Se elige perder
+#  eso antes que arriesgar la mentira: **el servidor dice dónde está, no qué
+#  está haciendo**, y de "está en el bosque" a "está cortando" hay una
+#  invención. Cuando `/mundo` mande la agenda, esto se afloja en una línea.
+#
+#  UN EMISOR POR FAMILIA, NO POR PERSONA. Suena el que trabaja más cerca del
+#  oyente. Con doce herreros seguís oyendo UN martillo, y el gasto de
+#  reproductores no crece con la población — que es la trampa que este repo ya
+#  pisó con los `AudioStreamPlayer` que no se liberaban.
+# ─────────────────────────────────────────────────────────────────────────
+
+## Oficio → familia de sonido. Se busca POR TROZO DE PALABRA y no por lista
+## cerrada, que es la misma lectura que hacen `figura.gd` para vestirlos e
+## `interiores.gd` para amueblarles el cuarto, y por el mismo motivo: el
+## servidor manda `trade` en castellano y con género —"herrera", "cazadora",
+## "chico del camino"—, así que el día que aparezca un "herrero" se reconoce
+## sin migrar nada.
+##
+## Los oficios que no caen en ninguna familia NO tienen sonido de trabajo, y
+## eso es correcto: "chico del camino" y "nadie sabe" no son un oficio con un
+## gesto repetido. A ésos se los oye por el murmullo, como a cualquiera.
+const FAMILIAS := {
+	"herr": "yunque", "forj": "yunque",
+	"aprendiz": "muela", "afil": "muela",
+	"dest": "caldero", "cocin": "caldero", "curan": "caldero",
+	"caz": "hacha", "leñ": "hacha", "len": "hacha", "carpin": "hacha",
+	"guard": "cota", "solda": "cota",
+}
+
+## El ritmo de cada oficio, y el ritmo ES el personaje.
+##
+##   `golpe`  segundos entre dos golpes de la misma racha
+##   `racha`  cuántos golpes seguidos antes de la pausa larga
+##   `pausa`  el hueco entre rachas. **Es lo que hace que no sea un metrónomo**:
+##            un herrero calienta, golpea, vuelve al fuego. Un martillo regular
+##            se oye a máquina y este mundo no tiene máquinas.
+##   `db`     rango de volumen del emisor. Ninguno llega al del yunque.
+##   `unidad` y `max`: el alcance.
+##
+## EL ALCANCE ES INFORMACIÓN Y NO ES PAREJO A PROPÓSITO. El martillo cruza el
+## valle entero (260 m) y es el único que lo hace: es la brújula. Los otros
+## cuatro son locales —entre 34 y 120 m— porque dicen "hay alguien ACÁ", no
+## "hay alguien en el valle". Si todos cruzaran el valle, el valle sería una
+## fábrica y ninguno diría dónde.
+const OFICIOS_SON := {
+	# Ilde. La racha del yunque es la que ya estaba y no se toca.
+	"yunque":  {"golpe": [0.42, 0.58], "racha": [3, 6], "pausa": [4.5, 11.0],
+		"db": [-3.0, 1.5], "tono": [0.93, 1.09], "unidad": 30.0, "max": 260.0},
+	# Bruno, el aprendiz. Pasadas largas de piedra y muchas más pausas que su
+	# maestra: **el que aprende trabaja a tirones**, y ese contraste con la
+	# racha de Ilde es lo que dice cuál de los dos es cuál sin mirar.
+	"muela":   {"golpe": [0.78, 1.05], "racha": [2, 3], "pausa": [16.0, 30.0],
+		"db": [-7.0, -3.0], "tono": [0.88, 1.12], "unidad": 13.0, "max": 70.0},
+	# Odila. Un alambique no tiene ritmo: borbotea cuando le parece.
+	"caldero": {"golpe": [1.4, 2.9], "racha": [1, 3], "pausa": [18.0, 34.0],
+		"db": [-8.0, -4.0], "tono": [0.90, 1.14], "unidad": 9.0, "max": 42.0},
+	# Marta. Un hacha son golpes sueltos y espaciados, con el tiempo de acomodar
+	# el tronco entre uno y otro — y después de la racha hay que apilar, que es
+	# de donde sale la pausa más larga de las cinco.
+	"hacha":   {"golpe": [1.6, 3.2], "racha": [2, 4], "pausa": [26.0, 50.0],
+		"db": [-5.0, -1.0], "tono": [0.90, 1.10], "unidad": 18.0, "max": 120.0},
+	# Sarn. Lo más callado de las cinco: cuero y anillas al acomodarse. Un
+	# guardia parado hace poco ruido, y que haga poco es la información.
+	"cota":    {"golpe": [2.4, 5.0], "racha": [1, 2], "pausa": [17.0, 32.0],
+		"db": [-11.0, -6.0], "tono": [0.92, 1.10], "unidad": 8.0, "max": 34.0},
+}
+
+## EL PRESUPUESTO. La queja original fue "el sonido molesta mucho", y eso es un
+## número —eventos por minuto—, no un adjetivo. Estos tres frenos son el
+## presupuesto y la prueba los mide:
+##
+##   · dos sonidos de gente nunca a menos de `GENTE_FRENO` segundos, contando
+##     TODAS las familias juntas. Es el mismo freno que `fauna.gd` le puso al
+##     rebaño (1,1 s) y por el mismo motivo: siete bichos en el mismo cuadro no
+##     son un susto, son un error.
+##   · nada suena si no hay nadie adentro del alcance de ESA familia. Un
+##     martillo a 300 m no es información, es ruido de fondo.
+##   · y el techo declarado: si la prueba mide más de `TECHO_POR_MINUTO`
+##     eventos de gente por minuto en el peor caso, alguien se pasó.
+##
+## DE DÓNDE SALE EL 48, y sale de una medición y no de un gusto. El martillo
+## viejo —el que colgaba de la hora y de nada más— daba **39 a 42 martillazos
+## por minuto entre las 0.38 y las 0.65, en 260 metros a la redonda y sin
+## importar si Ilde estaba viva**. Está medido y la prueba lo imprime al lado
+## del nuevo, en `ANTES Y DESPUÉS`.
+##
+## O sea que el presupuesto de antes era 42 eventos/min para UNA voz, en TODO
+## el valle, la mitad del día. El techo de ahora es 48 para SEIS voces y sólo
+## se toca parado adentro de la fragua, con el yunque a tres metros; en
+## cualquier otro punto del valle la tabla da entre 11 y 36, y de noche da
+## cero. Eso es lo que hace que 48 sea un techo más apretado que 42, aunque el
+## número sea más grande.
+##
+## **La única forma de discutirlo es corriendo la prueba y mirando la tabla.**
+const GENTE_FRENO := 0.30
+const TECHO_POR_MINUTO := 48.0
+
+## El murmullo. **No es diálogo y no lo va a ser**: el juego es de leer y una
+## voz sintetizada que intente decir algo suena a juguete. Lo que esto dice es
+## "hay alguien", y por eso es cortísimo, va muy bajo y sólo suena si estás
+## prácticamente al lado.
+##
+## El tono sale del nombre, así que Ilde murmura siempre igual y Sarn siempre
+## más grave. Es el mismo hash estable que usa `figura.gd` para que la cara de
+## una persona sea la misma en todas las pantallas.
+const MURMULLO_ALCANCE := 17.0
+const MURMULLO_ESPERA := [10.0, 20.0]
+const MURMULLO_DB := -17.0
 
 
 ## Interpola una curva de [fracción, valor]. La hora da la vuelta sola.
@@ -317,10 +509,43 @@ var _jug: Dictionary = {}          ## voz → Array[AudioStreamPlayer*]
 var _gan: Dictionary = {}          ## voz → ganancia suavizada
 var _listo := false
 var _reloj := 0.0
-var _prox_martillo := 2.0
-var _martillos_seguidos := 0
 var _prox_crujido := 12.0
 var _ms_generacion := 0.0
+
+## LA GENTE, tal cual la manda el servidor. Cada entrada:
+##   nombre, familia ("" si el oficio no tiene una), trabajando (bool),
+##   despierta (bool), slug, pos (Vector3), tono (float, del nombre)
+var _gente: Array[Dictionary] = []
+## De dónde salió esa lista. Se imprime en el informe para que se vea de un
+## vistazo si el cableado llegó o si el ambiente está inventando.
+var _origen_gente := "nadie todavía"
+## El estado del ritmo de cada familia: {espera, seguidos, meta}
+var _ritmo: Dictionary = {}
+var _freno_gente := 0.0
+var _prox_murmullo := 4.0
+var _reverb: AudioEffectReverb
+var _refresco_gente := 0.0
+var _avisado := false
+var _con_nodo := 0
+var _registro_on := false
+var _mudos := 0
+## MIENTRAS SE MIDE NO SE REPRODUCE. La medición corre la máquina de verdad a
+## 30 pasos por segundo simulados, o sea que en headless comprime 48 minutos de
+## valle en un par de segundos de reloj. Sin esta bandera, **la persona que
+## corra la escena de prueba con parlantes —que es justo la que necesitamos—
+## se comería mil golpes de golpe antes de oír una sola nota del lecho.**
+## En headless no se notaba porque no hay salida: el defecto sólo aparecía en
+## la única máquina donde importa.
+var _midiendo := false
+
+## EL REGISTRO. "El sonido molesta" es un número y hay que poder mostrarlo
+## antes y después. Cuenta cada disparo por familia y el hueco de silencio más
+## largo, y lo imprime la prueba. En el juego cuesta un `+= 1` y sirve para lo
+## mismo el día que alguien vuelva a decir que molesta.
+var _cuenta: Dictionary = {}
+var _cuenta_desde := 0.0
+var _ultimo_evento := 0.0
+var _silencio_max := 0.0
 
 ## SIN SALIDA DE AUDIO, NO SE REPRODUCE NADA. Se calcula todo igual.
 ##
@@ -376,6 +601,32 @@ var _ms_generacion := 0.0
 ## día salta, alguien agregó un emisor que no se apaga.
 const FORZAR_AUDIO := "--sonido-con-audio"
 
+## DOS BANDERAS PARA PODER VERIFICAR LA GENTE, Y EXISTEN POR UN MOTIVO CONCRETO.
+##
+## `--hora=` clava el SOL, que es local. **Quién está despierto NO es local: lo
+## manda el servidor** en `durmiendo`, calculado con la hora del valle. O sea
+## que `--hora=mediodia` te da un mediodía con la aldea entera durmiendo, y con
+## eso no se puede medir una sola de las voces del trabajo. Está bien que sea
+## así —el que decide es el servidor y ése es el invariante— pero deja la mitad
+## de esta entrega sin forma de comprobarse hasta que al valle le toque el día.
+##
+##   --sonido-todos-despiertos   pone a las siete personas despiertas y en su
+##                               lugar. **No cambia nada del mundo y no manda
+##                               nada al servidor**: es una hipótesis para
+##                               medir el peor caso de mezcla, y se anuncia en
+##                               la salida con todas las letras para que nadie
+##                               confunda una corrida así con el juego.
+##   --sonido-registro           imprime un renglón por segundo con qué familia
+##                               sonó y cuántas veces, en el juego de verdad.
+##                               Es lo que convierte "el sonido molesta" en un
+##                               número comparable antes y después.
+##
+## Van como bandera y no como una variable parcheada a mano por la misma razón
+## que `--hora`: una sonda editada a mano se cuela en un commit, y una bandera
+## no.
+const TODOS_DESPIERTOS := "--sonido-todos-despiertos"
+const REGISTRO := "--sonido-registro"
+
 var _hay_salida := true
 var _bufs: Dictionary = {}
 var _nativo: Dictionary = {}
@@ -401,6 +652,7 @@ func preparar(lugares: Dictionary = {}) -> void:
 	add_to_group("sonido")   # la interfaz lo busca por acá para el volumen
 	_hay_salida = AudioServer.get_driver_name() != "Dummy" \
 		or OS.get_cmdline_user_args().has(FORZAR_AUDIO)
+	_registro_on = OS.get_cmdline_user_args().has(REGISTRO)
 	if not lugares.is_empty():
 		_tabla = {}
 		for slug: String in lugares:
@@ -421,6 +673,173 @@ func preparar(lugares: Dictionary = {}) -> void:
 	# juego los referencian los emisores y nadie más.
 	if modo_prueba:
 		_bufs = bufs
+		_gente_de_mentira()
+
+
+# ── LA GENTE: de dónde sale ──────────────────────────────────────────────
+
+## Quién trabaja dónde lo sabe `/mundo` y nadie más.
+##
+## Hubo acá un cableado provisorio: este módulo se enganchaba solo a la señal
+## del `Api` que colgaba del mismo padre, buscándolo entre los hermanos. Andaba
+## — y ése era el problema. **Un cable que funciona por casualidad es peor que
+## uno que no está**, porque el día que alguien mueva un nodo se corta y nadie
+## lo va a ir a buscar: el síntoma es que el valle deja de sonar, que se lee
+## como "todavía no lo hicieron".
+##
+## Ahora lo llama `valle.gd::_al_recibir_mundo()`, que es quien tiene el
+## diccionario en la mano.
+##
+## Lo que sí se conserva del diseño anterior, y es la parte importante: si esto
+## no se llama, `_gente` queda vacía y **no suena una sola voz de trabajo**. El
+## modo de falla es el silencio, nunca la mentira. Un martillo que sigue
+## sonando porque el cliente perdió al servidor es peor que ningún martillo.
+
+
+## LA PUERTA DE ENTRADA, y es pública a propósito: es la línea que hay que
+## llamar desde `valle.gd` para que este módulo deje de buscarse la vida solo.
+## Recibe el diccionario entero de `/mundo`, tal cual llega.
+func enterarse(mundo: Dictionary) -> void:
+	var slug_por_id := {}
+	for l in mundo.get("places", []):
+		var d: Dictionary = l
+		slug_por_id[str(d.get("id", ""))] = str(d.get("slug", ""))
+
+	var nueva: Array[Dictionary] = []
+	_con_nodo = 0
+	for p in mundo.get("people", []):
+		var d: Dictionary = p
+		var nombre := str(d.get("name", ""))
+		if nombre == "":
+			continue
+		var casa := str(d.get("home_place_id", ""))
+		var donde := str(d.get("place_id", ""))
+		# Dormida es dormida esté donde esté: `durmiendo_afuera` sólo dice que
+		# se quedó en el monte, no que esté trabajando de noche.
+		var despierta := not bool(d.get("durmiendo", false))
+		nueva.append({
+			"nombre": nombre,
+			"familia": familia_de(str(d.get("trade", ""))),
+			"despierta": despierta,
+			"trabajando": despierta and casa != "" and casa == donde,
+			"slug": str(slug_por_id.get(donde, "")),
+			"pos": _donde_esta(nombre, str(slug_por_id.get(donde, ""))),
+			"tono": 0.74 + 0.62 * _dado(nombre),
+		})
+	# La hipótesis de medición, y sólo si alguien la pidió por bandera.
+	if OS.get_cmdline_user_args().has(TODOS_DESPIERTOS):
+		for d in nueva:
+			d["despierta"] = true
+			d["trabajando"] = str(d["slug"]) != ""
+		if not _avisado:
+			print("sonido: ¡OJO! %s está puesto. Las siete personas están" % TODOS_DESPIERTOS)
+			print("  despiertas y trabajando PORQUE LO PIDIÓ LA LÍNEA DE COMANDOS,")
+			print("  no porque lo diga el servidor. Esta corrida no es el juego.")
+
+	_gente = nueva
+	if _origen_gente.begins_with("nadie"):
+		_origen_gente = "/mundo"
+	# UNA SOLA VEZ, y en el juego de verdad. El cableado de este módulo se puede
+	# romper sin que salte un error —el ambiente sigue sonando, sólo que sin
+	# gente— así que la única forma de que alguien se entere es que lo diga en
+	# voz alta la primera vez que llega la lista. Es el mismo motivo por el que
+	# `ciclo.gd` tiene `fraccion()`: un fallo silencioso no es un fallo, es una
+	# trampa para el próximo.
+	if not modo_prueba and not _avisado:
+		_avisado = true
+		var trabajan := 0
+		var quienes := ""
+		for d in _gente:
+			if bool(d["trabajando"]) and str(d["familia"]) != "":
+				trabajan += 1
+				quienes += "%s(%s en %s)  " % [d["nombre"], d["familia"], d["slug"]]
+		print("sonido: %d personas de %s · %d con oficio que se oye · %s"
+			% [_gente.size(), _origen_gente, trabajan,
+				quienes if quienes != "" else "el valle está durmiendo"])
+		# Y de dónde sale la POSICIÓN, que es la otra mitad y se rompe aparte:
+		# si esto da 0, el sonido de cada oficio sale del centro del lugar en
+		# vez de seguir a la persona por su ronda. Suena igual de bien y dice
+		# menos, y sin este renglón nadie se entera nunca.
+		print("  posición: %d de %d salen del nodo del vecino; el resto, del centro del lugar."
+			% [_con_nodo, _gente.size()])
+		# Y QUÉ HORA CREE QUE ES. Sin esto no hay forma de saber desde afuera si
+		# `--hora=` llegó hasta acá, y hace falta saberlo porque **esa bandera
+		# mueve el sol y NO mueve a la gente**: quién duerme lo calcula el
+		# servidor con la hora del valle, que es compartida. O sea que una
+		# corrida con `--hora=mediodia` te da un mediodía con la aldea entera
+		# durmiendo, y eso es correcto aunque parezca un bug.
+		var f := hora()
+		print("  hora del valle: %.2f (%s) · el sol la lee de acá; quién duerme, no."
+			% [f, franja(f)])
+
+
+## El oficio, tal cual lo manda el servidor, llevado a una de las cinco
+## familias. Devuelve "" si no cae en ninguna, que es una respuesta legítima.
+static func familia_de(oficio: String) -> String:
+	var o := oficio.strip_edges().to_lower()
+	for clave: String in FAMILIAS:
+		if o.contains(clave):
+			return String(FAMILIAS[clave])
+	return ""
+
+
+## FNV-1a de 32 bits llevado a 0..1. Es el mismo hash de `figura.gd` y por el
+## mismo motivo: el tono de una persona tiene que ser el mismo en todas las
+## pantallas, y ni `String.hash()` ni un RNG sembrado lo prometen entre
+## versiones del motor.
+static func _dado(texto: String) -> float:
+	var h := 2166136261
+	for b: int in texto.to_utf8_buffer():
+		h = (h ^ b) * 16777619 & 0xFFFFFFFF
+	return float(h % 100000) / 100000.0
+
+
+## Dónde está esa persona AHORA. `valle.gd` cuelga un nodo `vecino_<nombre>`
+## por cada uno y lo mueve por su ronda; si está, el sonido sale de ahí y
+## acompaña a la persona. Si no está —la escena de prueba, o el cuadro en que
+## el valle todavía no la armó— se cae al centro de su lugar, separado por el
+## hash para que dos vecinos del mismo sitio no suenen desde el mismo punto.
+func _donde_esta(nombre: String, slug: String) -> Vector3:
+	var p := get_parent()
+	if p != null:
+		var n := p.get_node_or_null(NodePath("vecino_" + nombre.validate_node_name()))
+		if n is Node3D and (n as Node3D).is_inside_tree():
+			_con_nodo += 1
+			return (n as Node3D).global_position + Vector3(0, 1.1, 0)
+	var d: Dictionary = _tabla.get(slug, {})
+	if d.is_empty():
+		return Vector3(0, 1.1, 0)
+	var a := _dado(nombre) * TAU
+	var c: Vector3 = d["pos"]
+	return c + Vector3(cos(a) * 7.0, 1.1, sin(a) * 7.0)
+
+
+## La gente de la escena de prueba. **Es de mentira y está dicho.**
+##
+## Son los siete de `valle-primero` copiados a mano el 18 de agosto con sus
+## oficios de verdad, y **cada uno puesto en SU lugar y despierto**, que es el
+## peor caso de mezcla y no el estado de hoy: cuando se copió esto, el valle
+## estaba de noche y seis de los siete dormían. Vale como hipótesis para medir
+## el presupuesto, no como retrato del mundo. En el juego esto no se llama
+## nunca: ahí manda `/mundo` y nada más.
+func _gente_de_mentira() -> void:
+	var falsos := [
+		["Ilde", "herrera", "fragua", true], ["Bruno", "aprendiz", "fragua", true],
+		["Odila", "destiladora", "aldea", true], ["Marta", "cazadora", "aldea", true],
+		["Sarn", "guardia", "aldea", true], ["Tobio", "chico del camino", "camino", true],
+		["La vieja Ren", "nadie sabe", "ruina", true],
+	]
+	_gente.clear()
+	for f: Array in falsos:
+		var nombre := str(f[0])
+		var slug := str(f[2])
+		_gente.append({
+			"nombre": nombre, "familia": familia_de(str(f[1])),
+			"despierta": bool(f[3]), "trabajando": bool(f[3]),
+			"slug": slug, "pos": _donde_esta(nombre, slug),
+			"tono": 0.74 + 0.62 * _dado(nombre),
+		})
+	_origen_gente = "la lista de mentira de la prueba (7 personas)"
 
 
 ## Qué hora es en el valle. La manda el servidor a través de `ciclo.gd`.
@@ -497,7 +916,43 @@ func _armar_buses() -> void:
 	_bus(PREFIJO + "Hogar", PREFIJO + "Valle", _filtro_bajo(1400.0, 0.1))
 	_bus(PREFIJO + "Yunque", PREFIJO + "Valle", null)
 	_bus(PREFIJO + "Crujido", PREFIJO + "Valle", null)
+	# El trabajo de la gente, todo por un bus. No es pereza: es que el
+	# presupuesto de las cinco familias tiene que poder subirse o bajarse de un
+	# lugar solo. Un pasabajos suave para que las herramientas no compitan con
+	# los grillos en la banda de fatiga (2–5 kHz), que es donde cansa.
+	_bus(PREFIJO + "Oficio", PREFIJO + "Valle", _filtro_bajo(5200.0, 0.0))
+	# El murmullo, aparte del resto: es lo único con cuerpo humano que hay en el
+	# valle y hay que poder callarlo sin tocar nada más si se decide que no va.
+	_bus(PREFIJO + "Voz", PREFIJO + "Valle", _filtro_bajo(2200.0, 0.0))
+	_volumen(PREFIJO + "Oficio", 1.0)
+	_volumen(PREFIJO + "Voz", 1.0)
 	_volumen(PREFIJO + "Valle", volumen_general)
+	# El eco de la Puerta del Norte. Va en el bus del valle entero —o sea que
+	# le vuelve TODO, el río, el viento y el martillo— y arranca en seco: la
+	# mezcla en vivo le sube la vuelta según lo cerca que estés del vano.
+	_armar_eco()
+
+
+## El eco de la Puerta. Un solo reverb para el valle entero, con la vuelta en
+## cero mientras no estés ahí, así que en el 95% del mapa no hace nada más que
+## copiar muestras.
+func _armar_eco() -> void:
+	var i := AudioServer.get_bus_index(PREFIJO + "Valle")
+	if i == -1 or AudioServer.get_bus_effect_count(i) > 0:
+		return
+	var r := AudioEffectReverb.new()
+	# Piedra desnuda: cola larga y poca absorción. `damping` bajo es lo que
+	# separa la roca de una habitación con cosas adentro.
+	r.room_size = 0.88
+	r.damping = 0.22
+	r.spread = 1.0
+	r.predelay_msec = 42.0   # 14 m de ida y vuelta: el ancho del vano
+	r.predelay_feedback = 0.35
+	r.hipass = 0.06          # el retumbe grave de una garganta de roca se queda
+	r.dry = 1.0
+	r.wet = 0.0
+	AudioServer.add_bus_effect(i, r)
+	_reverb = r
 
 
 func _bus(nombre: String, envia: String, efecto: AudioEffect) -> void:
@@ -614,6 +1069,25 @@ func _armar_emisores() -> void:
 	# la diferencia entre "esto está vacío" y "esto está vacío, ¿o no?".
 	_mundo("crujido", PREFIJO + "Crujido", f_bosque + Vector3(0, 1.5, 0), 14.0, 70.0, 1.0)
 
+	# LAS CINCO VOCES DEL TRABAJO. Un emisor por FAMILIA y no por persona: lo
+	# reposiciona `_trabajar()` sobre el que trabaja más cerca, justo antes de
+	# cada golpe. Con esto el gasto de reproductores es fijo —cinco— tenga el
+	# valle siete personas o cuarenta, y ese número es el que había que cuidar.
+	#
+	# El yunque ya estaba armado más arriba con su posición clavada en la
+	# fragua. Se lo deja donde está para el caso en que no haya nadie: no suena.
+	for familia: String in OFICIOS_SON:
+		if familia == "yunque":
+			continue
+		var d: Dictionary = OFICIOS_SON[familia]
+		_mundo(familia, PREFIJO + "Oficio", f_aldea + Vector3(0, 1.1, 0),
+			float(d["unidad"]), float(d["max"]), 1.0)
+
+	# El murmullo. Alcance cortísimo: es "hay alguien al lado", no "hay alguien
+	# en el pueblo". A 22 m ya no llega, y eso es lo que lo salva de ser el
+	# ruido de multitud genérico que este archivo no quiere tener.
+	_mundo("murmullo", PREFIJO + "Voz", f_aldea + Vector3(0, 1.5, 0), 5.0, 22.0, 1.0)
+
 	# DOS EMISORES DEL MISMO RUIDO SUENAN 3 dB MÁS FUERTE QUE UNO.
 	#
 	# Es la suma de dos señales no correlacionadas y estaba sin contemplar: el
@@ -671,7 +1145,7 @@ func _montar(bufs: Dictionary) -> void:
 		for p: Node in _jug[voz]:
 			p.stream = s
 			# Los de un solo golpe no arrancan solos.
-			if voz == "yunque" or voz == "crujido":
+			if VOCES_SUELTAS.has(voz):
 				continue
 			if _hay_salida:
 				p.play(randf() * 3.0)   # desfasados: si arrancan juntos, laten
@@ -729,8 +1203,39 @@ func _process(dt: float) -> void:
 	# De noche la fragua es brasa: menos volumen y bastante más oscura.
 	_corte(PREFIJO + "Fuego", lerpf(900.0, 3000.0, clampf(float(g["fuego"]), 0.0, 1.0)))
 
-	_martillar(dt, float(g["yunque"]))
+	# El eco de la Puerta: lo único del lecho que cambia por la FORMA del lugar
+	# y no por lo que hay adentro.
+	_resonar_la_puerta(pos)
+
+	# La gente. El orden importa: primero se refresca dónde está cada uno,
+	# después suenan las herramientas y al final el murmullo, que es el que
+	# cede si el freno ya está tomado por otra familia.
+	_refrescar_a_la_gente(dt)
+	_trabajar(dt, pos)
+	_murmurar(dt, pos)
 	_crujir(dt, pos)
+	_registrar()
+
+
+## El registro por segundo en el juego de verdad, con `--sonido-registro`.
+## Cuesta una comparación de floats por cuadro cuando está apagado.
+func _registrar() -> void:
+	if not _registro_on:
+		return
+	if _reloj - _cuenta_desde < 1.0:
+		return
+	var seg := int(_reloj)
+	if _cuenta.is_empty():
+		_mudos += 1
+	else:
+		var texto := ""
+		for f: String in _cuenta:
+			texto += "%s×%d  " % [f, int(_cuenta[f])]
+		print("registro  seg %4d   %-34s (venía de %d s callado)"
+			% [seg, texto, _mudos])
+		_mudos = 0
+	_cuenta = {}
+	_cuenta_desde = _reloj
 
 
 func _suave(voz: String, objetivo: float, dt: float, vel: float) -> void:
@@ -741,30 +1246,197 @@ func _suave(voz: String, objetivo: float, dt: float, vel: float) -> void:
 	_gan[voz] = lerpf(a, objetivo, 1.0 - exp(-dt * vel * 1.6))
 
 
-## El martillo de Ilde. No es un metrónomo: son rachas de tres a seis golpes y
-## después una pausa larga. Un herrero calienta, golpea una racha, vuelve al
-## fuego. Un martillo regular se oye a máquina y este mundo no tiene máquinas.
-func _martillar(dt: float, intensidad: float) -> void:
-	if intensidad < 0.05 or not _jug.has("yunque"):
+# ── EL TRABAJO DE LA GENTE ───────────────────────────────────────────────
+
+## Dónde está cada uno, refrescado cuatro veces por segundo.
+##
+## Y no en cada cuadro: son siete búsquedas de nodo por vuelta y el sonido no
+## necesita seguir una zancada. Cuatro por segundo es más que de sobra para que
+## el martillo acompañe a Ilde por su ronda, y es 1/15 del trabajo.
+func _refrescar_a_la_gente(dt: float) -> void:
+	_refresco_gente -= dt
+	if _refresco_gente > 0.0:
 		return
-	_prox_martillo -= dt * (0.55 + intensidad)
-	if _prox_martillo > 0.0:
+	_refresco_gente = 0.25
+	for d in _gente:
+		d["pos"] = _donde_esta(str(d["nombre"]), str(d["slug"]))
+
+
+## Quién de esa familia trabaja más cerca del oyente, y a qué distancia.
+## Devuelve vacío si no hay nadie — y "no hay nadie" es la respuesta normal la
+## mitad del día.
+##
+## **EL ALCANCE ES EL DE LA FAMILIA, no uno global**, y esto fue un bug de
+## verdad que encontró la medición: con un alcance único de 270 m, el módulo
+## disparaba la muela y el caldero desde el Sotobosque, a 200 metros de nadie.
+## El `max_distance` del emisor los volvía inaudibles, así que no se OÍA el
+## defecto — pero cada disparo fantasma se comía el freno común y sacaba de
+## ritmo a las familias que sí se estaban oyendo. Medido: 67 eventos/min en el
+## Sotobosque, un lugar donde no hay una sola persona.
+func _quien_trabaja(familia: String, oido: Vector3) -> Dictionary:
+	var mejor := {}
+	var cerca: float = float((OFICIOS_SON[familia] as Dictionary)["max"])
+	for d in _gente:
+		if not bool(d["trabajando"]) or str(d["familia"]) != familia:
+			continue
+		var dist: float = (d["pos"] as Vector3).distance_to(oido)
+		if dist < cerca:
+			cerca = dist
+			mejor = d
+	if not mejor.is_empty():
+		mejor = mejor.duplicate()
+		mejor["_dist"] = cerca
+	return mejor
+
+
+## EL RALEO POR DISTANCIA. De cerca oís el trabajo entero; de lejos oís cada
+## tanto una racha, y con eso alcanza para saber dónde queda.
+##
+## No es un ahorro disfrazado de diseño, es al revés: el martillo cruza el valle
+## porque es la brújula, y una brújula no necesita hablar todo el tiempo. Sin
+## esto, parado en el Sotobosque a 125 metros de la fragua oías veintisiete
+## martillazos por minuto que no te decían nada nuevo después del tercero —y
+## veintisiete por minuto sostenidos es, literalmente, la definición de que el
+## sonido moleste.
+##
+## Y no miente: no afirma nada distinto de lo que afirmaba. Ilde sigue estando
+## ahí y sigue forjando; lo que cambia es cuánto de eso te llega, que es lo que
+## pasa con cualquier ruido a través de un valle.
+const RALEO_CERCA := 30.0
+const RALEO_LEJOS := 110.0
+const RALEO_MAX := 2.6
+
+
+static func _raleo(dist: float) -> float:
+	return 1.0 + RALEO_MAX * smoothstep(RALEO_CERCA, RALEO_LEJOS, dist)
+
+
+## LAS CINCO HERRAMIENTAS. Es la máquina de rachas del yunque generalizada a
+## las cinco familias, con un estado por familia y un freno común.
+##
+## Lo único que cambió de fondo respecto del martillo viejo es de dónde sale el
+## permiso para sonar: antes era `CURVA_YUNQUE`, o sea la hora; ahora es que el
+## servidor mande a esa persona despierta y en su lugar. La hora sigue estando
+## —de noche duermen— pero ahora está donde tiene que estar, que es en el
+## servidor y no en una tabla de este archivo.
+func _trabajar(dt: float, oido: Vector3) -> void:
+	_freno_gente = maxf(0.0, _freno_gente - dt)
+	for familia: String in OFICIOS_SON:
+		if not _jug.has(familia):
+			continue
+		var quien := _quien_trabaja(familia, oido)
+		var e: Dictionary = _ritmo.get(familia, {"espera": randf() * 3.0, "seguidos": 0, "meta": 0})
+		_ritmo[familia] = e
+		if quien.is_empty():
+			# Nadie de esta familia trabajando cerca: el reloj se congela donde
+			# está. Así el que vuelve al lugar no se come una racha entera de
+			# golpes acumulados en el primer cuadro.
+			continue
+		var d: Dictionary = OFICIOS_SON[familia]
+		e["espera"] = float(e["espera"]) - dt
+		if float(e["espera"]) > 0.0:
+			continue
+		# El freno común: si otra familia acaba de sonar, este golpe se corre
+		# unas décimas en vez de perderse. Perderlo cortaría la racha y una
+		# racha cortada se oye como que el herrero se distrajo.
+		if _freno_gente > 0.0:
+			e["espera"] = _freno_gente + 0.02
+			continue
+		var p := _jug[familia][0] as AudioStreamPlayer3D
+		if p != null and p.stream != null:
+			p.global_position = quien["pos"]
+			if _hay_salida and not _midiendo:
+				var t: Array = d["tono"]
+				var v: Array = d["db"]
+				p.pitch_scale = randf_range(float(t[0]), float(t[1]))
+				p.volume_db = randf_range(float(v[0]), float(v[1]))
+				p.play()
+		_anotar(familia)
+		_freno_gente = GENTE_FRENO
+		var g: Array = d["golpe"]
+		var racha: Array = d["racha"]
+		var pausa: Array = d["pausa"]
+		e["seguidos"] = int(e["seguidos"]) + 1
+		if int(e["meta"]) <= 0:
+			e["meta"] = randi_range(int(racha[0]), int(racha[1]))
+		if int(e["seguidos"]) >= int(e["meta"]):
+			e["seguidos"] = 0
+			e["meta"] = 0
+			# La pausa entre rachas es la que se estira con la distancia; el
+			# ritmo de adentro de la racha NO se toca. Si se estirara el ritmo,
+			# un herrero lejano martillaría en cámara lenta, que es un bicho
+			# raro. Lo que pasa de verdad es que oís menos rachas, no rachas
+			# más lentas.
+			e["espera"] = randf_range(float(pausa[0]), float(pausa[1])) \
+				* _raleo(float(quien["_dist"]))
+		else:
+			e["espera"] = randf_range(float(g[0]), float(g[1]))
+
+
+## EL MURMULLO. Que se oiga que hay alguien, y nada más que eso.
+##
+## No es diálogo: son 800 ms de voz sin palabras, muy filtrada, al tono que le
+## toca a esa persona por su nombre. Suena sólo si estás a menos de 17 m de
+## alguien despierto, y con huecos de 6 a 15 segundos.
+##
+## HASTA DÓNDE LLEGA, sin maquillaje: son dos formantes sobre un pulso glotal,
+## que es la receta de manual y lee como voz humana **de lejos y bajo**. De
+## cerca y solo, no. Es la misma muleta que los pájaros, y hay que decirlo
+## igual: si un día se graban voces, ésta es la segunda de la lista.
+func _murmurar(dt: float, oido: Vector3) -> void:
+	if not _jug.has("murmullo"):
 		return
-	var p := _jug["yunque"][0] as AudioStreamPlayer3D
-	# La cuenta de los golpes corre igual sin salida de audio: así la lógica
-	# de las rachas se ejercita en la verificación aunque no suene.
-	if p != null and p.stream != null and _hay_salida:
-		# Ningún golpe idéntico al anterior: el tono cambia un poco y el
-		# volumen también. Dos golpes iguales seguidos se oyen a muestra.
-		p.pitch_scale = randf_range(0.93, 1.09)
-		p.volume_db = randf_range(-3.0, 1.5)
-		p.play()
-	_martillos_seguidos += 1
-	if _martillos_seguidos >= randi_range(3, 6):
-		_martillos_seguidos = 0
-		_prox_martillo = randf_range(4.5, 11.0)   # vuelve al fuego
-	else:
-		_prox_martillo = randf_range(0.42, 0.58)  # el ritmo del yunque
+	_prox_murmullo -= dt
+	if _prox_murmullo > 0.0:
+		return
+	var cerca: Array[Dictionary] = []
+	for d in _gente:
+		if not bool(d["despierta"]):
+			continue
+		if (d["pos"] as Vector3).distance_to(oido) < MURMULLO_ALCANCE:
+			cerca.append(d)
+	if cerca.is_empty():
+		# Nadie al lado: se reintenta pronto, pero no suena nada. El silencio
+		# cuando no hay nadie es la mitad de por qué el murmullo dice algo.
+		_prox_murmullo = 1.5
+		return
+	if _freno_gente > 0.0:
+		_prox_murmullo = _freno_gente + 0.05
+		return
+	var quien: Dictionary = cerca[randi() % cerca.size()]
+	var p := _jug["murmullo"][0] as AudioStreamPlayer3D
+	if p != null and p.stream != null:
+		p.global_position = quien["pos"]
+		if _hay_salida and not _midiendo:
+			# El tono es de la persona; el ±4% de arriba es que nadie dice dos
+			# veces lo mismo con la misma entonación.
+			p.pitch_scale = float(quien["tono"]) * randf_range(0.96, 1.04)
+			p.volume_db = MURMULLO_DB + randf_range(-3.0, 1.5)
+			p.play()
+	_anotar("murmullo")
+	_freno_gente = GENTE_FRENO
+	_prox_murmullo = randf_range(float(MURMULLO_ESPERA[0]), float(MURMULLO_ESPERA[1]))
+
+
+## El registro. Un `+= 1` por disparo y el hueco de silencio más largo. Es lo
+## que convierte "el sonido molesta" en un número que se puede comparar.
+func _anotar(familia: String) -> void:
+	_cuenta[familia] = int(_cuenta.get(familia, 0)) + 1
+	_silencio_max = maxf(_silencio_max, _reloj - _ultimo_evento)
+	_ultimo_evento = _reloj
+
+
+## EL ECO DE LA PUERTA DEL NORTE. Lo único que cambia porque el LUGAR tiene una
+## forma, y no porque adentro haya algo haciendo ruido.
+func _resonar_la_puerta(oido: Vector3) -> void:
+	if _reverb == null:
+		return
+	var d := Vector2(oido.x, oido.z).distance_to(Vector2(PUERTA.x, PUERTA.z))
+	var w := PUERTA_ECO * (1.0 - smoothstep(PUERTA_LLENO, PUERTA_CERO, d))
+	# Se escribe sólo si cambió de verdad: es una propiedad de un efecto del
+	# AudioServer y tocarla en cada cuadro por nada es trabajo tirado.
+	if absf(_reverb.wet - w) > 0.002:
+		_reverb.wet = w
 
 
 ## El Sotobosque. Sólo cuando estás cerca, y con huecos largos.
@@ -862,6 +1534,16 @@ func _generar_todo() -> Dictionary:
 	# y lo que importa de un transitorio es que no recorte.
 	d["yunque"] = _golpe_wav("yunque", _yunque(151), 0.85)
 	d["crujido"] = _golpe_wav("crujido", _crujido(167), 0.75)
+	# Las cinco voces del trabajo y la de la gente. Los golpes secos —el hacha—
+	# van por PICO como el yunque; lo que tiene largo —la muela, el caldero, la
+	# cota y el murmullo— va a -20 dBFS eficaces con techo de pico, que es la
+	# convención de la casa y la que existe justamente para que un 0,5 quiera
+	# decir lo mismo en todas las voces.
+	d["muela"] = _voz_wav("muela", _muela(181), 0.78)
+	d["caldero"] = _voz_wav("caldero", _caldero(193), 0.80)
+	d["hacha"] = _golpe_wav("hacha", _hacha(199), 0.80)
+	d["cota"] = _voz_wav("cota", _cota(211), 0.70)
+	d["murmullo"] = _voz_wav("murmullo", _murmullo(223), 0.82)
 	return d
 
 
@@ -894,6 +1576,20 @@ func _golpe_wav(voz: String, m: PackedFloat32Array, pico: float) -> AudioStreamW
 	var pk := _pico(m)
 	_nativo[voz] = {"rms": r, "pico": pk}
 	return _wav(_escalar(m, pico / maxf(pk, 0.000001)), false)
+
+
+## Como `_lecho_wav` —nivel eficaz a -20 dBFS con techo de pico— pero sin
+## bucle. Es para lo que tiene largo y no se repite: la muela, el caldero, la
+## cota y el murmullo. Normalizar por RMS sin mirar el pico es exactamente cómo
+## se recortaba el viento, así que el techo no es opcional.
+func _voz_wav(voz: String, m: PackedFloat32Array, pico: float) -> AudioStreamWAV:
+	var r := _rms(m)
+	var pk := _pico(m)
+	_nativo[voz] = {"rms": r, "pico": pk}
+	var k := RMS_VOZ / maxf(r, 0.000001)
+	if pk * k > pico:
+		k = pico / pk
+	return _wav(_escalar(m, k), false)
 
 
 static func _rms(m: PackedFloat32Array) -> float:
@@ -1217,6 +1913,258 @@ static func _crujido(semilla: int) -> PackedFloat32Array:
 	return o
 
 
+# ── LAS VOCES DE LA GENTE ────────────────────────────────────────────────
+#
+#  HASTA DÓNDE LLEGA ESTO, sin maquillaje y por adelantado:
+#    BIEN     · la muela y la cota. Son ruido filtrado y modulado, que es lo
+#               que la síntesis hace mejor que nada.
+#    BIEN     · el caldero. Un borboteo son transitorios sobre una resonancia,
+#               igual que el río, y el río salió bien.
+#    PASABLE  · el hacha. Es un impacto y comparte techo con el yunque: el
+#               golpe seco se finge, la densidad de parciales de la madera
+#               partiéndose no.
+#    EL TECHO · el murmullo. Dos formantes sobre un pulso glotal es la receta
+#               de manual y lee como voz humana **de lejos y bajo**, que es
+#               exactamente cómo se usa acá. De cerca y solo, no. Si un día se
+#               graba algo, el yunque es el primero y esto el segundo.
+
+## Pasabanda de dos polos (RBJ) con el centro barriendo de `hz0` a `hz1`.
+##
+## LOS COEFICIENTES SE RECALCULAN CADA 32 MUESTRAS, NO EN CADA UNA: 32 muestras
+## son 1,5 ms y el centro del filtro se corre unos pocos hercios en ese rato.
+##
+## Y va con el número medido de verdad, porque acá casi meto uno inventado. La
+## primera lectura fue "el arranque pasó de 350 a 620 ms, esto es carísimo" —
+## y era **ruido de la máquina**: los mismos diez bucles viejos, sin tocar una
+## línea, dan 350 en una corrida y 570 en la siguiente bajo WSL. Cronometrando
+## sólo las cinco muestras nuevas, que es lo que había que medir:
+## **39 ms con los coeficientes por muestra, 27 ms con el salto de 32.** O sea
+## que la optimización es real y vale 12 ms, y la alarma era falsa. Es la misma
+## lección de siempre: mirá QUÉ estás midiendo antes de creerle al número.
+const PASO_COEF := 32
+
+
+static func _pasabanda_var(m: PackedFloat32Array, hz0: float, hz1: float,
+		q: float) -> PackedFloat32Array:
+	var n := m.size()
+	var o := PackedFloat32Array()
+	o.resize(n)
+	var x1 := 0.0
+	var x2 := 0.0
+	var y1 := 0.0
+	var y2 := 0.0
+	var b0 := 0.0
+	var a1 := 0.0
+	var a2 := 0.0
+	for i in n:
+		if i % PASO_COEF == 0:
+			var f: float = lerpf(hz0, hz1, float(i) / float(maxi(n - 1, 1)))
+			var w0: float = TAU * clampf(f, 30.0, float(HZ) * 0.45) / float(HZ)
+			var alfa := sin(w0) / (2.0 * q)
+			var a0 := 1.0 + alfa
+			b0 = alfa / a0
+			a1 = -2.0 * cos(w0) / a0
+			a2 = (1.0 - alfa) / a0
+		var x := m[i]
+		var y := b0 * x - b0 * x2 - a1 * y1 - a2 * y2
+		x2 = x1
+		x1 = x
+		y2 = y1
+		y1 = y
+		o[i] = y
+	return o
+
+
+static func _ruido(n: int, semilla: int) -> PackedFloat32Array:
+	var r := RandomNumberGenerator.new()
+	r.seed = semilla
+	var o := PackedFloat32Array()
+	o.resize(n)
+	for i in n:
+		o[i] = r.randf_range(-1.0, 1.0)
+	return o
+
+
+## LA MUELA DE BRUNO. Una pasada de acero sobre piedra de afilar: 620 ms de
+## ruido de banda con el centro subiendo mientras la hoja corre, y una
+## envolvente que crece y cae — que es el gesto del brazo.
+##
+## Se parece al yunque a propósito y a la vez no puede confundirse con él: los
+## dos son el mismo taller, pero el yunque es un GOLPE (ataque instantáneo,
+## parciales afinados) y la muela es un ROCE (ataque lento, banda ancha). Esa
+## diferencia es la que dice "acá hay dos personas y una está aprendiendo".
+static func _muela(semilla: int) -> PackedFloat32Array:
+	var n := int(0.62 * HZ)
+	# El roce. La banda sube de 1.150 a 2.700 Hz: la hoja va tomando velocidad.
+	var o := _pasabanda_var(_ruido(n, semilla), 950.0, 2300.0, 1.15)
+	# El cuerpo de la hoja, que zumba mientras la aprietan. Poco: si se pasa,
+	# suena a sierra eléctrica y este mundo no tiene motores.
+	var cuerpo := _pasabanda_var(_ruido(n, semilla + 5), 380.0, 320.0, 3.4)
+	for i in n:
+		var t := float(i) / float(n)
+		# Crece en el primer tercio y cae: es el brazo, no un interruptor.
+		var env: float = pow(minf(1.0, t / 0.30), 1.4) * pow(1.0 - t, 0.65)
+		o[i] = (o[i] * 0.86 + cuerpo[i] * 0.30) * env
+	return o
+
+
+## EL CALDERO DE ODILA. Un alambique borboteando: 1,1 s de burbujas graves
+## adentro de la resonancia del cacharro, y un tintineo de vidrio al final.
+##
+## Es la misma receta del río —transitorios que suben de tono mientras se
+## apagan— pero una octava más abajo, mucho más lentas y contadas. Un río son
+## ciento y pico de burbujas por segundo; una olla son cinco. **La cantidad es
+## la diferencia entre agua corriendo y agua hirviendo**, y es lo único que hay
+## que acertar.
+static func _caldero(semilla: int) -> PackedFloat32Array:
+	var n := int(1.10 * HZ)
+	var o := PackedFloat32Array()
+	o.resize(n)
+	var r := RandomNumberGenerator.new()
+	r.seed = semilla
+	for _k in 7:
+		var dur := r.randi_range(900, 3200)
+		var pos := r.randi_range(0, n - dur - 1)
+		var f := r.randf_range(105.0, 380.0)
+		var amp := r.randf_range(0.20, 0.62)
+		var dec := 4.6 / float(dur)
+		var w := TAU * f / float(HZ)
+		var subida := r.randf_range(0.30, 1.20)
+		for j in dur:
+			var t := float(j)
+			var fase := w * t * (1.0 + subida * t / float(dur))
+			o[pos + j] += sin(fase) * exp(-dec * t) * amp
+	# El cacharro. Una resonancia angosta y grave le pone las paredes a las
+	# burbujas: sin esto son burbujas al aire libre y no adentro de una olla.
+	var eco := _pasabanda_var(o.duplicate(), 258.0, 258.0, 6.0)
+	# El vidrio: un frasco que se apoya. Es lo que separa a la destiladora de
+	# una cocinera, y es lo único agudo de la muestra.
+	var tin := int(0.86 * HZ)
+	for k in 2:
+		var f := 2650.0 + 520.0 * float(k)
+		var w := TAU * f / float(HZ)
+		var d := (52.0 + 26.0 * float(k)) / float(HZ)
+		for j in range(tin, n):
+			o[j] += sin(w * float(j - tin)) * exp(-d * float(j - tin)) * (0.16 / (1.0 + float(k)))
+	for i in n:
+		# Entra y sale: un pedazo de olla arrancado del medio del hervor.
+		var t := float(i) / float(n)
+		var borde: float = minf(1.0, t / 0.05) * minf(1.0, (1.0 - t) / 0.10)
+		o[i] = (o[i] + eco[i] * 0.55) * borde
+	return o
+
+
+## EL HACHA DE MARTA. Un hachazo en madera: 220 ms y se acabó.
+##
+## Tres cosas y en este orden: el filo entrando (3 ms de ruido crudo), el tronco
+## respondiendo (dos modos graves e INARMÓNICOS, que es lo que hace que suene a
+## leño y no a tambor) y las astillas (cola corta de ruido agudo).
+##
+## No se puede confundir con el yunque y ése es todo el trabajo: el yunque
+## resuena casi un segundo y afinado, el hacha muere en dos décimas y sorda.
+static func _hacha(semilla: int) -> PackedFloat32Array:
+	var n := int(0.22 * HZ)
+	var o := PackedFloat32Array()
+	o.resize(n)
+	var r := RandomNumberGenerator.new()
+	r.seed = semilla
+	# El leño. 143 y 231 Hz: la razón 1,615 no es de una cuerda, y por eso no
+	# suena a nota.
+	for par: Array in [[143.0, 0.62, 30.0], [231.0, 0.34, 46.0]]:
+		var w := TAU * float(par[0]) / float(HZ)
+		var d := float(par[2]) / float(HZ)
+		for j in n:
+			o[j] += sin(w * float(j)) * exp(-d * float(j)) * float(par[1])
+	# El filo entrando.
+	var tr := int(0.003 * HZ)
+	for j in tr:
+		o[j] += r.randf_range(-1.0, 1.0) * (1.0 - float(j) / float(tr)) * 0.70
+	# Las astillas: ruido agudo que se apaga en 90 ms.
+	var ast := _pasabanda_var(_ruido(n, semilla + 3), 3100.0, 1700.0, 0.9)
+	for j in n:
+		o[j] += ast[j] * exp(-float(j) * 26.0 / float(HZ)) * 0.30
+	return o
+
+
+## LA COTA DE SARN. El guardia se acomoda: cuero que se estira y anillas que se
+## tocan. 340 ms, y es lo más callado de las cinco a propósito.
+##
+## **Que un guardia haga POCO ruido es la información.** Si sonara como un
+## herrero, el oído leería "acá se trabaja" en la puerta de la aldea, que es
+## justo lo contrario de lo que pasa ahí: alguien está parado mirando.
+static func _cota(semilla: int) -> PackedFloat32Array:
+	var n := int(0.34 * HZ)
+	# El cuero: ruido grave y angosto con un temblor lento encima. El temblor es
+	# lo que lo vuelve un roce y no un soplo.
+	var o := _pasabanda_var(_ruido(n, semilla), 240.0, 430.0, 1.6)
+	var r := RandomNumberGenerator.new()
+	r.seed = semilla + 11
+	for i in n:
+		var t := float(i) / float(n)
+		var tiemble := 0.62 + 0.38 * sin(TAU * 7.5 * t + 1.1)
+		o[i] *= tiemble * minf(1.0, t / 0.10) * pow(1.0 - t, 0.9)
+	# Las anillas: tres o cuatro tintineos muy cortos y muy agudos, sembrados
+	# donde caiga. Son los que dicen METAL, y con muy poquito alcanza.
+	for _k in r.randi_range(3, 4):
+		var pos := r.randi_range(int(0.04 * HZ), n - 900)
+		var f := r.randf_range(3400.0, 5600.0)
+		var w := TAU * f / float(HZ)
+		var d := r.randf_range(110.0, 190.0) / float(HZ)
+		var amp := r.randf_range(0.05, 0.13)
+		for j in range(0, mini(900, n - pos)):
+			o[pos + j] += sin(w * float(j)) * exp(-d * float(j)) * amp
+	return o
+
+
+## EL MURMULLO. Que se oiga que hay alguien, sin que diga nada.
+##
+## Es síntesis por formantes de manual: un pulso glotal —el equivalente a una
+## cuerda vocal— pasado por dos resonancias que se mueven de una vocal a otra.
+## Eso es lo que el oído lee como voz humana; las consonantes, que es lo que
+## haría entender palabras, no están y no van a estar.
+##
+## Y no van a estar por diseño, no por límite técnico: **el juego es de leer.**
+## Una voz que intenta decir algo y no lo dice suena a juguete, y encima abre la
+## puerta a que el sonido afirme cosas que el servidor no dijo. Esto dice
+## exactamente una: hay una persona ahí.
+##
+## El tono baja hacia el final —una frase que termina cae— y la amplitud
+## tiembla a 3,6 Hz, que es más o menos el ritmo de las sílabas. Esos dos
+## detalles son la diferencia entre "alguien habla" y "hay un zumbido".
+static func _murmullo(semilla: int) -> PackedFloat32Array:
+	var n := int(0.85 * HZ)
+	var fuente := PackedFloat32Array()
+	fuente.resize(n)
+	var r := RandomNumberGenerator.new()
+	r.seed = semilla
+	var f0 := 128.0
+	var fase := 0.0
+	var vibra := 0.0
+	for i in n:
+		var t := float(i) / float(n)
+		# Micro-desafinación. Una voz perfectamente afinada es un sintetizador.
+		vibra += (r.randf_range(-1.0, 1.0) - vibra) * 0.015
+		var hz: float = f0 * (1.0 + 0.05 * vibra) * lerpf(1.07, 0.86, t * t)
+		fase += TAU * hz / float(HZ)
+		# Pulso glotal: un diente de sierra con la caída exponencial de una
+		# glotis abriéndose y cerrándose, no un seno.
+		var ph := fposmod(fase, TAU) / TAU
+		fuente[i] = exp(-ph * 5.5) - 0.17
+	# Las dos formantes. De (520, 1180) a (680, 1520): de una vocal cerrada a
+	# una abierta, que es lo que hace un "mmhm".
+	var f1 := _pasabanda_var(fuente, 520.0, 680.0, 5.5)
+	var f2 := _pasabanda_var(fuente, 1180.0, 1520.0, 7.0)
+	var o := PackedFloat32Array()
+	o.resize(n)
+	for i in n:
+		var t := float(i) / float(n)
+		# Sílabas: la amplitud tiembla a 3,6 Hz. Sin esto es una nota tenida.
+		var silaba := 0.55 + 0.45 * sin(TAU * 3.6 * t * 0.85 - 1.2)
+		var env: float = minf(1.0, t / 0.09) * minf(1.0, (1.0 - t) / 0.22)
+		o[i] = (f1[i] * 1.0 + f2[i] * 0.42) * silaba * env
+	return o
+
+
 # ─────────────────────────────────────────────────────────────────────────
 #  EL INFORME. Lo único de todo esto que se puede verificar sin oír nada.
 # ─────────────────────────────────────────────────────────────────────────
@@ -1248,6 +2196,11 @@ func _informe_de_prueba() -> void:
 	_medir_los_niveles()
 	_medir_las_zonas()
 	_medir_el_timbre()
+	_medir_la_puerta()
+	_medir_a_la_gente()
+	_medir_el_gasto()
+	_medir_los_reproductores()
+	_registro_por_segundo(_tabla["fragua"]["pos"], 90, "La Fragua de Ilde")
 	print("Ganancias lineales. `fondo` es la suma del lecho sin lugar")
 	print("(viento+pájaros+grillos+hojas+hueco); río, fuego, hogar y yunque")
 	print("tienen lugar en el mundo y la distancia los termina de bajar.")
@@ -1288,9 +2241,10 @@ func _informe_de_prueba() -> void:
 		% [lecho("bosque", 0.90)["fondo"] / lecho("campo", 0.90)["fondo"] * 100.0])
 	print("  · la fragua nunca baja de %.2f: el único techo que no se apaga"
 		% [lecho("fragua", 0.05)["fuego"]])
-	print("  · el yunque calla de noche (%.2f) y el fuego no (%.2f)"
-		% [lecho("fragua", 0.05)["yunque"], lecho("fragua", 0.05)["fuego"]])
 	print("  · el río vale 1.00 a toda hora en todos lados: es el ancla")
+	print("  · y la columna `yunque` de esa tabla YA NO DECIDE si suena el")
+	print("    martillo: es sólo cuánto pesaría si alguien estuviera forjando.")
+	print("    Quién forja lo dice el servidor — ver LA GENTE DEL VALLE.")
 	print("")
 	set_process(true)
 	_paso = 0
@@ -1644,6 +2598,327 @@ static func _pasabajos_off(m: PackedFloat32Array, hz: float) -> PackedFloat32Arr
 	return o
 
 
+## ── EL PRESUPUESTO DE LA GENTE ───────────────────────────────────────────
+##
+## "El sonido molesta mucho" es un número —eventos por minuto— y no un
+## adjetivo. Lo que sigue lo mide corriendo LA MÁQUINA DE VERDAD, no una copia:
+## se para el oyente en un punto, se le dan pasos de 1/30 s y se cuenta qué
+## disparó `_trabajar()` y `_murmurar()`. Si mañana alguien le cambia una pausa
+## a un oficio, este número se mueve solo.
+##
+## Ojo con lo que se está midiendo, que es donde estas sondas mienten: acá el
+## oyente está QUIETO. Los números son "cuánto suena si me quedo parado ahí",
+## que es el peor caso para la fatiga y por eso es el que interesa.
+
+## Corre la máquina real `segundos` segundos con el oyente parado en `oido`.
+## Devuelve {familia: veces} más `_silencio` (el hueco más largo, en segundos).
+func _gastar(oido: Vector3, segundos: float) -> Dictionary:
+	var guarda := {
+		"ritmo": _ritmo.duplicate(true), "freno": _freno_gente,
+		"murmullo": _prox_murmullo, "cuenta": _cuenta.duplicate(),
+		"reloj": _reloj, "ultimo": _ultimo_evento, "silencio": _silencio_max,
+	}
+	_ritmo = {}
+	_freno_gente = 0.0
+	_prox_murmullo = randf_range(2.0, 5.0)
+	_cuenta = {}
+	_reloj = 0.0
+	_ultimo_evento = 0.0
+	_silencio_max = 0.0
+	_midiendo = true
+	var dt := 1.0 / 30.0
+	var pasos := int(segundos / dt)
+	for _i in pasos:
+		_reloj += dt
+		_trabajar(dt, oido)
+		_murmurar(dt, oido)
+	# El silencio final cuenta: si no sonó nada en el último medio minuto, ese
+	# medio minuto es silencio y tiene que aparecer.
+	_midiendo = false
+	_silencio_max = maxf(_silencio_max, _reloj - _ultimo_evento)
+	var salida := _cuenta.duplicate()
+	salida["_silencio"] = _silencio_max
+	_ritmo = guarda["ritmo"]
+	_freno_gente = float(guarda["freno"])
+	_prox_murmullo = float(guarda["murmullo"])
+	_cuenta = guarda["cuenta"]
+	_reloj = float(guarda["reloj"])
+	_ultimo_evento = float(guarda["ultimo"])
+	_silencio_max = float(guarda["silencio"])
+	return salida
+
+
+func _medir_el_gasto() -> void:
+	print("── CUÁNTO SUENA LA GENTE (eventos/min, parado 8 min en cada sitio, semilla fija)")
+	print("  El techo declarado del archivo son %.0f eventos/min. Arriba de eso" % TECHO_POR_MINUTO)
+	print("  alguien se pasó de presupuesto, y ahí es donde se vuelve a")
+	print("  \"el sonido molesta mucho\".")
+	var familias: Array[String] = ["yunque", "muela", "caldero", "hacha", "cota", "murmullo"]
+	var cab := "  %-9s %7s %7s %7s %7s %7s %9s | %7s %9s"
+	print(cab % (["dónde"] + familias + ["TOTAL", "silencio"]))
+	# SEMILLA FIJA. Las pausas son aleatorias, así que sin esto la tabla se
+	# mueve tres o cuatro eventos por minuto entre corridas y no se puede
+	# comparar un cambio chico con el de ayer. Ocho minutos por sitio y semilla
+	# clavada: el mismo código da el mismo número siempre.
+	seed(20260818)
+	var minutos := 8.0
+	var sitios: Array = [
+		["aldea", _tabla["aldea"]["pos"]], ["fragua", _tabla["fragua"]["pos"]],
+		["bosque", _tabla["bosque"]["pos"]], ["ruina", _tabla["ruina"]["pos"]],
+		["camino", _tabla["camino"]["pos"]], ["campo", PUNTO_CAMPO],
+	]
+	var peor := 0.0
+	for s: Array in sitios:
+		var c := _gastar(s[1], minutos * 60.0)
+		var fila: Array = [s[0]]
+		var total := 0.0
+		for f: String in familias:
+			var v := float(int(c.get(f, 0))) / minutos
+			total += v
+			fila.append("%.1f" % v if v > 0.0 else "—")
+		fila.append("%.1f" % total)
+		fila.append("%.0f s" % float(c["_silencio"]))
+		peor = maxf(peor, total)
+		print(cab % fila)
+	print("  peor caso: %.1f eventos/min · techo %.0f · %s"
+		% [peor, TECHO_POR_MINUTO, "OK" if peor <= TECHO_POR_MINUTO else "SE PASÓ"])
+	print("")
+	_medir_el_antes()
+
+	# La prueba que importa de verdad: con la gente dormida no suena NADA. Y no
+	# porque haya una curva que apague a la noche, sino porque el servidor los
+	# manda durmiendo. Si esto alguna vez da distinto de cero, el ambiente está
+	# afirmando que hay alguien trabajando donde no lo hay.
+	var copia: Array[Dictionary] = []
+	for d in _gente:
+		copia.append(d.duplicate())
+	for d in _gente:
+		d["despierta"] = false
+		d["trabajando"] = false
+	var noche := _gastar(_tabla["aldea"]["pos"], 240.0)
+	var suma := 0
+	for k: String in noche:
+		if k != "_silencio":
+			suma += int(noche[k])
+	print("  CON TODOS DURMIENDO (lo que manda el servidor de noche): %d eventos en 4 min · %s"
+		% [suma, "OK" if suma == 0 else "MAL: el sonido está inventando gente"])
+	# Y sin nadie en la lista —el servidor no llegó todavía— tampoco suena.
+	_gente = []
+	var vacio := _gastar(_tabla["fragua"]["pos"], 240.0)
+	var suma2 := 0
+	for k: String in vacio:
+		if k != "_silencio":
+			suma2 += int(vacio[k])
+	print("  SIN LISTA DE GENTE (el cliente perdió al servidor): %d eventos en 4 min · %s"
+		% [suma2, "OK: calla" if suma2 == 0 else "MAL: sigue sonando de memoria"])
+	_gente = copia
+	print("")
+
+
+## ANTES Y DESPUÉS, y el "antes" MEDIDO en vez de recordado.
+##
+## "El sonido molesta mucho" es la queja que abre este trabajo, así que hay que
+## poder poner el número viejo al lado del nuevo. El martillo de antes del 18 de
+## agosto era este bucle exacto, copiado de la versión anterior de
+## `_martillar()`: colgaba de `CURVA_YUNQUE` y de nada más, y el reloj de la
+## racha corría MÁS RÁPIDO cuanto más alta estaba la curva
+## (`dt * (0.55 + intensidad)`), o sea que al mediodía iba a 1,55×.
+##
+## El resultado es incómodo y por eso conviene tenerlo escrito: **el martillo
+## solo, al mediodía, valía más eventos por minuto que las seis voces de hoy
+## juntas** — y los valía en un radio de 260 metros, con Ilde durmiendo, muerta
+## o en el Sotobosque, porque no dependía de Ilde.
+func _gastar_como_antes(f: float) -> float:
+	var intensidad := curva(CURVA_YUNQUE, f)
+	if intensidad < 0.05:
+		return 0.0
+	var dt := 1.0 / 30.0
+	var prox := 2.0
+	var seguidos := 0
+	var golpes := 0
+	var segundos := 240.0
+	for _i in int(segundos / dt):
+		prox -= dt * (0.55 + intensidad)
+		if prox > 0.0:
+			continue
+		golpes += 1
+		seguidos += 1
+		if seguidos >= randi_range(3, 6):
+			seguidos = 0
+			prox = randf_range(4.5, 11.0)
+		else:
+			prox = randf_range(0.42, 0.58)
+	return float(golpes) / (segundos / 60.0)
+
+
+func _medir_el_antes() -> void:
+	print("── ANTES Y DESPUÉS (martillazos por minuto del yunque viejo)")
+	print("  El de antes NO dependía de ninguna persona: sonaba por la hora, en")
+	print("  260 m a la redonda, con Ilde despierta, dormida, lejos o muerta.")
+	var cab := "  %-13s %7s %7s %7s %7s %7s %7s %7s"
+	var fila: Array = ["antes (hora)"]
+	var fila2: Array = ["ahora (Ilde)"]
+	for f: float in HORAS_DE_PRUEBA:
+		fila.append("%.0f" % _gastar_como_antes(f))
+	print(cab % (["hora"] + HORAS_DE_PRUEBA.map(func(x): return "%.2f" % x)))
+	print(cab % fila)
+	# El de ahora no depende de la hora sino de si Ilde está despierta, así que
+	# la fila tiene dos valores y no siete: trabajando, y no trabajando.
+	var c := _gastar(_tabla["fragua"]["pos"], 240.0)
+	var con := float(int(c.get("yunque", 0))) / 4.0
+	for _i in HORAS_DE_PRUEBA.size():
+		fila2.append("%.0f" % con)
+	print(cab % fila2)
+	print("  La fila de abajo es plana a propósito: **la hora ya no decide.**")
+	print("  Decide el servidor, y cuando Ilde duerme esa fila es un cero — que")
+	print("  es la línea `CON TODOS DURMIENDO` de la tabla de arriba.")
+	print("")
+
+
+## El registro segundo a segundo. Es lo que pidió la dirección para poder
+## comparar antes y después: qué familia sonó, cuántas veces, y cuánto
+## silencio hubo entre medio.
+func _registro_por_segundo(oido: Vector3, segundos: int, donde: String) -> void:
+	print("── EL REGISTRO, SEGUNDO A SEGUNDO (parado en %s, %d s)" % [donde, segundos])
+	print("  Un renglón por cada segundo en que sonó algo. Los que faltan son")
+	print("  segundos en que no sonó NADIE, y se cuentan en la última columna:")
+	print("  son la mayoría, y eso es a propósito — el silencio es material.")
+	var guarda_ritmo := _ritmo.duplicate(true)
+	var guarda_freno := _freno_gente
+	var guarda_murm := _prox_murmullo
+	var guarda_cuenta := _cuenta.duplicate()
+	_ritmo = {}
+	_freno_gente = 0.0
+	_prox_murmullo = randf_range(2.0, 5.0)
+	_midiendo = true
+	var dt := 1.0 / 30.0
+	var mudos := 0
+	var ultimo := -1
+	var hueco := 0
+	for s in segundos:
+		_cuenta = {}
+		for _i in 30:
+			_trabajar(dt, oido)
+			_murmurar(dt, oido)
+		if _cuenta.is_empty():
+			mudos += 1
+			continue
+		var texto := ""
+		for f: String in _cuenta:
+			texto += "%s×%d  " % [f, int(_cuenta[f])]
+		hueco = s - ultimo - 1
+		ultimo = s
+		print("  seg %3d   %-34s (venía de %d s de silencio)" % [s, texto, hueco])
+	print("  %d de %d segundos sin un solo sonido de gente (%.0f%%)."
+		% [mudos, segundos, 100.0 * float(mudos) / float(segundos)])
+	_midiendo = false
+	_ritmo = guarda_ritmo
+	_freno_gente = guarda_freno
+	_prox_murmullo = guarda_murm
+	_cuenta = guarda_cuenta
+	print("")
+
+
+## ¿La Puerta del Norte suena a Puerta? Lo único que se puede medir sin oír es
+## la rampa: cuánto del lecho vuelve de la piedra a cada distancia, y que en el
+## resto del valle sea exactamente cero.
+func _medir_la_puerta() -> void:
+	print("── EL ECO DE LA PUERTA DEL NORTE (cuánto del lecho vuelve de la piedra)")
+	if _reverb == null:
+		print("  no hay reverb montado · MAL")
+		print("")
+		return
+	var cab := "  %-22s %9s %8s"
+	print(cab % ["desde dónde", "distancia", "eco"])
+	var puntos: Array = [
+		["el vano de la Puerta", PUERTA],
+		["el mojón del camino", Vector3(11, 0, 146)],
+		["El Camino del Norte", _tabla["camino"]["pos"]],
+		["Vado Bajo", _tabla["aldea"]["pos"]],
+		["La Fragua de Ilde", _tabla["fragua"]["pos"]],
+		["El Sotobosque", _tabla["bosque"]["pos"]],
+	]
+	for p: Array in puntos:
+		_resonar_la_puerta(p[1])
+		var d := Vector2((p[1] as Vector3).x, (p[1] as Vector3).z) \
+			.distance_to(Vector2(PUERTA.x, PUERTA.z))
+		print(cab % [p[0], "%.0f m" % d, "%.0f%%" % (_reverb.wet * 100.0)])
+	_resonar_la_puerta(_tabla["aldea"]["pos"])
+	print("  El eco es del LUGAR y no de una fuente: no hay nada ahí haciendo")
+	print("  ruido. Lo que cambia es cómo vuelve lo que ya sonaba.")
+	print("")
+
+
+## Quién hay, de dónde salió la lista, y quién de ésos suena.
+func _medir_a_la_gente() -> void:
+	print("── LA GENTE DEL VALLE (fuente: %s)" % _origen_gente)
+	if _gente.is_empty():
+		print("  NADIE. Ninguna voz de trabajo va a sonar, y está bien: el modo")
+		print("  de falla de este cableado es el silencio, nunca la mentira.")
+		print("")
+		return
+	var cab := "  %-14s %-10s %-9s %-11s %s"
+	print(cab % ["quién", "familia", "dónde", "despierta", "¿suena su oficio?"])
+	for d in _gente:
+		var f := str(d["familia"])
+		var por_que := "sí"
+		if f == "":
+			por_que = "no — su oficio no tiene un gesto que se oiga"
+		elif not bool(d["despierta"]):
+			por_que = "no — está durmiendo (lo dice el servidor)"
+		elif not bool(d["trabajando"]):
+			por_que = "no — está fuera de su lugar"
+		print(cab % [d["nombre"], f if f != "" else "—", d["slug"],
+			"sí" if bool(d["despierta"]) else "no", por_que])
+	print("")
+
+
+## El gasto de reproductores. Es la trampa que este repo ya pisó, así que se
+## mide en vez de suponerse: se le mete al módulo una lista de cuarenta
+## personas y se comprueba que la cuenta de emisores no se mueva.
+func _medir_los_reproductores() -> void:
+	var antes := 0
+	for voz: String in _jug:
+		antes += (_jug[voz] as Array).size()
+	var copia: Array[Dictionary] = []
+	for d in _gente:
+		copia.append(d.duplicate())
+	var oficios := ["herrera", "aprendiz", "destiladora", "cazadora", "guardia"]
+	_gente = []
+	for i in 40:
+		_gente.append({
+			"nombre": "Relleno%d" % i, "familia": familia_de(str(oficios[i % 5])),
+			"despierta": true, "trabajando": true, "slug": "aldea",
+			"pos": _tabla["aldea"]["pos"] + Vector3(float(i % 7), 1.1, float(i / 7)),
+			"tono": 1.0,
+		})
+	var c := _gastar(_tabla["aldea"]["pos"], 120.0)
+	var despues := 0
+	for voz: String in _jug:
+		despues += (_jug[voz] as Array).size()
+	var total := 0
+	for k: String in c:
+		if k != "_silencio":
+			total += int(c[k])
+	print("── EL GASTO DE REPRODUCTORES")
+	print("  Con 7 personas: %d emisores. Con 40: %d. · %s"
+		% [antes, despues, "OK: no crece" if antes == despues else "MAL: crece con la población"])
+	print("  Y con 40 personas apretadas en la aldea el gasto sube a %.1f"
+		% (float(total) / 2.0))
+	print("  eventos/min y no a 40 veces más, porque suena UNO por familia:")
+	print("  el que trabaja más cerca. El freno común de %.2f s hace el resto."
+		% GENTE_FRENO)
+	print("  Ese número SÍ pasa el techo de %.0f, y queda dicho en vez de"
+		% TECHO_POR_MINUTO)
+	print("  escondido: el techo está puesto para el peor caso REAL —una región")
+	print("  son de 8 a 20 personas (DISENO §7.1) y no todas del mismo oficio—")
+	print("  y con cuarenta encima el raleo por distancia deja de aplicar porque")
+	print("  todos están al lado. Si algún día una región junta cuarenta, lo que")
+	print("  hay que tocar es el freno común, no las pausas.")
+	_gente = copia
+	print("")
+
+
 ## Cuántos bucles distintos están SONANDO. No es lo mismo que la cantidad de
 ## emisores —el viento son dos emisores con el mismo bucle— y cuentan sólo los
 ## que suenan, porque un bucle asignado y quieto no queda colgado al salir.
@@ -1694,7 +2969,7 @@ func _revisar_la_cadena() -> void:
 				fallas.append("%s: bucle vacío" % voz)
 				continue
 			muestras += s.data.size() / 2
-			var deberia_repetir := voz != "yunque" and voz != "crujido"
+			var deberia_repetir := not VOCES_SUELTAS.has(voz)
 			if deberia_repetir and s.loop_mode != AudioStreamWAV.LOOP_FORWARD:
 				fallas.append("%s: es un lecho y no está en bucle" % voz)
 	print("Cadena: %d emisores, %d buses, %d muestras (%.1f s de audio, %.1f MB en RAM) · %s"
