@@ -1220,6 +1220,56 @@ static func _humo(pos: Vector3) -> GPUParticles3D:
 ## atrás. Cortado en baldosas de 34 metros, el descarte por cámara y por
 ## distancia hace ese trabajo solo — y sesenta y pico de llamadas de dibujo no
 ## las siente nadie, era mil veces más barato de lo que costaba el problema.
+## ── Las sendas ────────────────────────────────────────────────────────────
+##
+## Viven acá y no en `valle.gd` porque **las usan dos cosas que no se conocen
+## entre sí**: el color del terreno y dónde NO crece el pasto. Sin la segunda
+## el camino no se ve — se pinta la tierra debajo y las veintiséis mil matas
+## siguen creciendo encima, que fue exactamente lo que pasó en el primer
+## intento.
+##
+## Ninguna va al Sotobosque ni a la ruina, y no es olvido: al bosque no se va
+## todos los días, se va cuando hace falta, y a la Casa Quemada no vuelve nadie
+## desde el incendio. **Una senda es una costumbre, no una distancia.**
+const SENDAS := [
+	[Vector3(0, 0, 0),   Vector3(62, 0, -18)],   # la aldea y la fragua
+	[Vector3(0, 0, 0),   Vector3(11, 0, 74)],    # la aldea y el camino del norte
+	[Vector3(62, 0, -18), Vector3(11, 0, 74)],   # la fragua y el camino
+]
+const ANCHO_SENDA := 3.1
+
+static var _garabato: FastNoiseLite
+
+
+## Cuánto de senda hay en un punto: 0 fuera, 1 en el eje. Los bordes se
+## deshilachan y el ancho respira, porque **lo que delata a un camino pintado
+## es que tiene borde recto y termina de golpe.**
+static func senda_en(p: Vector3) -> float:
+	if _garabato == null:
+		_garabato = FastNoiseLite.new()
+		_garabato.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		_garabato.seed = 20260818
+		_garabato.frequency = 0.35
+	var mejor := 0.0
+	var ancho: float = ANCHO_SENDA + _garabato.get_noise_2d(p.x, p.z) * 1.1
+	for tramo in SENDAS:
+		var d := _a_la_senda(p, tramo[0], tramo[1])
+		mejor = maxf(mejor, 1.0 - smoothstep(ancho * 0.45, ancho, d))
+	return mejor
+
+
+## Distancia al segmento, sin la altura: el valle es un cuenco y una senda sube
+## y baja con él.
+static func _a_la_senda(p: Vector3, a: Vector3, b: Vector3) -> float:
+	var ap := Vector2(p.x - a.x, p.z - a.z)
+	var ab := Vector2(b.x - a.x, b.z - a.z)
+	var largo := ab.length_squared()
+	if largo < 0.001:
+		return ap.length()
+	var t := clampf(ap.dot(ab) / largo, 0.0, 1.0)
+	return (ap - ab * t).length()
+
+
 static func pasto(padre: Node3D, alturas: Callable, cantidad: int, radio: float) -> void:
 	var hoja := PrismMesh.new()
 	hoja.size = Vector3(0.09, 0.42, 0.04)
@@ -1458,6 +1508,10 @@ static func _repartir(rng: RandomNumberGenerator, cantidad: int, radio: float,
 		var z := sin(a) * r
 		var t := Transform3D()
 		t.origin = Vector3(x, alturas.call(x, z), z)
+		# Donde la gente pisa todos los días no crece nada. Se sortea contra
+		# lo pisado que está para que el borde se deshilache en vez de cortar.
+		if senda_en(t.origin) > rng.randf() * 0.8:
+			continue
 		t = armar.call(t, rng)
 		var celda := Vector2i(floori(x / BALDOSA), floori(z / BALDOSA))
 		if not salida.has(celda):

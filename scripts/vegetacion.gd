@@ -1007,6 +1007,28 @@ func _normalizada(tipo: int) -> Array:
 		if not mat.vertex_color_use_as_albedo:
 			mat.vertex_color_use_as_albedo = true
 			m.surface_set_material(i, mat)
+		# ── Y el grano, que es lo que los saca de "plástico" ──────────────
+		#
+		# **Los árboles eran lo peor del cuadro y ocupan media pantalla.** Al
+		# lado de casas con revoque, entramado, ladrillo desparejo y teja
+		# curva, una copa de color plano se lee como de otro juego — y la
+		# aldea se mudó a un kit con texturas hace unas horas, así que el
+		# contraste apareció de golpe.
+		#
+		# Es el mismo `Paleta.grano()` que le sacó al suelo el aspecto de
+		# vinilo (tenía desviación de luma 0,03 sobre el 45% de la pantalla).
+		# Ruido triplanar en coordenadas de MUNDO: dos árboles pegados no
+		# repiten el mismo dibujo, que es justo lo que delata a un kit.
+		#
+		# No cuesta un asset nuevo y no cuesta un triángulo. Y ojo con la
+		# tentación de arreglarlo bajando otro pack de árboles: **la
+		# aritmética que manda el bosque a Kenney sigue en pie** —54
+		# triángulos contra 1.576, con 2.500 árboles— y no se reabre sin LOD.
+		if mat.albedo_texture == null:
+			mat.albedo_texture = Paleta.grano()
+			mat.uv1_triplanar = true
+			mat.uv1_scale = Vector3(0.22, 0.22, 0.22)
+			mat.uv1_world_triplanar = true
 		mats.append(mat)
 
 	return [m, norma, mats]

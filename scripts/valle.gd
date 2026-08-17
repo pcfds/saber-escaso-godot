@@ -420,6 +420,28 @@ func _color_terreno(p: Vector3, n: Vector3) -> Color:
 	if pendiente > 0.34:
 		c = c.lerp(roca, clampf((pendiente - 0.34) * 3.0, 0.0, 0.6))
 
+	# ── Los caminos, que es lo que dice "acá vive gente" ──────────────────
+	#
+	# El valle tenía cinco lugares y **el pasto entre ellos estaba intacto**.
+	# Esa gente camina de la aldea a la fragua todos los días desde hace
+	# trescientos días de mundo y no había una sola huella. Un pueblo sin
+	# sendas se lee como una maqueta recién puesta, por más texturas que tengan
+	# las casas.
+	#
+	# No es un asset ni geometría: es que la tierra pisada gane sobre el pasto
+	# cerca de la línea que une dos lugares. Sale gratis y aparece en cada
+	# metro cuadrado entre dos sitios.
+	#
+	# Las sendas no son rectas perfectas: el ruido les mueve el eje, porque un
+	# camino de borde recto es una carretera y acá nadie asfaltó nada. Y los
+	# bordes se deshilachan en vez de cortar — lo que delata un camino pintado
+	# es que termina de golpe.
+	var senda := Detalles.senda_en(p)
+	if senda > 0.0:
+		# Tierra pisada, y un punto más oscura que la tierra de las pendientes:
+		# lo que hace legible una senda desde arriba es el VALOR, no el matiz.
+		c = c.lerp(tierra.darkened(0.12), senda * 0.86)
+
 	# Manchas grandes para romper la uniformidad.
 	var v := _ruido.get_noise_2d(p.x * 2.7, p.z * 2.7) * 0.5 + 0.5
 	return c.lerp(c.darkened(0.30), v * 0.6)
