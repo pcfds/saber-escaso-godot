@@ -39,6 +39,23 @@ var _destino_ronda: Vector3
 var _reloj_ronda := 0.0
 var _altura_terreno: Callable
 
+# ── Los dos relojes del impacto ─────────────────────────────────────────────
+#
+# **Este archivo es el que sabe la geometría del choque**, y por eso es el que
+# pinta el impacto en las dos direcciones. Nadie más sabe quién le pegó a
+# quién: `valle.gd` decide a QUIÉN le pegaste (por distancia) pero no de qué
+# lado, y `jugador.gd` no sabe qué bicho lo mordió.
+#
+# Los dos relojes existen por la misma razón: **el golpe llega en el cuadro 5,
+# no en el 0.** El swing tiene 5 cuadros de anticipo, y si la reacción se
+# pintara al apretar el botón, el bicho se dolería mientras el brazo todavía
+# va para atrás. Que la respuesta empiece en el cuadro del botón —la regla— la
+# cumple el ANTICIPO, que arranca en el cuadro 0; lo que espera es el contacto.
+var _contacto_recibe := -1.0   ## < 0 = no hay golpe tuyo en vuelo
+var _contacto_pega := -1.0     ## < 0 = no hay zarpazo suyo en vuelo
+## Retroceso. Se suma a `velocity` y se apaga por rozamiento en 3-8 cuadros.
+var _empuje := Vector3.ZERO
+
 
 func preparar(pos: Vector3, alturas: Callable) -> void:
 	position = pos
@@ -89,6 +106,7 @@ func _physics_process(dt: float) -> void:
 		velocity.y -= GRAVEDAD * dt
 
 	_reloj_golpe = maxf(0.0, _reloj_golpe - dt)
+	_correr_contactos(dt)
 
 	var dist := INF
 	if objetivo != null:
@@ -120,8 +138,10 @@ func _physics_process(dt: float) -> void:
 				_mirar_a(objetivo.global_position, dt, 12.0)
 				if _reloj_golpe <= 0.0:
 					_reloj_golpe = ESPERA_GOLPE
+					# El brazo arranca YA —el anticipo es la respuesta— y el
+					# zarpazo cae 5 cuadros después, cuando el brazo llega.
 					_figura.atacar()
-					pego.emit(DANIO)
+					_contacto_pega = Impacto.CONTACTO
 			else:
 				var dir := (objetivo.global_position - global_position)
 				dir.y = 0.0
@@ -130,7 +150,29 @@ func _physics_process(dt: float) -> void:
 				velocity.z = dir.z * VELOCIDAD
 				_mirar_a(objetivo.global_position, dt, 10.0)
 
+	# El retroceso se SUMA a lo que la IA quiso hacer y se apaga por rozamiento,
+	# en vez de reemplazar la velocidad: así el bicho sale despedido medio metro
+	# pero no se le corta la embestida, que es lo que lo haría ver como que se
+	# reinició. `EMPUJE_FRENO` = 62 m/s² lo apaga en 8 cuadros.
+	#
+	# **Y se SACA justo después de `move_and_slide()`.** Sin eso el empujón se
+	# acumula: `velocity` es un miembro que sobrevive al cuadro, la IA lo baja
+	# con un `move_toward` de 16 m/s² —0,27 m/s por cuadro— y el empujón suma 8
+	# de una. Medido con el bug puesto: el bicho llegaba a **41 m/s** en seis
+	# cuadros y salía disparado del valle. Sumar y restar en el mismo cuadro
+	# deja el empujón como lo que es, un desvío, y no como estado.
+	var empujon := _empuje
+	if empujon.length_squared() > 0.0004:
+		velocity.x += empujon.x
+		velocity.z += empujon.z
+		_empuje = _empuje.move_toward(Vector3.ZERO, Impacto.EMPUJE_FRENO * dt)
+	else:
+		empujon = Vector3.ZERO
+		_empuje = Vector3.ZERO
+
 	move_and_slide()
+	velocity.x -= empujon.x
+	velocity.z -= empujon.z
 	_figura.animar(dt, Vector2(velocity.x, velocity.z).length(), is_on_floor())
 
 
@@ -166,14 +208,117 @@ func _mirar_a(punto: Vector3, dt: float, rapidez: float) -> void:
 
 ## Reacción inmediata al golpe, sin tocar la vida: la vida la decide el
 ## servidor. Esto es para que el clic se sienta en el mismo cuadro.
+##
+## "En el mismo cuadro" pasó a significar dos cosas distintas y las dos se
+## cumplen: **la IA reacciona ya** (deja de rondar y viene por vos, en este
+## mismo cuadro) y **la presentación del choque espera al cuadro 5**, que es
+## cuando el arma llega. Si el bicho se doliera en el cuadro 0 se estaría
+## doliendo mientras el brazo todavía va para atrás.
 func doler_ahora() -> void:
 	if _estado == Estado.MUERTO:
 		return
-	_figura.doler()
 	if _estado == Estado.RONDA:
 		_estado = Estado.PERSIGUE
+	_contacto_recibe = Impacto.CONTACTO
 
 
+## Los dos relojes de contacto, uno por dirección. Se cuentan en
+## `_physics_process`, o sea que la pausa al impactar (`time_scale = 0`) los
+## detiene igual que a todo lo demás — que es lo correcto: un golpe encadenado
+## no se adelanta porque el mundo esté congelado.
+func _correr_contactos(dt: float) -> void:
+	if _contacto_recibe >= 0.0:
+		_contacto_recibe -= dt
+		if _contacto_recibe <= 0.0:
+			_contacto_recibe = -1.0
+			_te_pegaron()
+	if _contacto_pega >= 0.0:
+		_contacto_pega -= dt
+		if _contacto_pega <= 0.0:
+			_contacto_pega = -1.0
+			_zarpazo()
+
+
+## Cuadro 5 del golpe TUYO: el arma llega. Acá se juntan las cinco cosas, y las
+## cinco son presentación —no se toca `vida`, eso lo dice el servidor.
+##
+##   · pausa      3 cuadros congelados
+##   · retroceso  8,0 m/s en el bicho (≈52 cm, 8 cuadros) y 3,2 en vos (≈8 cm)
+##   · sacudida   0,55 de amplitud, 7 cuadros
+##   · respingo   10 cuadros de deformación de cuerpo entero + destello
+##   · chispa     12 cuadros en el punto del choque
+func _te_pegaron() -> void:
+	if _estado == Estado.MUERTO:
+		return
+	_figura.doler()
+
+	# De dónde vino. El único que te puede pegar es tu objetivo: `valle.gd`
+	# elige por distancia al jugador y no hay otra fuente de `doler_ahora()`.
+	var dir := Vector3.FORWARD
+	if objetivo != null and is_instance_valid(objetivo):
+		var d := global_position - objetivo.global_position
+		d.y = 0.0
+		if d.length_squared() > 0.0001:
+			dir = d.normalized()
+
+	_empuje = dir * Impacto.EMPUJE_RECIBE
+	Impacto.congelar(Impacto.PAUSA_DAR)
+	# La chispa va a la altura del pecho y 35 cm del lado del que pegó: en el
+	# punto del choque, no en el centro del bicho. A 40 m son 10 px de
+	# diferencia y aun así se nota cuál de los dos recibió.
+	Impacto.estallar(self, global_position + Vector3.UP * 1.05 - dir * 0.35,
+		Paleta.BRASA_EMISION, 1.0)
+
+	var jug := objetivo as Jugador
+	if jug != null:
+		jug.sacudir(Impacto.SACUDIDA_DAR)
+		# El que pega también retrocede, menos. Sin esto los dos cuerpos se
+		# interpenetran y el cerebro lee "no chocaron".
+		jug.empujar(-dir * Impacto.EMPUJE_PEGA)
+
+
+## Cuadro 5 del zarpazo SUYO: el brazo llega.
+##
+## **Acá sale el aviso al servidor y no antes**, y eso es un cambio de cuándo,
+## no de qué: el POST es el mismo, sale 83 ms más tarde, y el número lo sigue
+## decidiendo el servidor. Se emite SIEMPRE, sin volver a mirar la distancia:
+## la decisión de atacar ya se tomó con la comprobación de alcance que hace
+## `PERSIGUE`, y re-chequear acá cambiaría cuánto daño recibe el jugador, que
+## es justo lo que este archivo no puede decidir.
+##
+## Lo que sí se mira antes de PINTAR es que el jugador siga cerca: si rodó y se
+## fue, sacudir la cámara y plantar una chispa donde ya no hay nadie es dibujar
+## un choque que no se ve. El daño salió igual.
+func _zarpazo() -> void:
+	if _estado == Estado.MUERTO:
+		return
+	pego.emit(DANIO)
+
+	if objetivo == null or not is_instance_valid(objetivo):
+		return
+	var d := objetivo.global_position - global_position
+	d.y = 0.0
+	if d.length_squared() < 0.0001 or d.length() > ALCANCE * 2.0:
+		return
+	var dir := d.normalized()
+
+	Impacto.congelar(Impacto.PAUSA_RECIBIR)
+	# Herrumbre y no brasa: el color dice de quién es el golpe sin un cartel.
+	Impacto.estallar(self, objetivo.global_position + Vector3.UP * 1.10 - dir * 0.30,
+		Paleta.HERRUMBRE, 1.15)
+	# El bicho también rebota al pegar, poco: 8 cm.
+	_empuje = -dir * Impacto.EMPUJE_PEGA
+	var jug := objetivo as Jugador
+	if jug != null:
+		jug.sacudir(Impacto.SACUDIDA_RECIBIR)
+		jug.empujar(dir * Impacto.EMPUJE_JUGADOR)
+
+
+## La vida que manda el servidor. **No lleva pausa, ni sacudida, ni chispa**, y
+## es a propósito: por acá entra `recibir(9999)` cuando `/mundo` avisa que el
+## bicho ya no está, y eso puede ser un bicho que mató otro jugador en la otra
+## punta del valle. Congelar el mundo por un golpe que no diste sería el
+## clásico tirón sin causa. El respingo sí queda: si estás mirando, se ve caer.
 func recibir(danio: int) -> void:
 	if _estado == Estado.MUERTO:
 		return

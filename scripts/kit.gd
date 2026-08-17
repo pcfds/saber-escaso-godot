@@ -51,9 +51,42 @@ class_name Kit
 
 const RAIZ := "res://assets/kenney/"
 
+## La otra carpeta. **Dos autores en el repo, y es una decisión, no un descuido.**
+##
+## Kenney cubre la vegetación de masa y no hay con qué cambiarlo: un pino suyo
+## son 54 triángulos y el más barato de Quaternius son 1.576. Con ~2.500 árboles
+## sembrados eso es la diferencia entre 135 mil triángulos y cuatro millones, o
+## sea entre un valle y una presentación.
+##
+## Lo que Kenney NO cubre es un bicho vivo —no tiene animales— y ahí no hay
+## empate que discutir: o entra otro autor o el valle sigue sin fauna.
+##
+## La costura se cierra en la aduana: las mallas de Quaternius vienen **sin
+## textura**, sólo con `albedo_color`, así que pasan por el mismo
+## `Paleta.domar_material()` que todo lo demás y salen en la escalera de valores
+## de esta paleta. No es "el marrón de Quaternius al lado del verde de Kenney":
+## es el marrón de `paleta.gd` en las dos.
+const RAIZ_Q := "res://assets/quaternius/"
+
 ## Cache de rutas ya resueltas. Estático: vive lo que vive el proceso.
 static var _mallas: Dictionary = {}
+static var _escenas: Dictionary = {}
+static var _domadas: Dictionary = {}
 static var _fallados: Dictionary = {}
+
+
+## Resuelve una ruta del kit a un archivo. Las rutas que arrancan con
+## `quaternius/` van a la otra carpeta; el resto son las de siempre y **no hay
+## que tocar un solo llamador** para que sigan andando.
+##
+## Prueba `.glb` y `.gltf` porque los dos packs no exportan igual.
+static func archivo(ruta: String) -> String:
+	var raiz := RAIZ_Q if ruta.begins_with("quaternius/") else RAIZ
+	var base: String = raiz + (ruta.trim_prefix("quaternius/") if ruta.begins_with("quaternius/") else ruta)
+	for ext in [".glb", ".gltf"]:
+		if ResourceLoader.exists(base + ext):
+			return base + ext
+	return ""
 
 
 ## El Mesh de un `.glb` del kit. `ruta` es relativa y sin extensión:
@@ -66,11 +99,11 @@ static func malla(ruta: String) -> Mesh:
 	if _mallas.has(ruta):
 		return _mallas[ruta]
 
-	var completa := RAIZ + ruta + ".glb"
-	if not ResourceLoader.exists(completa):
+	var completa := archivo(ruta)
+	if completa == "":
 		if not _fallados.has(ruta):
 			_fallados[ruta] = true
-			push_warning("Kit: no está %s" % completa)
+			push_warning("Kit: no está %s" % ruta)
 		return null
 
 	var escena := load(completa) as PackedScene
@@ -117,13 +150,13 @@ static func malla(ruta: String) -> Mesh:
 ##
 ## Se trabaja sobre una copia del material: el recurso importado no se toca, así
 ## que reimportar el `.glb` no arrastra nada nuestro.
-static func _domar_color(m: Mesh) -> void:
+static func _domar_color(m: Mesh, techo: float = Paleta.SATURACION_MUNDO) -> void:
 	for i in m.get_surface_count():
 		var base := m.surface_get_material(i) as StandardMaterial3D
 		if base == null:
 			continue
 		var nuevo := base.duplicate() as StandardMaterial3D
-		Paleta.domar_material(nuevo)
+		Paleta.domar_material(nuevo, techo)
 		m.surface_set_material(i, nuevo)
 
 
@@ -165,6 +198,53 @@ static func poner(padre: Node3D, ruta: String, pos: Vector3, giro: float = 0.0,
 	mi.scale = escala if escala is Vector3 else Vector3.ONE * (escala as float)
 	padre.add_child(mi)
 	return mi
+
+
+## Una ESCENA entera del kit, instanciada, con sus materiales ya domados.
+##
+## `malla()` no sirve para todo. Un animal es un `MeshInstance3D` con
+## `Skeleton3D` y `AnimationPlayer` al lado: si le sacás la malla y tirás el
+## resto te queda una estatua en pose de reposo, con los brazos abiertos.
+## Para eso está esto — devuelve el árbol completo.
+##
+## **El PackedScene se cachea, la instancia no.** Cada llamada es un `Node3D`
+## nuevo, pero el `Mesh` de adentro es el MISMO recurso para todos: eso es lo
+## que hace que domarlo cueste una vez y no una por bicho. `_domadas` lleva la
+## cuenta para no volver a pasar la aduana por una malla ya pasada.
+## `techo` es el tope de saturación de la aduana; ver `Paleta.domar_material()`.
+## Los animales entran con `SATURACION_GENTE` porque un pelaje es cuero.
+static func escena(ruta: String, techo: float = Paleta.SATURACION_MUNDO) -> Node3D:
+	var e: PackedScene = _escenas.get(ruta)
+	if e == null:
+		if _fallados.has(ruta):
+			return null
+		var completa := archivo(ruta)
+		if completa == "":
+			_fallados[ruta] = true
+			push_warning("Kit: no está %s" % ruta)
+			return null
+		e = load(completa) as PackedScene
+		if e == null:
+			_fallados[ruta] = true
+			push_warning("Kit: %s no es una escena" % completa)
+			return null
+		_escenas[ruta] = e
+
+	var n := e.instantiate() as Node3D
+	if n != null:
+		_domar_arbol(n, techo)
+	return n
+
+
+## Pasa por la aduana todas las mallas de un árbol de nodos. Ver `escena()`.
+static func _domar_arbol(n: Node, techo: float) -> void:
+	if n is MeshInstance3D:
+		var m := (n as MeshInstance3D).mesh
+		if m != null and not _domadas.has(m.get_instance_id()):
+			_domadas[m.get_instance_id()] = true
+			_domar_color(m, techo)
+	for h in n.get_children():
+		_domar_arbol(h, techo)
 
 
 ## Cuántos triángulos tiene una malla del kit. Para el censo: el costo del arte

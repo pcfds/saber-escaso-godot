@@ -1,0 +1,33 @@
+; El A/B de las casas: Kenney (lo que hay) contra Quaternius (la propuesta),
+; con la misma luz, la misma paleta y el mismo suelo.
+;
+;   godot escenas/prueba_casas.tscn                              ← miralo
+;   godot escenas/prueba_casas.tscn --quit-after 300 -- --captura
+;   godot escenas/prueba_casas.tscn --quit-after 300 -- --captura --lejos
+;
+; `--lejos` pone la cámara a 55 m, que es el techo de la distancia de juego. Es
+; la vista que decide: si a 55 m las dos casas se leen igual, el cambio no vale
+; el trabajo.
+;
+; No usa `ambiente.gd` a propósito — su desenfoque de lejanía convierte una
+; comparación en dos manchas. Ver el comentario de `prueba_fauna.tscn`.
+
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/prueba_casas.gd" id="1_pc"]
+
+[node name="PruebaCasas" type="Node3D"]
+script = ExtResource("1_pc")
+
+[node name="Sol" type="DirectionalLight3D" parent="."]
+light_energy = 1.6
+shadow_enabled = true
+directional_shadow_max_distance = 120.0
+
+[node name="Relleno" type="DirectionalLight3D" parent="."]
+light_energy = 0.35
+
+[node name="Camara" type="Camera3D" parent="."]
+fov = 42.0
+far = 400.0
+current = true

@@ -1500,6 +1500,12 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 			if is_instance_valid(m):
 				marcas.append({"pos": m.global_position, "nombre": m.nombre_servidor})
 		mapa.amenazas = marcas
+		var quienes: Array = []
+		for nombre: String in _npcs:
+			var n2: Node3D = _npcs[nombre]
+			if is_instance_valid(n2):
+				quienes.append({"pos": n2.global_position, "nombre": nombre})
+		mapa.vecinos = quienes
 	# La bienvenida necesita la crónica: se pide una sola vez, al entrar.
 	if not _ya_pedimos_cronica:
 		_ya_pedimos_cronica = true

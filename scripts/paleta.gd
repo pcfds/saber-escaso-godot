@@ -945,18 +945,42 @@ static func _traducir_muestra(r: int, g: int, b: int) -> PackedByteArray:
 ## También le saca el especular, que es la otra mitad del aspecto de plástico:
 ## el kit viene con `roughness` de fábrica y ocho superficies con el mismo
 ## reflejo parejo se leen como ocho piezas del mismo juguete.
-static func domar_material(m: BaseMaterial3D) -> void:
+## `techo` es el tope de saturación. El de fábrica es `SATURACION_MUNDO` —
+## terreno, muros, techos, follaje— y es el que corresponde a casi todo. La
+## excepción son los **animales**: un pelaje es cuero, no es un muro, y este
+## archivo ya tiene ese peldaño escrito en `SATURACION_GENTE` ("pelo, cuero,
+## tintes de ropa"). Con 0,35 los siete bichos de `fauna.gd` colapsaban al
+## mismo tostado —medido: la vaca y el caballo salían el mismo color— y un
+## rebaño de un solo color se lee como un rebaño de copias.
+static func domar_material(m: BaseMaterial3D, techo: float = SATURACION_MUNDO) -> void:
 	if m == null:
 		return
 	if m.albedo_texture != null:
-		m.albedo_texture = atlas_domado(m.albedo_texture)
+		# **Lo de Quaternius ya viene domado de disco y no se vuelve a domar.**
+		#
+		# `atlas_domado()` traduce píxel por píxel en GDScript. Sobre el atlas
+		# de Kenney eso es una pasada de 512² con 24 muestras distintas, o sea
+		# 24 traducciones y el resto cache. Sobre un trim sheet fotográfico de
+		# Quaternius son decenas de miles de colores únicos, y además el
+		# clavado al peldaño lo posteriza — este archivo lo avisa textual en
+		# `domar()`: *no le hagas esto a una textura fotográfica*. Por eso ésas
+		# se hornean **offline**, con saturación al techo y valor comprimido en
+		# vez de clavado, antes de entrar al repo. Ver `assets/PROCEDENCIA.md`.
+		#
+		# **El filtro es por ruta y NO por tamaño.** Se probó por tamaño
+		# (`<= 128`) y fue un error caro de ver: el atlas de Kenney también es
+		# de 512, así que la aduana se apagó para el pueblo entero y las casas
+		# volvieron al menta y coral de fábrica. En una captura se ve al toque;
+		# en el código no se ve nada.
+		if not m.albedo_texture.resource_path.contains("/quaternius/"):
+			m.albedo_texture = atlas_domado(m.albedo_texture)
 		# Con atlas, el albedo es un multiplicador (Kenney lo deja en blanco):
 		# domarlo lo bajaría dos veces.
 		m.albedo_color = Color.WHITE
 	elif KIT_MATERIAL.has(m.resource_name):
 		m.albedo_color = KIT_MATERIAL[m.resource_name]
 	else:
-		m.albedo_color = domar(m.albedo_color)
+		m.albedo_color = domar(m.albedo_color, techo)
 	# El agua de la fuente es una de las tres cosas que brillan en este juego
 	# (cuero, metal, agua): se le doma el color y se le deja la rugosidad baja,
 	# que es de donde sale el reflejo.

@@ -72,11 +72,23 @@ var _ojo_d: MeshInstance3D
 var _alto := 1.85          ## la altura ya corregida por el hash del nombre
 var _fase := 0.0
 var _intensidad := 0.0     ## 0 quieto, 1 caminando: suaviza el arranque y el freno
-var _golpe := 0.0          ## 0..1 mientras dura el swing
+## La inclinación del torso por caminar, aparte de `_torso.rotation.x`. Ver el
+## comentario en `animar()`: si el suavizado leyera del nodo, los desvíos del
+## golpe y del dolor se realimentarían cuadro a cuadro.
+var _inclinacion := 0.0
+## Segundos que le quedan al swing. Cuenta hacia atrás desde `Impacto.SWING_TOTAL`
+## (23 cuadros) y de ahí sale en qué fase está: anticipo, embate o recuperación.
+var _golpe := 0.0
 var _arma: MeshInstance3D
 var _juntando := false
 var _agache := 0.0
+## Segundos que le quedan al respingo de dolor, normalizado 1→0 sobre
+## `DOLOR_DURA`. Ver `doler()`.
 var _dolor := 0.0
+## Las mallas del cuerpo, para el destello blanco del cuadro del impacto. Se
+## juntan una sola vez (recursivo) y se invalidan al reconstruir o al equipar.
+var _mallas: Array[MeshInstance3D] = []
+var _destello: StandardMaterial3D
 var _vivo := true
 var _reloj := 0.0          ## tiempo propio, para respirar y mirar alrededor
 var _espera_parpadeo := 3.0
@@ -94,6 +106,7 @@ func construir() -> void:
 		_raiz.queue_free()
 	_ojo_i = null
 	_ojo_d = null
+	_mallas.clear()   # el cuerpo es otro: las mallas cacheadas ya no existen
 
 	_raiz = Node3D.new()
 	add_child(_raiz)
@@ -567,12 +580,23 @@ func animar(dt: float, velocidad: float, en_piso: bool) -> void:
 	_torso.position.y = _alto * 0.52 + abs(s2) * 0.055 * _intensidad
 	_torso.rotation.z = s * 0.05 * _intensidad
 
-	# (3) inclinación proporcional a la velocidad
-	_torso.rotation.x = lerp(_torso.rotation.x, _intensidad * 0.16, 8.0 * dt)
+	# (3) inclinación proporcional a la velocidad.
+	#
+	# **El suavizado va en `_inclinacion` y no en `_torso.rotation.x`, y eso es
+	# un arreglo, no un refactor.** Estaba escrito como
+	# `rotation.x = lerp(rotation.x, objetivo, ...)`, o sea leyendo del mismo
+	# lugar donde después escriben el agache, el golpe y el dolor con `+=`. El
+	# resultado es que esos aportes NO eran un desvío de un cuadro: se
+	# realimentaban. Medido: los 46° de respingo del dolor llegaban a **112°**
+	# —el personaje se doblaba hacia atrás como un arco— y el golpe dejaba al
+	# torso 30° inclinado medio segundo después de terminar. Con la inclinación
+	# guardada aparte, lo que suma cada efecto es exactamente lo que dice sumar.
+	_inclinacion = lerp(_inclinacion, _intensidad * 0.16, 8.0 * dt)
+	_torso.rotation.x = _inclinacion
 
 	# La cabeza se estabiliza: mira al frente aunque el torso rebote. Es el
 	# detalle que más aporta a que parezca un ser vivo.
-	_cabeza.rotation.x = -_torso.rotation.x * 0.7 + sin(_fase * 0.7) * 0.02
+	_cabeza.rotation.x = -_inclinacion * 0.7 + sin(_fase * 0.7) * 0.02
 
 	if not en_piso:
 		# En el aire: piernas recogidas, brazos arriba.
@@ -593,23 +617,155 @@ func animar(dt: float, velocidad: float, en_piso: bool) -> void:
 		_pierna_d.rotation.x = lerp(_pierna_d.rotation.x, -0.25, _agache)
 
 	if _golpe > 0.0:
-		_golpe = maxf(0.0, _golpe - dt * 3.6)
-		# Curva de swing: sube rápido, baja lento. Un seno simple se ve blando.
-		var t := 1.0 - _golpe
-		var arco: float = sin(t * PI) * (1.0 - t * 0.35)
-		_brazo_d.rotation.x = -2.4 * arco
-		_torso.rotation.y = -arco * 0.5
+		_golpe = maxf(0.0, _golpe - dt)
+		_pose_de_golpe(Impacto.SWING_TOTAL - _golpe)
+		if _golpe <= 0.0:
+			# La curva llega a cero sola, pero dejarla clavada en cero exacto
+			# evita que un resto de 0,001 rad se quede peleando con `_process`.
+			_torso.rotation.y = 0.0
 
 	if _dolor > 0.0:
-		_dolor = maxf(0.0, _dolor - dt * 4.0)
-		_raiz.position.x = sin(_dolor * 55.0) * _dolor * 0.13
-		_torso.rotation.x -= _dolor * 0.3
-	else:
+		_dolor = maxf(0.0, _dolor - dt / DOLOR_DURA)
+		_pose_de_dolor(_dolor)
+	elif _raiz.position.x != 0.0 or _raiz.scale != Vector3.ONE:
 		_raiz.position.x = 0.0
+		_raiz.scale = Vector3.ONE
+		_apagar_destello()
 
 
+## El swing, cuadro por cuadro. `e` son los segundos transcurridos desde que
+## empezó. Las tres fases están en `impacto.gd` con sus números.
+##
+## **Lo que cambió y por qué.** Antes esto era `sin(t*PI)` sobre el brazo
+## derecho y medio radián de torso: 114 grados de brazo, medidos, y aun así el
+## reclamo fue *"no mueve los brazos"*. El reclamo era correcto y la causa no:
+## la cámara está a 40 m y a veces a 68, y ahí un brazo son dos píxeles. Lo que
+## se lee a esa distancia es la SILUETA, así que ahora el que se mueve es el
+## torso: 31° hacia un lado en el anticipo y 52° hacia el otro en el embate son
+## 83 grados de cuerpo entero girando, y eso sí cambia el contorno.
+##
+## Y sin anticipo no hay golpe, hay teletransporte del brazo: los 5 cuadros en
+## que el cuerpo se echa para atrás son los que hacen que el embate se lea como
+## la consecuencia de algo.
+func _pose_de_golpe(e: float) -> void:
+	if e < Impacto.SWING_ANTICIPO:
+		# ── Anticipo, cuadros 0-4 ──
+		# Seno de cuarto de vuelta: sale rápido y se frena al llegar al tope,
+		# que es como se carga un brazo de verdad.
+		var u := sin(e / Impacto.SWING_ANTICIPO * PI * 0.5)
+		_brazo_d.rotation.x = 0.95 * u          # el brazo va ATRÁS, no adelante
+		_torso.rotation.y = 0.55 * u            # el hombro derecho se retrasa
+		_torso.rotation.x -= 0.18 * u           # y el cuerpo se echa hacia atrás
+		return
+
+	var e2 := e - Impacto.SWING_ANTICIPO
+	if e2 < Impacto.SWING_EMBATE:
+		# ── Embate, cuadros 5-12. El contacto es el cuadro 5, o sea el primero. ──
+		# `pow(u, 0.45)` pone la mitad del recorrido en los primeros 2 cuadros:
+		# un golpe que reparte su velocidad parejo se ve como que empuja.
+		var p := pow(e2 / Impacto.SWING_EMBATE, 0.45)
+		_brazo_d.rotation.x = lerpf(0.95, -2.5, p)
+		_torso.rotation.y = lerpf(0.55, -0.90, p)
+		# Sale del -0,18 con que terminó el anticipo, no de cero: si arrancara
+		# de cero el torso pegaría un salto de 10° en un cuadro justo en el
+		# momento del contacto, que es el peor cuadro para tener un salto.
+		_torso.rotation.x += lerpf(-0.18, 0.22, p)
+		# El cuerpo BAJA seis centímetros al descargar. Es poco en metros y
+		# mucho en peso: sin eso el golpe sale de un cuerpo que flota.
+		_torso.position.y -= 0.06 * p
+		return
+
+	# ── Recuperación, cuadros 13-22 ──
+	# `smoothstep` invertido: arranca despacio (el cuerpo se queda un instante
+	# en el final del golpe) y vuelve. Cortar en seco acá se ve a rebobinado.
+	var u := clampf((e2 - Impacto.SWING_EMBATE) / Impacto.SWING_RECUPERA, 0.0, 1.0)
+	var k := 1.0 - u * u * (3.0 - 2.0 * u)
+	_brazo_d.rotation.x = -2.5 * k
+	_torso.rotation.y = -0.90 * k
+	_torso.rotation.x += 0.22 * k
+	_torso.position.y -= 0.06 * k
+
+
+## El respingo de recibir un golpe, cuadro por cuadro. `d` va de 1 a 0 en los
+## 10 cuadros de `DOLOR_DURA`.
+##
+## Todo acá es de cuerpo entero por el mismo motivo que el swing: a 40 metros
+## los 13 cm de sacudida lateral que tenía antes son cuatro píxeles moviéndose
+## medio pestañeo, o sea nada. Lo que sí se ve desde ahí es que la silueta
+## cambie de forma.
+func _pose_de_dolor(d: float) -> void:
+	# Sacudida lateral: 19 cm y DOS vueltas enteras en los 10 cuadros.
+	#
+	# La fase se saca de lo TRANSCURRIDO (`1 - d`) y no de `d * 62`, que es como
+	# estaba. Con `d * 62` el argumento del seno bajaba 6,2 rad por cuadro —una
+	# vuelta y pico— así que el seno se muestreaba casi en la misma fase todos
+	# los cuadros y **no oscilaba**: medido, la sacudida salía de -11,6 cm y
+	# volvía a cero sin cruzar el cero ni una vez. Era un desplazamiento, no un
+	# temblor. `TAU * 2` deja las dos vueltas escritas y a prueba de aliasing.
+	_raiz.position.x = sin((1.0 - d) * TAU * 2.0) * d * 0.19
+	# El tronco se dobla 46° hacia atrás. Es EL cambio de silueta del respingo.
+	_torso.rotation.x -= d * 0.80
+	# Y el cuerpo entero se aplasta y se ensancha. `d*d` hace que el aplaste se
+	# vaya antes que la sacudida: primero el impacto deforma, después el cuerpo
+	# se sigue tambaleando ya recuperada la forma.
+	var ap := d * d
+	_raiz.scale = Vector3(1.0 + ap * 0.16, 1.0 - ap * 0.17, 1.0 + ap * 0.16)
+	_fundir_destello(d)
+
+
+# ── El destello del impacto: 4 cuadros ──────────────────────────────────────
+#
+# Un fogonazo blanco encima de todo el cuerpo. Es lo más legible que hay a esta
+# distancia porque no depende del tamaño de nada: la mancha entera cambia de
+# valor un instante, y eso se ve igual a 12 m que a 68.
+#
+# Va como `material_overlay` y ADITIVO: no reemplaza el material —que trae la
+# identidad del personaje, el color de la ropa, el oficio— sino que le suma
+# luz encima. Se apaga poniendo el overlay en null, así que no deja rastro.
+
+const DOLOR_DURA := 10.0 / 60.0   ## 10 cuadros: 5 de deformación, 5 de temblor
+const DESTELLO_DESDE := 0.6       ## se apaga cuando `d` baja de acá: 4 cuadros
+
+
+func _fundir_destello(d: float) -> void:
+	var a := clampf((d - DESTELLO_DESDE) / (1.0 - DESTELLO_DESDE), 0.0, 1.0)
+	if a <= 0.0:
+		_apagar_destello()
+		return
+	if _destello == null:
+		_destello = StandardMaterial3D.new()
+		_destello.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_destello.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_destello.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	# El brillo va en el RGB y no en el alfa: con mezcla aditiva sumar un color
+	# oscuro es no sumar nada, y así el desvanecido no depende de cómo el motor
+	# interprete el alfa en modo aditivo.
+	_destello.albedo_color = Color(a, a * 0.92, a * 0.80, 1.0)
+	if _mallas.is_empty():
+		_juntar_mallas(_raiz)
+	for m in _mallas:
+		if is_instance_valid(m) and m.material_overlay != _destello:
+			m.material_overlay = _destello
+
+
+func _apagar_destello() -> void:
+	for m in _mallas:
+		if is_instance_valid(m) and m.material_overlay != null:
+			m.material_overlay = null
+
+
+func _juntar_mallas(n: Node) -> void:
+	for h in n.get_children():
+		if h is MeshInstance3D:
+			_mallas.append(h as MeshInstance3D)
+		_juntar_mallas(h)
+
+
+## Arranca el swing. 23 cuadros: 5 de anticipo, 8 de embate, 10 de recuperación.
+## El contacto —el cuadro en que quien pega tiene que pintar la pausa, la
+## sacudida y la chispa— es el cuadro 5, `Impacto.CONTACTO`.
 func atacar() -> void:
-	_golpe = 1.0
+	_golpe = Impacto.SWING_TOTAL
 
 
 ## Lo que llevás en la mano.
@@ -647,6 +803,10 @@ func empunar(cosa: String) -> void:
 	mat.metallic = 0.35 if largo > 0.5 else 0.0
 	m.material = mat
 
+	# El arma también destella cuando te pegan: es parte de la mancha del
+	# cuerpo. La caché de mallas se rehace sola en el próximo destello.
+	_mallas.clear()
+
 	_arma = MeshInstance3D.new()
 	_arma.mesh = m
 	# Colgando de la mano: al final del brazo derecho, apuntando adelante y
@@ -665,6 +825,7 @@ func juntar(prendido: bool) -> void:
 	_juntando = prendido
 
 
+## El respingo. 10 cuadros. Ver `_pose_de_dolor()` para qué se mueve y cuánto.
 func doler() -> void:
 	_dolor = 1.0
 	# Un pestañeo al recibir el golpe. Es un cuadro y medio y se siente el
@@ -676,6 +837,9 @@ func doler() -> void:
 ## Se desarma hacia adelante. Sin ragdoll: una caída bien temporizada alcanza.
 func caer() -> void:
 	_vivo = false
+	# Si lo mataste con el destello prendido, el cuerpo se queda en el piso
+	# brillando para siempre: `animar()` ya no va a volver a pasar por acá.
+	_apagar_destello()
 	if _ojo_i != null:
 		# Los ojos se cierran y se quedan cerrados. Es lo único que hace falta
 		# para que el cuerpo en el piso lea como cuerpo y no como muñeco tirado.

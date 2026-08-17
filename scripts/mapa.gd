@@ -28,6 +28,12 @@ var jugador: Node3D
 ## servidor. El setter está para que asignarlas alcance para pedir el redibujo:
 ## así el que las escribe no tiene que acordarse de avisar.
 var amenazas: Array = []: set = _poner_amenazas
+## La gente del valle: [{pos, nombre}]. Lo pone `valle.gd` cada cuadro.
+##
+## Es lo que hacía que el mapa no sirviera para nada: mostraba lugares vacíos.
+## Lo único que uno quiere saber mirando el mapa de este juego es dónde está la
+## gente, porque la gente es el contenido.
+var vecinos: Array = []
 
 var _fuente: Font
 var _reloj := 0.0
@@ -37,8 +43,18 @@ var _ultimo_yo := Vector3(1e9, 0, 0)
 func _ready() -> void:
 	visible = false
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	set_anchors_preset(Control.PRESET_FULL_RECT)
 	_fuente = ThemeDB.fallback_font
+	# El tamaño se fija a mano y se sigue el redimensionado. `set_anchors_preset`
+	# NO alcanza colgando de un CanvasLayer: el Control queda con tamaño cero,
+	# y como todo se dibuja relativo a `size / 2`, el mapa entero se apilaba en
+	# la esquina superior izquierda. Se veía como que la tecla no andaba.
+	_medir()
+	get_tree().root.size_changed.connect(_medir)
+
+
+func _medir() -> void:
+	size = get_viewport().get_visible_rect().size
+	position = Vector2.ZERO
 	set_process(false)
 
 
@@ -78,7 +94,7 @@ func _a_pantalla(p: Vector3, centro: Vector2, radio: float) -> Vector2:
 
 func _draw() -> void:
 	var centro := size / 2.0
-	var radio: float = minf(size.x, size.y) * 0.40
+	var radio: float = minf(size.x, size.y) * 0.44
 
 	# El fondo del mapa. Oscuro y translúcido: seguís viendo que hay un juego
 	# atrás, y no se siente que saliste a un menú.
@@ -105,6 +121,18 @@ func _draw() -> void:
 		draw_circle(p2, 5.0, Color(0.86, 0.35, 0.18))
 		draw_string(_fuente, p2 + Vector2(9, 4), str(d2.get('nombre', '')),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.90, 0.55, 0.38))
+
+	# La gente. Es lo que hacía que el mapa no sirviera para nada: mostraba
+	# lugares vacíos. Lo único que uno quiere saber mirando un mapa de este
+	# juego es DÓNDE ESTÁ LA GENTE, porque la gente es el contenido.
+	for g in vecinos:
+		var d3: Dictionary = g
+		var p3 := _a_pantalla(d3['pos'], centro, radio)
+		var duerme: bool = bool(d3.get('duerme', false))
+		draw_circle(p3, 4.5, Color(0.42, 0.52, 0.44) if duerme else Color(0.86, 0.82, 0.62))
+		draw_string(_fuente, p3 + Vector2(8, 4), str(d3.get('nombre', '')),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
+			Color(0.55, 0.60, 0.55) if duerme else Color(0.86, 0.82, 0.62))
 
 	if jugador != null and is_instance_valid(jugador):
 		var yo := _a_pantalla(jugador.global_position, centro, radio)

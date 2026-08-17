@@ -235,6 +235,9 @@ var _lugares := LUGARES_DEFECTO.duplicate()
 var _grumos := FastNoiseLite.new()
 var _macro := FastNoiseLite.new()
 
+## Los bichos. Cuelga de este nodo; ver el final de `poblar()`.
+var fauna: Fauna
+
 var _nodos_copa: Array[MultiMeshInstance3D] = []
 var _nodos_tronco: Array[MultiMeshInstance3D] = []
 var _nivel_aplicado := -1
@@ -360,6 +363,26 @@ func poblar(alturas: Callable, lugares: Dictionary = {}) -> void:
 	_ms_construir = (Time.get_ticks_usec() - t0) / 1000.0
 	_aplicar_nivel()
 	set_process(true)
+
+	# LOS BICHOS CUELGAN DE ACÁ, Y ES UNA DECISIÓN DE CABLEADO, NO DE BOTÁNICA.
+	#
+	# `fauna.gd` necesita exactamente las dos cosas que este módulo ya recibió
+	# —la función de terreno y el diccionario de lugares— y las necesita
+	# después de que estén los árboles, porque los ciervos se ponen contra el
+	# bosque. Colgarlo acá evita una tercera copia de `LUGARES` y evita tocar
+	# `valle.gd`, que es donde se pisan las ramas.
+	#
+	# **La instancia va en un miembro, no en una variable local**: es la regla
+	# 2 de `CLAUDE.md`, y sale de la vez que `Sonido` quedó colgado.
+	#
+	# Si algún día `valle.gd` prefiere instanciar `Fauna` él mismo, el cambio
+	# es sacar estas cuatro líneas — pero **hay que sacarlas**, o el valle
+	# termina con dos manadas encimadas, que es literalmente lo que pasó con
+	# los dos bosques del Sotobosque.
+	fauna = Fauna.new()
+	fauna.semilla = semilla
+	add_child(fauna)
+	fauna.poblar(_alturas, lugares)
 
 
 ## Recorre la grilla y decide qué crece en cada celda. Devuelve las plantas ya
@@ -1336,6 +1359,45 @@ func _correr_prueba() -> void:
 	_encuadrar_prueba()
 	poblar(altura_de_prueba)
 	informe()
+	_captura_de_prueba()
+
+
+## Guarda un PNG y sale, igual que `--captura` en el valle. Existe porque la
+## hora del valle la manda el SERVIDOR: si entrás de noche, la captura del
+## juego real es negra y no se puede juzgar nada de arte. Acá el sol lo pone
+## `_encuadrar_prueba()` y siempre es el alba.
+##
+##   godot escenas/prueba_vegetacion.tscn --quit-after 200 -- --captura
+##   godot escenas/prueba_vegetacion.tscn --quit-after 200 -- --captura --cerca
+##
+## `--cerca` baja la cámara a la aldea, que es la distancia a la que se juega
+## (40–68 m) y donde se juzga si un bicho se lee o es una mancha.
+func _captura_de_prueba() -> void:
+	if not OS.get_cmdline_user_args().has("--captura"):
+		return
+	# `--nitido` apaga el desenfoque de lejanía. **No sirve para juzgar el look
+	# final** —el desenfoque es parte del "truco del diorama" de `ambiente.gd`—
+	# pero sí para juzgar una silueta: con el desenfoque puesto, una captura de
+	# esta escena a 22 m sale toda mantecosa y no se puede decidir si un bicho
+	# se lee o no.
+	if OS.get_cmdline_user_args().has("--nitido"):
+		# El desenfoque NO vive en el Environment desde Godot 4: vive en el
+		# CameraAttributesPractical del WorldEnvironment. Poniéndolo en el
+		# Environment tira `Invalid assignment` y no apaga nada.
+		var we := get_node_or_null(^"Ambiente") as WorldEnvironment
+		var ca := (we.camera_attributes if we != null else null) as CameraAttributesPractical
+		if ca != null:
+			ca.dof_blur_far_enabled = false
+			ca.dof_blur_near_enabled = false
+
+	# Tres cuadros: uno para que se arme el árbol, dos para que el cielo y la
+	# niebla volumétrica tengan algo adentro. Con menos sale gris.
+	for i in 3:
+		await get_tree().process_frame
+	var img := get_viewport().get_texture().get_image()
+	img.save_png("res://captura.png")
+	print("captura guardada")
+	get_tree().quit()
 
 
 ## Apunta la cámara y las luces de la escena de prueba. Va acá y no en el
@@ -1349,9 +1411,16 @@ func _correr_prueba() -> void:
 func _encuadrar_prueba() -> void:
 	var cam := get_node_or_null(^"Camara") as Camera3D
 	if cam != null:
-		var ojo := Vector3(26.0, altura_de_prueba(26.0, 30.0) + 24.0, 30.0)
-		cam.position = ojo
-		cam.look_at(Vector3(-58.0, altura_de_prueba(-58.0, -54.0) + 6.0, -54.0))
+		if OS.get_cmdline_user_args().has("--cerca"):
+			# A la distancia de juego, mirando la aldea: acá se juzga si un
+			# animal se lee como animal o es una mancha marrón.
+			var ojo := Vector3(30.0, altura_de_prueba(30.0, 34.0) + 13.0, 34.0)
+			cam.position = ojo
+			cam.look_at(Vector3(0.0, altura_de_prueba(0.0, 0.0) + 1.2, 0.0))
+		else:
+			var ojo := Vector3(26.0, altura_de_prueba(26.0, 30.0) + 24.0, 30.0)
+			cam.position = ojo
+			cam.look_at(Vector3(-58.0, altura_de_prueba(-58.0, -54.0) + 6.0, -54.0))
 	var sol := get_node_or_null(^"Sol") as DirectionalLight3D
 	if sol != null:
 		sol.position = Vector3(60.0, 70.0, 90.0)

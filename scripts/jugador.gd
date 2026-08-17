@@ -84,6 +84,24 @@ var _espera_esquive := 0.0     # cuánto falta para poder volver a rodar
 var _dir_esquive := Vector3.ZERO
 var _esquive_gira := false     # ¿la rodada gira el cuerpo, o es hacia atrás?
 
+# ── Lo que hace que el choque se sienta desde acá ───────────────────────────
+#
+# Los números están todos en `impacto.gd`, que es la tabla de cuadros. Acá sólo
+# viven las dos cosas que son del jugador: la cámara y el cuerpo.
+## Amplitud de la sacudida, 1 a 0 en 7 cuadros.
+var _sacudida := 0.0
+## Reloj propio de la sacudida: hace falta uno aparte porque el temblor es una
+## suma de dos senos y necesita una fase continua, no un valor que decae.
+var _sacudida_reloj := 0.0
+## La posición suavizada de la cámara, SIN la sacudida. Tiene que ser una
+## variable y no `_camara.position`: el suavizado es un lerp hacia el destino,
+## y si la sacudida se escribiera en la misma variable el lerp la iría
+## arrastrando de vuelta y el temblor saldría untado en medio segundo.
+var _cam_suave := Vector3.ZERO
+## Retroceso al recibir un golpe. Se suma a `velocity` y se apaga por
+## rozamiento; ver `empujar()`.
+var _empuje := Vector3.ZERO
+
 @onready var _pivote: Node3D = $Pivote
 @onready var _camara: Camera3D = $Pivote/Camara
 @onready var _malla: Node3D = $Malla
@@ -96,6 +114,21 @@ var tecleando := Callable()
 func _ready() -> void:
 	_camara.current = true
 	_recolocar_camara(true)
+
+
+## Lo único que hace `_process` es descongelar el mundo después de la pausa al
+## impactar, **y tiene que ser `_process` y no `_physics_process`**: con
+## `Engine.time_scale` en cero el motor deja de dar pasos de física y
+## `_physics_process` no se llama nunca más, así que el que apaga la pausa
+## quedaría del otro lado de la pausa. `_process` se sigue llamando todos los
+## cuadros dibujados, con delta 0, y el reloj de `Impacto` es de pared.
+func _process(_dt: float) -> void:
+	Impacto.vigilar()
+
+
+## Si la escena se va con el mundo congelado, no se descongela solo.
+func _exit_tree() -> void:
+	Impacto.soltar()
 
 
 func _tecleando() -> bool:
@@ -212,11 +245,56 @@ func _physics_process(dt: float) -> void:
 		_malla.rotation.y = lerp_angle(_malla.rotation.y, objetivo, 12.0 * dt)
 
 	_animar_golpe(dt)
+
+	# El retroceso se SUMA a lo que pediste con el teclado y se apaga por
+	# rozamiento en 3 a 5 cuadros. Se suma y no reemplaza porque un empujón que
+	# te saca el control aunque sea una décima se siente peor que el golpe:
+	# *"que te tira para atrás es raro"* ya fue el reclamo de esta cámara.
+	#
+	# Y se saca justo después de `move_and_slide()`, por el mismo motivo que en
+	# `monstruo.gd`: `velocity` sobrevive al cuadro y el `move_toward` de la
+	# caminata sólo la baja 0,23 m/s por cuadro, así que un empujón que se suma
+	# todos los cuadros no se apaga, se acumula. Medido con el bug puesto en el
+	# bicho: 41 m/s en seis cuadros.
+	var empujon := _empuje
+	if empujon.length_squared() > 0.0004:
+		velocity.x += empujon.x
+		velocity.z += empujon.z
+		_empuje = _empuje.move_toward(Vector3.ZERO, Impacto.EMPUJE_FRENO * dt)
+	else:
+		empujon = Vector3.ZERO
+		_empuje = Vector3.ZERO
+
 	move_and_slide()
+	velocity.x -= empujon.x
+	velocity.z -= empujon.z
 	if figura != null:
 		figura.animar(dt, Vector2(velocity.x, velocity.z).length(), is_on_floor())
+
+	# 7 cuadros de sacudida con la amplitud bajando lineal. La fase sigue
+	# corriendo aparte para que el temblor no se congele con la amplitud.
+	if _sacudida > 0.0:
+		_sacudida_reloj += dt
+		_sacudida = maxf(0.0, _sacudida - dt / Impacto.SACUDIDA_DURA)
+	else:
+		_sacudida_reloj = 0.0
+
 	_dist = lerp(_dist, _dist_objetivo, 8.0 * dt)
 	_recolocar_camara(false)
+
+
+## Sacudir la cámara. `fuerza` es 0..1 y se queda con la más grande de las que
+## haya pendientes: dos golpes juntos no suman una sacudida del doble.
+##
+## Lo llama `monstruo.gd`, que es el que sabe la geometría del choque. Está
+## acá porque la cámara vive acá.
+func sacudir(fuerza: float) -> void:
+	_sacudida = maxf(_sacudida, clampf(fuerza, 0.0, 1.0))
+
+
+## Empujón de retroceso, en m/s. Se apaga solo.
+func empujar(v: Vector3) -> void:
+	_empuje = Vector3(v.x, 0.0, v.z)
 
 
 func _recolocar_camara(inmediato: bool) -> void:
@@ -225,12 +303,33 @@ func _recolocar_camara(inmediato: bool) -> void:
 		sin(_pitch),
 		cos(_yaw) * cos(_pitch),
 	) * _dist
-	var destino := desplazamiento
 	if inmediato:
 		_pivote.position = Vector3.ZERO
-		_camara.position = destino
+		_cam_suave = desplazamiento
 	else:
-		_camara.position = _camara.position.lerp(destino, 0.25)
+		_cam_suave = _cam_suave.lerp(desplazamiento, 0.25)
+
+	var pos := _cam_suave
+	if _sacudida > 0.0:
+		# El temblor va en el plano de la PANTALLA —derecha y arriba de la
+		# cámara— y no en los ejes del mundo: sacudir en X del mundo con la
+		# cámara mirando desde el noreste se lee como que el mundo se desliza
+		# en diagonal, no como un impacto.
+		var der := desplazamiento.cross(Vector3.UP)
+		if der.length_squared() < 0.0001:
+			der = Vector3.RIGHT
+		der = der.normalized()
+		var arr := der.cross(desplazamiento).normalized()
+		# La amplitud es una FRACCIÓN de la distancia de cámara: 1,1% de 40 m
+		# son 44 cm, que mueven la imagen ~1,4% del alto de pantalla (13 px a
+		# 900p). Con la cámara a 12 m el mismo porcentaje da 13 cm y se ve
+		# igual de fuerte, que es el punto.
+		var amp := _dist * Impacto.SACUDIDA_FRACCION * _sacudida
+		# Dos frecuencias que no encajan (34 Hz y 27 Hz): un seno solo se lee
+		# como un péndulo. En 7 cuadros esto da tres cambios de sentido.
+		pos += der * sin(_sacudida_reloj * 214.0) * amp
+		pos += arr * sin(_sacudida_reloj * 173.0 + 1.7) * amp * 0.7
+	_camara.position = pos
 	_camara.look_at(global_position + Vector3.UP * 1.1, Vector3.UP)
 
 
@@ -253,28 +352,54 @@ func _recolocar_camara(inmediato: bool) -> void:
 ## el golpe. Va en `position` del contenedor `Malla` y no en `figura.gd`: no
 ## pisa la rotación de la rodada ni el `position:y` con el que `valle.gd` te
 ## tumba, y cuando los cuerpos pasen a sprites 2D esto sigue valiendo igual.
-const GOLPE_DURA := 0.26
-const GOLPE_ALCANCE := 0.35
+## Cuánto avanza el cuerpo en el embate. Subió de 35 a 45 cm: a 40 m son 13 px
+## de silueta desplazándose, que es el mínimo para que se lea como una estocada
+## y no como que el personaje tembló.
+const GOLPE_ALCANCE := 0.45
+## Y cuánto retrocede ANTES. 22 cm en 5 cuadros. Es la mitad del recorrido de
+## ida, la proporción de siempre: el anticipo tiene que verse y no tiene que
+## competir con el golpe.
+const GOLPE_RETROCESO := 0.22
 
 var _golpe := 0.0
 
 func amagar_golpe() -> void:
 	if figura != null:
 		figura.atacar()
-	_golpe = GOLPE_DURA
+	_golpe = Impacto.SWING_TOTAL
 
 
-## La estocada, cuadro a cuadro. Se apaga sola en cero, así que no hay que
-## acordarse de resetear la posición.
+## La estocada, cuadro a cuadro. Mismas tres fases que el brazo en `figura.gd`
+## y con los mismos números, que salen los dos de `impacto.gd`: si el cuerpo y
+## el brazo no coinciden en el cuadro del contacto se ve como dos animaciones
+## encimadas.
+##
+##   cuadros 0-4    el cuerpo se va 22 cm PARA ATRÁS
+##   cuadro  5      contacto: acá pega, se congela y salta la chispa
+##   cuadros 5-12   sale 45 cm para adelante, medio recorrido en 2 cuadros
+##   cuadros 13-22  vuelve, con salida suave
+##
+## Se apaga sola en cero, así que no hay que acordarse de resetear la posición.
 func _animar_golpe(dt: float) -> void:
 	if _golpe <= 0.0:
 		return
 	_golpe = maxf(0.0, _golpe - dt)
-	# Sale rápido y vuelve lento: `sin(t*PI)` simétrico se ve blando, el
-	# exponente corre el pico al primer tercio. Es el mismo truco que usa el
-	# parpadeo de `figura.gd`.
-	var t := 1.0 - _golpe / GOLPE_DURA
-	var avance := sin(pow(t, 0.6) * PI) * GOLPE_ALCANCE
+	var e := Impacto.SWING_TOTAL - _golpe
+
+	var avance := 0.0
+	if e < Impacto.SWING_ANTICIPO:
+		avance = -GOLPE_RETROCESO * sin(e / Impacto.SWING_ANTICIPO * PI * 0.5)
+	elif e < Impacto.SWING_ANTICIPO + Impacto.SWING_EMBATE:
+		var p := pow((e - Impacto.SWING_ANTICIPO) / Impacto.SWING_EMBATE, 0.45)
+		avance = lerpf(-GOLPE_RETROCESO, GOLPE_ALCANCE, p)
+	else:
+		var u := clampf((e - Impacto.SWING_ANTICIPO - Impacto.SWING_EMBATE)
+			/ Impacto.SWING_RECUPERA, 0.0, 1.0)
+		avance = GOLPE_ALCANCE * (1.0 - u * u * (3.0 - 2.0 * u))
+
+	# El desplazamiento es del contenedor `Malla`, no del cuerpo físico: es
+	# presentación. El colisionador —y por lo tanto el alcance real que mide
+	# `valle.gd`— no se mueve ni un centímetro.
 	_malla.position.x = sin(_malla.rotation.y) * avance
 	_malla.position.z = cos(_malla.rotation.y) * avance
 

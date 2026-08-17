@@ -1,0 +1,43 @@
+; La escena de prueba de los bichos. Corre sola, sin servidor y sin el resto
+; del juego — igual que `prueba_vegetacion.tscn` y por la misma razón: la hora
+; del valle la manda el SERVIDOR, así que una captura del juego real puede
+; salir negra y no se puede juzgar nada de arte con eso.
+;
+;   godot escenas/prueba_fauna.tscn                              ← miralo
+;   godot escenas/prueba_fauna.tscn --quit-after 200 -- --captura
+;
+; Pone las siete especies en fila, a la distancia a la que se juega, con el sol
+; del alba del valle. Lo que se mira es UNA cosa: **si la silueta dice qué bicho
+; es sin que se le vea la cara.** Ése es el piso de zoom de `DISENO.md` §6 y es
+; el único criterio que decide si un animal entra o no.
+;
+; La regla de la vara: al lado de cada bicho hay un poste de 1,70 m —una
+; persona—. Un ciervo que le llega al hombro está bien; uno que le llega a la
+; rodilla es un perro y hay que corregir la alzada en `fauna.gd:ESPECIES`.
+
+; NO usa `ambiente.gd`. El WorldEnvironment del juego trae desenfoque de
+; lejanía, y a 22 m de la cámara eso convierte a los siete bichos en siete
+; manchas: se probó y la captura no servía para decidir nada. Acá el ambiente
+; es el mínimo —cielo liso y nada más— justo porque lo que se juzga es la
+; malla. La escena que sí hay que mirar con el ambiente del juego puesto es
+; `prueba_vegetacion.tscn`.
+
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/prueba_fauna.gd" id="1_pf"]
+
+[node name="PruebaFauna" type="Node3D"]
+script = ExtResource("1_pf")
+
+[node name="Sol" type="DirectionalLight3D" parent="."]
+light_energy = 1.6
+shadow_enabled = true
+directional_shadow_max_distance = 120.0
+
+[node name="Relleno" type="DirectionalLight3D" parent="."]
+light_energy = 0.35
+
+[node name="Camara" type="Camera3D" parent="."]
+fov = 42.0
+far = 400.0
+current = true
