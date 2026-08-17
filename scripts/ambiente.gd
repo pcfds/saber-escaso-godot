@@ -13,6 +13,12 @@
 ##     paredes es lo que separa "3D de asset store" de algo que parece pensado.
 ##  4. AgX como tonemapper. Filmic, no revienta los altos. Es lo que usan los
 ##     motores de cine; ACES quema los naranjas de la fragua.
+##
+## Lo que hay acá es el nivel ALTO y nada más. Quién lo baja es
+## `rendimiento.gd`, al que este archivo le pasa el entorno recién armado.
+## La división vale la pena: la identidad visual se define en UN lugar —éste—
+## y las concesiones para que ande en cualquier máquina viven en otro, donde se
+## pueden leer juntas y discutir juntas.
 class_name Ambiente
 extends WorldEnvironment
 
@@ -20,6 +26,7 @@ extends WorldEnvironment
 func _ready() -> void:
 	environment = _construir_entorno()
 	camera_attributes = _construir_camara()
+	Rendimiento.registrar_entorno(environment, camera_attributes)
 
 
 func _construir_entorno() -> Environment:
@@ -41,25 +48,47 @@ func _construir_entorno() -> Environment:
 	e.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 
 	# (3) Iluminación global. La luz rebota: la pared iluminada tiñe el piso.
+	#
+	# Es el efecto más caro que tiene Godot, así que está afinado y no puesto
+	# por default:
+	#
+	#  · DOS cascadas de 0,7 m de celda llegan a 90 metros (0,7 × 64 × 2). Con
+	#    el desenfoque de lejanía arrancando a los 40, todo lo que pasa de ahí
+	#    ya es puré: las cuatro cascadas de antes compraban doce metros más de
+	#    alcance por el doble de trabajo.
+	#  · SIN oclusión. La doc de Godot la recomienda para interiores con
+	#    paredes finas donde se filtra luz de un cuarto a otro. Esto es un
+	#    valle a cielo abierto: paga y no se ve.
+	#  · Escala Y al 50%: el valle es plano y ancho. Achatando la cascada, los
+	#    mismos vóxeles cubren más suelo, que es donde está todo.
+	#  · El rebote se queda. ES la luz cálida en las paredes, o sea el punto.
 	e.sdfgi_enabled = true
-	e.sdfgi_use_occlusion = true
-	e.sdfgi_cascades = 4
-	e.sdfgi_min_cell_size = 0.2
+	e.sdfgi_use_occlusion = false
+	e.sdfgi_cascades = 2
+	e.sdfgi_min_cell_size = 0.7
+	e.sdfgi_y_scale = Environment.SDFGI_Y_SCALE_50_PERCENT
 	e.sdfgi_energy = 1.1
-	e.sdfgi_bounce_feedback = 0.6
+	e.sdfgi_bounce_feedback = 0.5
 
 	# (2) Niebla volumétrica. Lo que convierte una luz direccional en rayos.
+	#
+	# Llega hasta los 130 metros, que es exactamente donde arranca la niebla de
+	# distancia. Antes llegaba a 190 y los últimos sesenta metros los pintaban
+	# las dos nieblas encima: se pagaba dos veces por el mismo gris.
 	e.volumetric_fog_enabled = true
 	e.volumetric_fog_density = 0.0055
 	e.volumetric_fog_albedo = Color(0.78, 0.72, 0.66)
 	e.volumetric_fog_emission = Color(0.05, 0.06, 0.08)
-	e.volumetric_fog_gi_inject = 1.4
-	e.volumetric_fog_length = 190.0
+	# Inyectar la GI en la niebla es una lectura de SDFGI por vóxel de humo. A
+	# 1,0 el rayo de sol sigue estando; de 1,0 a 1,4 no se distinguía.
+	e.volumetric_fog_gi_inject = 1.0
+	e.volumetric_fog_length = 130.0
 	e.volumetric_fog_detail_spread = 2.0
 	e.volumetric_fog_ambient_inject = 0.7
 
 	# Niebla de distancia: da profundidad y esconde el borde del mundo, que es
-	# el problema clásico de un valle chico.
+	# el problema clásico de un valle chico. Es de las cosas más baratas que
+	# hay —un lerp en el shader de superficie— y se queda en los tres niveles.
 	e.fog_enabled = true
 	e.fog_mode = Environment.FOG_MODE_DEPTH
 	e.fog_light_color = Color(0.52, 0.58, 0.62)
@@ -79,16 +108,20 @@ func _construir_entorno() -> Environment:
 	e.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 	e.glow_hdr_threshold = 1.05
 
-	# Oclusión ambiental: la mugre en los rincones. Barata y se nota.
+	# Oclusión ambiental: la mugre en los rincones. Se queda sólo en ALTO —a 27
+	# metros con FOV 42° un radio de 1,4 m son tres píxeles— y encima el rebote
+	# de SDFGI ya oscurece esos mismos rincones.
 	e.ssao_enabled = true
 	e.ssao_radius = 1.4
 	e.ssao_intensity = 1.6
 	e.ssao_power = 1.8
 	e.ssao_detail = 0.5
 
-	# Reflejos en el río sin pagar raytracing.
+	# Reflejos en el río sin pagar raytracing. 24 pasos y no 48: el reflejo
+	# útil son quince metros de agua vistos de lejos, no un espejo de pared a
+	# pared, y el costo es lineal en la cantidad de pasos.
 	e.ssr_enabled = true
-	e.ssr_max_steps = 48
+	e.ssr_max_steps = 24
 	e.ssr_fade_in = 0.3
 
 	# (4) AgX: no quema los naranjas de la fragua como haría ACES.
@@ -96,9 +129,11 @@ func _construir_entorno() -> Environment:
 	e.tonemap_exposure = 0.95
 	e.tonemap_white = 6.0
 
-	e.adjustment_enabled = true
-	e.adjustment_saturation = 1.02
-	e.adjustment_contrast = 1.04
+	# Los ajustes de color estaban en +2% de saturación y +4% de contraste. Eso
+	# está por debajo de lo que el ojo distingue y prende una variante más del
+	# shader de tonemapping. Si algún día hace falta una corrección de color,
+	# que sea una que se vea.
+	e.adjustment_enabled = false
 
 	return e
 
@@ -107,6 +142,11 @@ func _construir_camara() -> CameraAttributesPractical:
 	# (1) El truco del diorama. El desenfoque arranca justo detrás de donde
 	# está el jugador, así lo que te importa está nítido y el resto del valle
 	# se lee como maqueta.
+	#
+	# El costo lo baja `rendimiento.gd` cambiando la FORMA del bokeh a caja
+	# (un blur separable de dos pasadas) en vez de círculo. Con un blur de
+	# 0,09 la forma no se distingue ni con lupa, así que el efecto queda
+	# intacto y la pasada cuesta una fracción.
 	var c := CameraAttributesPractical.new()
 	c.dof_blur_far_enabled = true
 	c.dof_blur_far_distance = 40.0

@@ -101,7 +101,10 @@ func _process(dt: float) -> void:
 
 	if entorno != null:
 		var n := clampf(remap(altura, -0.18, 0.20, 0.0, 1.0), 0.0, 1.0)
-		entorno.ambient_light_energy = lerp(0.14, 0.62, n)
+		# Sin SDFGI no hay rebote de luz: la ambiente tiene que cubrir ese hueco
+		# o el valle en calidad baja queda plano y más oscuro de lo que es.
+		var sin_rebote := 1.35 if not entorno.sdfgi_enabled else 1.0
+		entorno.ambient_light_energy = lerp(0.14, 0.62, n) * sin_rebote
 		entorno.fog_light_color = Color(0.09, 0.12, 0.20).lerp(Color(0.52, 0.58, 0.62), n)
 		entorno.fog_light_energy = lerp(0.35, 0.9, n)
 		entorno.volumetric_fog_density = lerp(0.0090, 0.0055, n)

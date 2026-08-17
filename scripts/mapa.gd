@@ -11,11 +11,27 @@ extends Control
 
 const RADIO_MUNDO := 190.0
 
+## Cada cuánto se mira si hay algo nuevo que dibujar, y cuánto se tiene que
+## haber movido el jugador para que valga rehacer el mapa.
+##
+## El mapa se redibujaba en cada cuadro mientras estaba abierto: sesenta veces
+## por segundo, quince círculos y cinco etiquetas que cambian cuando caminás.
+## Un píxel del mapa son casi dos metros de valle, así que por debajo de medio
+## metro de caminata el dibujo sale idéntico. Parado y con el mapa abierto,
+## ahora no se redibuja nunca.
+const CADA := 0.1
+const SE_MOVIO := 0.5
+
 var lugares: Dictionary = {}         ## slug → {pos, nombre}
 var jugador: Node3D
-var amenazas: Array = []             ## [{pos: Vector3, nombre: String}]
+## Las marcas de amenazas las reescribe el valle cada vez que contesta el
+## servidor. El setter está para que asignarlas alcance para pedir el redibujo:
+## así el que las escribe no tiene que acordarse de avisar.
+var amenazas: Array = []: set = _poner_amenazas
 
 var _fuente: Font
+var _reloj := 0.0
+var _ultimo_yo := Vector3(1e9, 0, 0)
 
 
 func _ready() -> void:
@@ -23,17 +39,36 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	_fuente = ThemeDB.fallback_font
+	set_process(false)
 
 
 func alternar() -> void:
 	visible = not visible
+	# Cerrado no cuesta nada: ni se procesa ni se dibuja.
+	set_process(visible)
+	if visible:
+		_ultimo_yo = Vector3(1e9, 0, 0)
+		queue_redraw()
+
+
+func _poner_amenazas(nuevas: Array) -> void:
+	amenazas = nuevas
 	if visible:
 		queue_redraw()
 
 
-func _process(_dt: float) -> void:
-	if visible:
-		queue_redraw()
+func _process(dt: float) -> void:
+	_reloj += dt
+	if _reloj < CADA:
+		return
+	_reloj = 0.0
+	if jugador == null or not is_instance_valid(jugador):
+		return
+	var yo := jugador.global_position
+	if yo.distance_to(_ultimo_yo) < SE_MOVIO:
+		return
+	_ultimo_yo = yo
+	queue_redraw()
 
 
 ## Del mundo a la pantalla. El norte del valle queda arriba.

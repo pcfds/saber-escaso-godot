@@ -29,6 +29,7 @@ scripts/cielo.gd        shader propio: estrellas, vía láctea, dos lunas, gigan
 scripts/ciclo.gd        el sol y la luna; la hora la manda el SERVIDOR (ver abajo)
 scripts/parpadeo.gd     titileo de fuegos y ventanas
 scripts/ambiente.gd     WorldEnvironment: SDFGI, niebla volumétrica, AgX, DOF
+scripts/rendimiento.gd  alto/medio/bajo: qué efectos se prenden en qué máquina (F1)
 scripts/api.gd          habla con el servidor; el token sale de token.txt o --token=
 scripts/interfaz.gd     HUD, diálogo, campo para escribirle a los NPCs
 desplegar.sh            probar → exportar → cerrar el juego → instalar. UNA carpeta.

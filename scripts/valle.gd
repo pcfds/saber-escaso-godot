@@ -41,6 +41,9 @@ var _monstruos: Array[Monstruo] = []
 var ciclo: Ciclo
 var _lugar_actual := ""
 var _monstruos_por_id: Dictionary = {}
+## Cómo te trata cada uno al pasar. Lo manda el servidor con /mundo.
+var _actitudes: Dictionary = {}
+var _ya_saludo: Dictionary = {}
 var mapa: Mapa
 var _ya_pedimos_cronica := false
 
@@ -140,6 +143,7 @@ func _armar_ambiente() -> void:
 	sol.directional_shadow_blend_splits = true
 	sol.light_angular_distance = 1.2   # sombras que se ablandan con la distancia
 	sol.shadow_blur = 1.3
+	sol.add_to_group("sol")   # rendimiento.gd lo busca por acá
 	add_child(sol)
 
 	# Relleno frío desde el cielo, para que las sombras no sean negras.
@@ -164,7 +168,12 @@ func _armar_terreno() -> void:
 	# vértice no entraban: el terreno salía color arena. Confiable le gana a
 	# ingenioso.
 	var lado := 360.0
-	var pasos := 180
+	# 120 y no 180: el ruido del terreno tiene longitud de onda de ~36 m, así
+	# que a 3 m de paso ya está sobremuestreado doce veces. Bajar de 180 a 120
+	# saca 36.000 triángulos de la malla Y otros tantos del árbol de colisión,
+	# que sale de la misma malla. No bajar de 120: a 4 m aliasean las manchas
+	# de color, que tienen longitud de onda de ~13 m.
+	var pasos := 120
 	var paso := lado / pasos
 
 	var st := SurfaceTool.new()
@@ -649,6 +658,14 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 	if ciclo != null:
 		ciclo.sincronizar(int(region.get("tick", 0)), float(region.get("momento_del_dia", 0.0)))
 
+	for q in datos.get("people", []):
+		var d: Dictionary = q
+		_actitudes[str(d.get("name", ""))] = {
+			"saludo": str(d.get("saludo", "")),
+			"animo": str(d.get("animo", "neutral")),
+			"ensena": bool(d.get("ensena", false)),
+		}
+
 	_sincronizar_amenazas(datos.get("amenazas", []))
 	interfaz.mostrar_inventario(datos.get("objetos", []))
 	interfaz.mostrar_pasos(datos.get("primeros_pasos", []))
@@ -749,6 +766,20 @@ func _process(_dt: float) -> void:
 			d_min = d
 			mas_cerca = nombre
 	interfaz.mostrar_cercano(mas_cerca, _npcs.get(mas_cerca, null))
+
+	# Que te reconozcan al pasar. Una sola vez por acercamiento: si se
+	# disparara cada cuadro sería un cartel, y si no se reseteara al alejarte
+	# nunca te volverían a saludar. Por eso se limpia cuando te vas.
+	if mas_cerca != "" and not _ya_saludo.has(mas_cerca):
+		_ya_saludo[mas_cerca] = true
+		var a: Dictionary = _actitudes.get(mas_cerca, {})
+		var linea: String = str(a.get("saludo", ""))
+		if linea != "":
+			interfaz.reconocer(linea, str(a.get("animo", "neutral")))
+	for quien: String in _ya_saludo.keys():
+		if quien != mas_cerca:
+			_ya_saludo.erase(quien)
+
 	_avisar_donde_estoy()
 
 

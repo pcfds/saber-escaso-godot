@@ -8,6 +8,8 @@ var _api: Api
 var _decir: LineEdit
 var _bolsa: RichTextLabel
 var _pasos: RichTextLabel
+var _saludo: RichTextLabel
+var _fundido: Tween
 var _ya_saludamos := false
 var _ultima_region: Dictionary = {}
 var _ultimos_pasos: Array = []
@@ -56,7 +58,7 @@ func _ready() -> void:
 	ayuda.offset_right = -24
 	ayuda.offset_top = -44
 	ayuda.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	ayuda.text = "WASD caminar · espacio saltar · E hablar · botón derecho girar · rueda acercar"
+	ayuda.text = "WASD caminar · shift correr · E hablar · M mapa · F1 calidad · F2 captura"
 	ayuda.add_theme_font_size_override("font_size", 12)
 	ayuda.add_theme_color_override("font_color", Color(0.45, 0.50, 0.48))
 	add_child(ayuda)
@@ -469,7 +471,7 @@ func dar_bienvenida(region: Dictionary, cronica: String, pasos: Array) -> void:
 		for p in pasos:
 			partes.append("· %s" % (p as Dictionary).get("texto", ""))
 	partes.append("")
-	partes.append("[color=#7d867f]WASD caminar · shift correr · E hablar · clic pegar · M mapa · botón derecho girar[/color]")
+	partes.append("[color=#7d867f]WASD caminar · shift correr · E hablar · clic pegar · M mapa · F1 calidad · F2 captura[/color]")
 	t.text = "\n".join(partes)
 	col.add_child(t)
 
@@ -478,3 +480,39 @@ func dar_bienvenida(region: Dictionary, cronica: String, pasos: Array) -> void:
 	b.pressed.connect(func() -> void: panel.queue_free())
 	col.add_child(b)
 	add_child(panel)
+
+
+## Que alguien te reconozca al pasar.
+##
+## No es diálogo: es que el mundo admita que estás. Quien lo jugó lo pidió así:
+## "si me acerco, ¿no deberían saludarme al menos? ya saben que estoy". Y tenía
+## razón — un NPC que sólo habla cuando lo apretás es mobiliario.
+##
+## La línea la manda el servidor y sale del vínculo, no del modelo: tiene que
+## aparecer en el mismo cuadro en que te acercás.
+func reconocer(linea: String, animo: String) -> void:
+	if _saludo == null:
+		_saludo = RichTextLabel.new()
+		_saludo.bbcode_enabled = true
+		_saludo.fit_content = true
+		_saludo.scroll_active = false
+		_saludo.anchor_left = 0.5; _saludo.anchor_right = 0.5
+		_saludo.anchor_top = 1.0; _saludo.anchor_bottom = 1.0
+		_saludo.offset_left = -330; _saludo.offset_right = 330
+		_saludo.offset_top = -168; _saludo.offset_bottom = -128
+		_saludo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_saludo)
+
+	var tono: String = {
+		"calido": "6fb99e", "neutral": "dde3de", "seco": "98a29c", "hostil": "ce8b84",
+	}.get(animo, "dde3de")
+	_saludo.text = "[center][color=#%s]%s[/color][/center]" % [tono, linea]
+	_saludo.modulate.a = 1.0
+
+	# Se desvanece sola. Un cartel que se queda deja de ser un momento y pasa
+	# a ser interfaz.
+	if _fundido != null and _fundido.is_valid():
+		_fundido.kill()
+	_fundido = create_tween()
+	_fundido.tween_interval(3.2)
+	_fundido.tween_property(_saludo, "modulate:a", 0.0, 1.1)

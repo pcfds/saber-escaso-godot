@@ -9,8 +9,19 @@
 ##  · HUMO DE CHIMENEA. Movimiento vertical lento = alguien está cocinando.
 ##  · PASTO Y PIEDRAS. Rompen el plano liso, que es lo que grita "sin terminar".
 ##  · BICHOS DE LUZ. Movimiento chico y disperso: el cerebro lo lee como vida.
+##
+## Todo esto es barato POR UNIDAD, y ahí está la trampa: hay 26.000 unidades.
+## Lo que sigue está armado para que el motor pueda tirar a la basura lo que no
+## se ve, que es la única optimización que no le saca nada al que sí mira. Las
+## cantidades y los alcances los ajusta `rendimiento.gd` por los grupos
+## "pasto", "piedras", "humo" y "bichos".
 class_name Detalles
 extends RefCounted
+
+## De cuánto es la baldosa con que se corta el pasto y las piedras. 34 metros
+## es más chico que la distancia de dibujado más corta (55 m en calidad baja),
+## que es la condición para que ralear por distancia haga algo.
+const BALDOSA := 34.0
 
 
 static func ventanas_y_puerta(casa: MeshInstance3D, ancho: float, alto: float) -> void:
@@ -67,7 +78,19 @@ static func _humo(pos: Vector3) -> GPUParticles3D:
 	p.lifetime = 5.5
 	p.explosiveness = 0.0
 	p.randomness = 0.55
-	p.draw_order = GPUParticles3D.DRAW_ORDER_VIEW_DEPTH
+	# Por vida y no por profundidad de vista. El orden por profundidad obliga a
+	# reordenar las partículas contra la cámara en cada cuadro; el humo sube
+	# siempre y su rampa de color termina en transparente, así que el orden de
+	# nacimiento ya es el orden correcto y se ve igual.
+	p.draw_order = GPUParticles3D.DRAW_ORDER_LIFETIME
+	# La caja de visibilidad por default de las partículas es de 8 metros de
+	# lado alrededor del emisor. Este humo sube diez metros y el viento lo
+	# corre otros diez, así que con la caja por default el motor lo descartaba
+	# justo cuando todavía se veía. Declarada bien, el descarte funciona en los
+	# dos sentidos: no parpadea, y una chimenea fuera de cámara deja de
+	# simularse.
+	p.visibility_aabb = AABB(Vector3(-4, -2, -5), Vector3(16, 16, 12))
+	p.add_to_group("humo")
 
 	var m := ParticleProcessMaterial.new()
 	m.direction = Vector3(0.25, 1, 0.1)
@@ -102,49 +125,67 @@ static func _humo(pos: Vector3) -> GPUParticles3D:
 	qm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	qm.vertex_color_use_as_albedo = true
 	qm.albedo_color = Color(0.75, 0.73, 0.70, 0.5)
-	qm.disable_receive_shadows = false
+	# El humo no recibe sombra. Está arriba del techo, nunca hay nada que se la
+	# proyecte, y recibirla cuesta una búsqueda en el atlas por cada píxel de
+	# humo — o sea justo donde más sobredibujado hay.
+	qm.disable_receive_shadows = true
 	q.material = qm
 	p.draw_pass_1 = q
 	return p
 
 
-## Pasto en MultiMesh: miles de matas en una sola llamada de dibujo.
+## Pasto en MultiMesh: miles de matas en muy pocas llamadas de dibujo.
+##
+## Un MultiMesh es una sola caja para el motor: o lo dibuja entero o no lo
+## dibuja. Con las 26.000 matas repartidas en 260 metros de diámetro en un solo
+## MultiMesh, mirando al norte se dibujaban igual las trece mil que tenías
+## atrás. Cortado en baldosas de 34 metros, el descarte por cámara y por
+## distancia hace ese trabajo solo — y sesenta y pico de llamadas de dibujo no
+## las siente nadie, era mil veces más barato de lo que costaba el problema.
 static func pasto(padre: Node3D, alturas: Callable, cantidad: int, radio: float) -> void:
 	var hoja := PrismMesh.new()
 	hoja.size = Vector3(0.09, 0.42, 0.04)
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.40, 0.55, 0.26)
 	mat.roughness = 1.0
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Sin descarte de caras traseras se rasterizaban las 208.000 caras del
+	# pasto DOS veces. Eso tiene sentido en un pasto de cartelitos planos, que
+	# no tienen "adentro"; acá cada mata es un prisma cerrado y las caras de
+	# atrás siempre las tapa la de adelante. Era el doble de trabajo por
+	# exactamente el mismo píxel.
+	mat.cull_mode = BaseMaterial3D.CULL_BACK
 	hoja.material = mat
-
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	mm.mesh = hoja
-	mm.instance_count = cantidad
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20260816
-	for i in cantidad:
-		var a := rng.randf() * TAU
-		var r := sqrt(rng.randf()) * radio
-		var x := cos(a) * r
-		var z := sin(a) * r
-		var y: float = alturas.call(x, z)
-		var t := Transform3D()
-		t = t.rotated(Vector3.UP, rng.randf() * TAU)
-		t = t.scaled(Vector3.ONE * rng.randf_range(0.7, 1.9))
-		t.origin = Vector3(x, y + 0.18, z)
-		mm.set_instance_transform(i, t)
-		# Variar el color mata la sensación de estampado.
-		var v := rng.randf()
-		mm.set_instance_color(i, Color(0.34, 0.48, 0.22).lerp(Color(0.62, 0.66, 0.32), v))
+	var por_baldosa := _repartir(rng, cantidad, radio, alturas,
+		func(t: Transform3D, r: RandomNumberGenerator) -> Transform3D:
+			t.origin.y += 0.18
+			return t.rotated_local(Vector3.UP, r.randf() * TAU) \
+				.scaled_local(Vector3.ONE * r.randf_range(0.7, 1.9)))
 
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	padre.add_child(mmi)
+	for celda: Vector2i in por_baldosa:
+		var lista: Array = por_baldosa[celda]
+		var centro := _centro(celda, alturas)
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.mesh = hoja
+		mm.instance_count = lista.size()
+		for i in lista.size():
+			var t: Transform3D = lista[i]
+			t.origin -= centro
+			mm.set_instance_transform(i, t)
+			# Variar el color mata la sensación de estampado.
+			mm.set_instance_color(i,
+				Color(0.34, 0.48, 0.22).lerp(Color(0.62, 0.66, 0.32), rng.randf()))
+
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.position = centro
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.add_to_group("pasto")
+		padre.add_child(mmi)
 
 
 static func piedras(padre: Node3D, alturas: Callable, cantidad: int, radio: float) -> void:
@@ -158,29 +199,66 @@ static func piedras(padre: Node3D, alturas: Callable, cantidad: int, radio: floa
 	mat.roughness = 1.0
 	roca.material = mat
 
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = roca
-	mm.instance_count = cantidad
-
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 991
+	var por_baldosa := _repartir(rng, cantidad, radio, alturas,
+		func(t: Transform3D, r: RandomNumberGenerator) -> Transform3D:
+			t.origin.y -= 0.1
+			return t.rotated_local(Vector3.UP, r.randf() * TAU).scaled_local(Vector3(
+				r.randf_range(0.4, 1.5), r.randf_range(0.3, 0.8), r.randf_range(0.4, 1.5))))
+
+	for celda: Vector2i in por_baldosa:
+		var lista: Array = por_baldosa[celda]
+		var centro := _centro(celda, alturas)
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = roca
+		mm.instance_count = lista.size()
+		for i in lista.size():
+			var t: Transform3D = lista[i]
+			t.origin -= centro
+			mm.set_instance_transform(i, t)
+
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.position = centro
+		mmi.add_to_group("piedras")
+		padre.add_child(mmi)
+
+
+## Tira `cantidad` puntos en un disco de `radio` y los agrupa por baldosa.
+##
+## El orden de generación es aleatorio uniforme y NO se altera. Eso es lo que
+## después le permite a `rendimiento.gd` ralear el campo con
+## `visible_instance_count`: quedarse con las primeras N instancias de cada
+## baldosa es quedarse con una muestra uniforme, o sea un pasto más ralo, y no
+## con media baldosa pelada.
+static func _repartir(rng: RandomNumberGenerator, cantidad: int, radio: float,
+		alturas: Callable, armar: Callable) -> Dictionary:
+	var salida := {}
 	for i in cantidad:
 		var a := rng.randf() * TAU
 		var r := sqrt(rng.randf()) * radio
 		var x := cos(a) * r
 		var z := sin(a) * r
-		var y: float = alturas.call(x, z)
 		var t := Transform3D()
-		t = t.rotated(Vector3.UP, rng.randf() * TAU)
-		t = t.scaled(Vector3(
-			rng.randf_range(0.4, 1.5), rng.randf_range(0.3, 0.8), rng.randf_range(0.4, 1.5)))
-		t.origin = Vector3(x, y - 0.1, z)
-		mm.set_instance_transform(i, t)
+		t.origin = Vector3(x, alturas.call(x, z), z)
+		t = armar.call(t, rng)
+		var celda := Vector2i(floori(x / BALDOSA), floori(z / BALDOSA))
+		if not salida.has(celda):
+			salida[celda] = []
+		salida[celda].append(t)
+	return salida
 
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	padre.add_child(mmi)
+
+## El centro de la baldosa, apoyado en el terreno. Que el nodo esté ahí y no en
+## el origen del valle es la mitad del asunto: la distancia de dibujado se mide
+## contra la posición del nodo, y un nodo en (0,0,0) que abarca 260 metros
+## nunca está lejos de la cámara.
+static func _centro(celda: Vector2i, alturas: Callable) -> Vector3:
+	var x := (float(celda.x) + 0.5) * BALDOSA
+	var z := (float(celda.y) + 0.5) * BALDOSA
+	return Vector3(x, alturas.call(x, z), z)
 
 
 ## Bichos de luz. Movimiento chico y disperso: es lo que el ojo lee como
@@ -191,7 +269,14 @@ static func luciernagas(padre: Node3D, pos: Vector3, cantidad: int, radio: float
 	p.amount = cantidad
 	p.lifetime = 7.0
 	p.randomness = 1.0
+	# Cuatro segundos de simulación adelantada al nacer, para que no aparezcan
+	# todas juntas en el mismo punto. Se paga una sola vez, al arrancar.
 	p.preprocess = 4.0
+	# Igual que con el humo: sin declarar la caja, el motor usa 8 metros de
+	# lado y estas nubes miden hasta 26. Declarada, una nube en el Sotobosque
+	# deja de simularse cuando estás en la aldea.
+	p.visibility_aabb = AABB(Vector3.ONE * -(radio + 4.0), Vector3.ONE * (radio + 4.0) * 2.0)
+	p.add_to_group("bichos")
 
 	var m := ParticleProcessMaterial.new()
 	m.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE

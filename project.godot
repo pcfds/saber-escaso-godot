@@ -14,6 +14,13 @@ run/main_scene="res://escenas/valle.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icono.svg"
 
+[autoload]
+
+; El ajuste de calidad (alto/medio/bajo). Va como autoload porque tiene que
+; decidir el nivel ANTES de que valle.gd arme la escena: el pasto y los efectos
+; se construyen ya sabiendo en qué máquina están corriendo.
+Rendimiento="*res://scripts/rendimiento.gd"
+
 [display]
 
 window/size/viewport_width=1600
@@ -64,13 +71,42 @@ golpear={
 
 [rendering]
 
+; El punto de partida. Lo que sigue lo mueve `scripts/rendimiento.gd` según el
+; nivel de calidad que corra; acá sólo están los valores que se apartan del
+; default de Godot, y cada uno dice por qué.
+
 renderer/rendering_method="forward_plus"
-anti_aliasing/quality/msaa_3d=2
+
+; MSAA 2x + FXAA. Estaba en 4x: en Forward+ eso cuesta ancho de banda y obliga
+; a resolver el buffer de profundidad en cada cuadro para SSAO, SSR y SDFGI.
+; En una escena de cajas planas con FXAA encima, entre 4x y 2x no hay
+; diferencia que se pueda señalar.
+anti_aliasing/quality/msaa_3d=1
 anti_aliasing/quality/screen_space_aa=1
-lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
-lights_and_shadows/directional_shadow/size=8192
-global_illumination/sdfgi/probe_ray_count=2
-global_illumination/gi/use_half_resolution=false
-environment/volumetric_fog/volume_size=128
-environment/volumetric_fog/volume_depth=96
-textures/default_filters/anisotropic_filtering_level=3
+
+; Sombras direccionales: el atlas vuelve al default de 4096. Estaba en 8192, o
+; sea 268 MB de textura de profundidad — más VRAM de la que tiene entera una
+; placa integrada, y cuatro divisiones de 4096² cada una. A 4096 el sol da 8 cm
+; por téxel cerca del jugador, que es más fino que cualquier cosa de la escena.
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=2
+
+; La luz indirecta es de baja frecuencia: no hay detalle que perder por
+; calcularla a media resolución, y el buffer pasa a costar la cuarta parte.
+global_illumination/gi/use_half_resolution=true
+
+; La rejilla de la niebla volumétrica vuelve al default (64³). Estaba en
+; 128×128×96: un millón y medio de vóxeles, seis veces el default, para una
+; niebla que no tiene un solo borde duro.
+
+; Oclusión ambiental en calidad baja. A 27 metros de cámara con FOV 42°, el
+; radio de 1,4 m que usa el juego son tres píxeles: la diferencia entre calidad
+; media y baja ahí no existe.
+environment/ssao/quality=1
+
+; Desenfoque de lejanía con bokeh de CAJA: es un blur separable de dos pasadas.
+; El hexagonal (el default) es un muestreo radial bastante más caro, y con el
+; blur de 0,09 que usa el juego la forma del bokeh no se distingue ni con lupa.
+; Es el mejor cambio de toda esta pasada: el mismo efecto, la misma identidad,
+; una fracción del costo.
+camera/depth_of_field/depth_of_field_bokeh_shape=0
+camera/depth_of_field/depth_of_field_bokeh_quality=0
