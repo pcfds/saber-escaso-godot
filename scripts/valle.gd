@@ -1493,6 +1493,7 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 	if jugador != null and jugador.figura != null:
 		jugador.figura.empunar(enMano)
 	interfaz.mostrar_pasos(datos.get("primeros_pasos", []))
+	interfaz.mostrar_ficha(datos.get("vos", {}))
 	if mapa != null:
 		var marcas: Array = []
 		for m in _monstruos:

@@ -47,6 +47,10 @@ var _pasos: RichTextLabel
 var _saludo: RichTextLabel
 var _flash: ColorRect
 var _volumen := 0.45
+var _ficha: PanelContainer
+var _ficha_texto: RichTextLabel
+var _ficha_datos: Dictionary = {}
+var _bienvenida: PanelContainer
 var _tw_flash: Tween
 var _tw_aviso: Tween
 var _fundido: Tween
@@ -146,7 +150,7 @@ func _ready() -> void:
 	ayuda.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ayuda.text = "\n".join([
 		"WASD caminar · shift correr · espacio saltar · clic pegar · Q esquivar",
-		"E hablar · B buscar · I bolsa · M mapa · F1 calidad · +/− volumen",
+		"E hablar · B buscar · I bolsa · M mapa · C quién sos · F1 calidad · +/− volumen",
 	])
 	ayuda.add_theme_font_size_override("font_size", 12)
 	ayuda.add_theme_color_override("font_color", TINTA_APAGADA)
@@ -844,7 +848,7 @@ func dar_bienvenida(region: Dictionary, cronica: String, pasos: Array) -> void:
 	panel.offset_left = -340; panel.offset_right = 340
 	# Creció con la lista de teclas: cuatro renglones más no entraban y el
 	# botón de entrar quedaba fuera del panel.
-	panel.offset_top = -260; panel.offset_bottom = 260
+	panel.offset_top = -300; panel.offset_bottom = 300
 	panel.add_theme_stylebox_override("panel", _caja_de(VERDE))
 
 	var col := VBoxContainer.new()
@@ -877,13 +881,33 @@ func dar_bienvenida(region: Dictionary, cronica: String, pasos: Array) -> void:
 		+ "[b]B[/b] juntar lo que haya acá · [b]I[/b] la bolsa · [b]M[/b] mapa\n"
 		+ "[b]F1[/b] calidad · [b]+/−[/b] volumen[/color]")
 	t.text = "\n".join(partes)
-	col.add_child(t)
+
+	# El texto va adentro de un contenedor que SCROLLEA, y el botón queda
+	# afuera, abajo. Sin esto pasó lo peor que le puede pasar a una pantalla de
+	# bienvenida: la premisa alargó el texto, el botón se fue abajo del borde de
+	# la pantalla, y **el panel no se podía cerrar**. El juego quedaba trabado
+	# en su propia introducción.
+	t.fit_content = true
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.add_child(t)
+	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_child(scroll)
 
 	var b := Button.new()
-	b.text = "entrar al valle"
-	b.pressed.connect(func() -> void: panel.queue_free())
+	b.text = "entrar al valle    [Esc]"
+	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var cerrar := func() -> void:
+		if is_instance_valid(panel):
+			panel.queue_free()
+		_bienvenida = null
+	b.pressed.connect(cerrar)
 	col.add_child(b)
 	add_child(panel)
+	# Y también se cierra con Escape, que es lo que cualquiera aprieta cuando
+	# un cartel no se va.
+	_bienvenida = panel
 
 
 ## Que alguien te reconozca al pasar.
@@ -1027,6 +1051,25 @@ func _unhandled_input(evento: InputEvent) -> void:
 		_buscar()
 		get_viewport().set_input_as_handled()
 		return
+	if k == KEY_ESCAPE:
+		# Escape cierra lo que esté encima, de arriba hacia abajo. Es lo que
+		# cualquiera aprieta cuando algo no se va, y hasta hoy no hacía nada
+		# fuera del chat.
+		if _bienvenida != null and is_instance_valid(_bienvenida):
+			_bienvenida.queue_free()
+			_bienvenida = null
+		elif _ficha != null and _ficha.visible:
+			_ficha.visible = false
+		elif _bolsa_panel != null and _bolsa_panel.visible:
+			_bolsa_panel.visible = false
+		elif _caja.visible:
+			_caja.visible = false
+		get_viewport().set_input_as_handled()
+		return
+	if k == KEY_C:
+		alternar_ficha()
+		get_viewport().set_input_as_handled()
+		return
 	if k == KEY_EQUAL or k == KEY_KP_ADD:
 		_volumen = minf(1.0, _volumen + 0.1)
 	elif k == KEY_MINUS or k == KEY_KP_SUBTRACT:
@@ -1035,3 +1078,62 @@ func _unhandled_input(evento: InputEvent) -> void:
 		return
 	_aplicar_volumen()
 	get_viewport().set_input_as_handled()
+
+
+## Quién sos. Se abre con C.
+##
+## Es la respuesta a "no hay stats", y la respuesta es que sí hay — sólo que
+## los stats de este juego no son fuerza y destreza, son **lo que sabés, cuánta
+## mano tenés en cada cosa, quién te lo enseñó y cómo te ve la gente.** Eso
+## vivía entero en la base y el jugador no tenía dónde verlo, que es lo mismo
+## que no existir.
+##
+## Sin un solo número, a propósito: "forja simple 47%" convierte un oficio en
+## una barra de progreso, que es justo lo que este juego no quiere ser. El
+## servidor manda las palabras ya elegidas.
+func mostrar_ficha(vos: Dictionary) -> void:
+	_ficha_datos = vos
+	if _ficha == null:
+		return
+	var l: Array[String] = ["[color=#c9a227]SOS %s[/color]" % vos.get("nombre", "")]
+
+	var saberes: Array = vos.get("saberes", [])
+	l.append("")
+	l.append("[color=#98a29c]LO QUE SABÉS HACER[/color]")
+	if saberes.is_empty():
+		l.append("[color=#7d867f]Nada todavía. Nadie nace sabiendo: alguien te lo tiene que enseñar.[/color]")
+	for x in saberes:
+		var d: Dictionary = x
+		var quien: String = str(d.get("maestro", ""))
+		l.append("· [b]%s[/b] — %s" % [d.get("nombre", ""), d.get("mano", "")])
+		if quien != "" and quien != "<null>":
+			l.append("   [color=#7d867f]te lo enseñó %s[/color]" % quien)
+
+	l.append("")
+	l.append("[color=#98a29c]CÓMO TE VE LA GENTE[/color]")
+	for x in vos.get("gente", []):
+		var d2: Dictionary = x
+		l.append("· %s, %s: [color=#a8b0a6]%s[/color]%s" % [
+			d2.get("nombre", ""), d2.get("trade", ""), d2.get("comoTeVe", ""),
+			"  [color=#ce8b84]· te teme[/color]" if d2.get("teme", false) else ""])
+
+	_ficha_texto.text = "\n".join(l)
+
+
+func alternar_ficha() -> void:
+	if _ficha == null:
+		_ficha = PanelContainer.new()
+		_ficha.anchor_left = 0.5; _ficha.anchor_right = 0.5
+		_ficha.anchor_top = 0.5; _ficha.anchor_bottom = 0.5
+		_ficha.offset_left = -320; _ficha.offset_right = 320
+		_ficha.offset_top = -280; _ficha.offset_bottom = 280
+		_ficha.add_theme_stylebox_override("panel", _caja_de(VERDE))
+		_ficha_texto = RichTextLabel.new()
+		_ficha_texto.bbcode_enabled = true
+		_ficha_texto.fit_content = true
+		_ficha_texto.scroll_active = true
+		_ficha_texto.add_theme_constant_override("line_separation", 3)
+		_ficha.add_child(_ficha_texto)
+		add_child(_ficha)
+		mostrar_ficha(_ficha_datos)
+	_ficha.visible = not _ficha.visible
