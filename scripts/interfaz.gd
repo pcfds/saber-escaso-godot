@@ -289,6 +289,29 @@ func _abrir_lo_pedido() -> void:
 	match cual:
 		"ficha": alternar_ficha()
 		"bolsa": _alternar_bolsa()
+		# La caja de diálogo, con opciones de mentira. Es la superficie que más
+		# se usa del juego y era la única de las tres que no se podía mirar en
+		# una captura: abrirla de verdad necesita que haya un NPC al lado y que
+		# el servidor conteste, o sea dos cosas que una corrida headless no
+		# controla. Sin esto, cada cambio en la caja se verificaba jugando.
+		#
+		# Los datos son fijos y cubren los tres casos que se pisan entre sí: una
+		# posible con desplegable de saberes, una posible pelada, y dos
+		# imposibles —que es lo que ejercita el plegado.
+		"charla":
+			npc_cercano = "Sarn"
+			_encabezar(npc_cercano, "dde3de")
+			_texto.text = "“No sé qué es eso. ¿Dónde lo vio?”"
+			_medir_texto(_texto.text)
+			_pintar_opciones([
+				{"verbo": "aprender", "texto": "Pedirle que te enseñe", "posible": true},
+				{"verbo": "trabajar", "texto": "Quedarte trabajando cerca", "posible": true},
+				{"verbo": "encargarse", "texto": "Ofrecerte a darle una mano",
+					"posible": false, "porque": "Sarn no necesita nada que puedas traerle"},
+				{"verbo": "dar", "texto": "Darle algo de lo que llevas",
+					"posible": false, "porque": "nada de lo que llevas le sirve a Sarn"},
+			])
+			_abrir_caja()
 
 
 func _ready() -> void:
@@ -451,9 +474,33 @@ func _enganchar_jugador() -> void:
 
 ## Los carteles siguen a lo que señalan, cuadro a cuadro. Es lo único que esta
 ## capa hace por cuadro, y son dos proyecciones de un punto: barato.
+## Desde qué distancia te fuiste de la charla. Cinco metros: el alcance para
+## hablar es 4,5, así que hay medio metro de margen y la caja no parpadea si te
+## corrés un paso.
+const CHARLA_ALCANCE := 5.0
+
+
 func _process(_dt: float) -> void:
 	if _camara == null:
 		return
+
+	# ── IRSE CAMINANDO CIERRA LA CHARLA ────────────────────────────────
+	#
+	# Dicho jugando: *"el chat siempre te traba con quien hablás"*. Y el WASD
+	# nunca estuvo bloqueado —sólo lo bloquea el campo de texto—, así que
+	# caminabas y **la caja te seguía**: seguías con las opciones de alguien que
+	# ya estaba a treinta metros, hasta que te acordaras de la tecla Escape.
+	#
+	# Esto es lo que hace que una charla se sienta una charla y no un menú:
+	# **de una conversación uno se va, no la cierra.** Escape sigue estando y
+	# el botón también; lo que se agrega es la forma en que iba a intentar
+	# salirse cualquiera que no leyó nada.
+	if _caja != null and _caja.visible and _jugador != null \
+			and is_instance_valid(_jugador) and _npc_nodo != null \
+			and is_instance_valid(_npc_nodo) \
+			and _jugador.global_position.distance_to(_npc_nodo.global_position) \
+				> CHARLA_ALCANCE:
+		cerrar_caja()
 	# Con algo abierto encima no hay carteles: el jugador está mirando el panel,
 	# no el valle, y dos textos peleando por el mismo momento es cómo se llega a
 	# "todo el UI es malo".
@@ -1252,14 +1299,45 @@ func _pintar_opciones(lista: Array) -> void:
 		nada.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_opciones.add_child(nada)
 
-	var imposibles := 0
+	# ── LO QUE TODAVÍA NO PODÉS, EN UN RENGLÓN ─────────────────────────
+	#
+	# Estaba abierto, una fila por cada imposible, y eso hacía la mitad del
+	# reclamo: *"vienen muchas opciones y no es fácil chatear o seguir el
+	# diálogo"*. Con tres posibles y dos imposibles la caja tenía **cinco
+	# renglones de opciones más el campo de texto**, y de los cinco sólo tres
+	# hacían algo. Una lista donde la mayoría de las filas son cosas que no
+	# podés hacer no informa: entorpece.
+	#
+	# No se borran, y ése es el punto: el porqué de cada una es lo que te dice
+	# qué te falta —«no llegás al aprecio», «no lleva nada que le sirva»— y es
+	# de las pocas cosas del juego que explican cómo se avanza. Van detrás de un
+	# renglón que se despliega. Cerradas por defecto: al que recién llega le
+	# importa lo que SÍ puede.
+	var cerradas: Array[Dictionary] = []
 	for o: Dictionary in lista:
-		if bool(o.get("posible", false)):
-			continue
-		if imposibles == 0:
-			_opciones.add_child(_rotulo(ROTULO_NO, TINTA_APAGADA))
-		imposibles += 1
-		_opciones.add_child(_fila_imposible(o))
+		if not bool(o.get("posible", false)):
+			cerradas.append(o)
+	var imposibles := cerradas.size()
+	if imposibles > 0:
+		var caja := VBoxContainer.new()
+		caja.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		caja.add_theme_constant_override("separation", 2)
+		caja.visible = false
+		for o in cerradas:
+			caja.add_child(_fila_imposible(o))
+
+		var tirador := Button.new()
+		tirador.flat = true
+		tirador.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		tirador.add_theme_font_size_override("font_size", 13)
+		tirador.add_theme_color_override("font_color", TINTA_APAGADA)
+		tirador.text = "▸ %s (%d)" % [ROTULO_NO, imposibles]
+		tirador.pressed.connect(func() -> void:
+			caja.visible = not caja.visible
+			tirador.text = "%s %s (%d)" % [
+				"▾" if caja.visible else "▸", ROTULO_NO, imposibles])
+		_opciones.add_child(tirador)
+		_opciones.add_child(caja)
 
 	_rotulo_actos.visible = posibles > 0
 
@@ -1272,8 +1350,10 @@ func _pintar_opciones(lista: Array) -> void:
 	_alto_deseado = ALTO_FIJO_CAJA + _alto_texto + posibles * 58.0
 	if posibles == 0 and not lista.is_empty():
 		_alto_deseado += 40.0
+	# Un renglón, no uno por imposible: van plegadas. Si el jugador las abre, la
+	# caja no crece — scrollea, que es para lo que está el `ScrollContainer`.
 	if imposibles > 0:
-		_alto_deseado += 24.0 + imposibles * 30.0
+		_alto_deseado += 30.0
 
 
 ## Una opción que sí se puede: el botón, y debajo qué hace en un renglón.
@@ -1400,6 +1480,13 @@ func _abrir_caja() -> void:
 	# y no como dos maniquíes en el mismo metro cuadrado. Se orientan y se
 	# quedan hablando mientras la caja esté abierta.
 	_ponerse_a_conversar()
+	# Y la cámara se va detrás tuyo a mirarlo. Los cuerpos ya se orientaban
+	# entre sí desde hace rato y **eso no servía de nada porque no se veían**:
+	# le hablabas a alguien adentro de una casa, la cámara se quedaba donde la
+	# habías dejado, y en pantalla había una pared. Ver `Jugador.encuadrar()`.
+	if _jugador != null and is_instance_valid(_jugador) \
+			and _jugador.has_method("encuadrar"):
+		_jugador.call("encuadrar", _npc_nodo)
 	_decir.editable = true
 	_decir.text = ""
 	# **No se roba el foco.** Antes sí, y era la mitad del enredo: abrías una
@@ -1416,6 +1503,11 @@ func cerrar_caja() -> void:
 		return
 	_caja.visible = false
 	_dejar_de_conversar()
+	# La cámara se queda donde quedó, sin volver de un salto: ya estás mirando
+	# ahí, y devolverla sería un segundo corte por el que nadie pidió.
+	if _jugador != null and is_instance_valid(_jugador) \
+			and _jugador.has_method("encuadrar"):
+		_jugador.call("encuadrar", null)
 	if _decir != null:
 		_decir.release_focus()
 	# Y el cartel vuelve. **`mostrar_cercano(npc_cercano, null)` no**: eso
@@ -2014,6 +2106,118 @@ func mostrar_pasos(lista: Array) -> void:
 		lineas.append("[color=#5f6864]y %d cosa%s más — [b]C[/b][/color]" % [
 			lista.size() - 1, "" if lista.size() == 2 else "s"])
 	_pasos.text = "\n".join(lineas)
+
+
+# ---------------------------------------------------------------------------
+# LO QUE TE ENCARGARON
+# ---------------------------------------------------------------------------
+#
+# Es la mitad visible de un sistema que existía entero y no se veía: la agenda
+# de un NPC pide un objeto, te encargás, se lo das, y el aprecio pega el salto
+# más grande que da el juego. Todo eso andaba, y **después de encargarte el
+# juego no te lo volvía a mencionar nunca.** Un objetivo que no se puede
+# consultar es un objetivo que no existe, y eso explica el *"no hay nada para
+# hacer"* dicho sobre un juego que sí tenía qué hacer.
+#
+# Va SEPARADO de «QUÉ HACER AHORA» y debajo, y la separación es la idea: aquello
+# es un motor de sugerencias —mira el mundo y adivina qué te conviene— y esto es
+# lo único de la pantalla que **otro te pidió a vos, con nombre y apellido**. Un
+# consejo se ignora sin costo; un encargo se pierde.
+#
+# No hay corte de cantidad y no hace falta: el umbral de encargo es 5 de aprecio
+# y las agendas abiertas de un NPC son una o dos. Si algún día son diez, el
+# problema no es este panel.
+
+var _encargos: RichTextLabel
+var _ultimos_encargos: Array = []
+
+
+## Lo que te encargaron y sigue abierto, tal como lo manda `/mundo`.
+func mostrar_encargos(lista: Array) -> void:
+	if _encargos == null:
+		_encargos = RichTextLabel.new()
+		_encargos.bbcode_enabled = true
+		_encargos.fit_content = true
+		_encargos.scroll_active = false
+		_encargos.anchor_top = 0.0
+		_encargos.anchor_bottom = 0.0
+		_encargos.offset_left = X_MARGEN
+		_encargos.offset_right = X_MARGEN + ANCHO_COLUMNA
+		_encargos.add_theme_constant_override("line_separation", 3)
+		_legible(_encargos)
+		add_child(_encargos)
+
+	_ultimos_encargos = lista
+	# Cuelga de abajo de «QUÉ HACER AHORA», que crece y se achica con lo que
+	# tenga. Se mide en vez de estimarse: con un `offset_top` fijo, el día que
+	# los pasos ocupen cuatro renglones los dos bloques se encaman.
+	var arriba := Y_COLUMNA + 96.0
+	if _pasos != null:
+		arriba = _pasos.offset_top + _pasos.size.y + 14.0
+	_encargos.offset_top = arriba
+
+	if lista.is_empty():
+		_encargos.text = ""
+		return
+
+	var lineas: Array[String] = ["[color=#c9a227]TE ENCARGASTE DE[/color]"]
+	for q in lista:
+		var e: Dictionary = q
+		var goal := str(e.get("goal", ""))
+		var de := str(e.get("de", ""))
+		var falta := str(e.get("falta", ""))
+		# El que está por perderse se marca, y se marca en el color del fuego.
+		# «El valle no te esperó» es una lección buena la primera vez y una
+		# estafa si el juego te lo escondió hasta que ya pasó.
+		var punta := "[color=#d4622a]![/color] " if bool(e.get("cerca", false)) else "· "
+		lineas.append("%s%s [color=#7d867f]— %s[/color]" % [punta, goal, de])
+		if falta != "":
+			lineas.append("   [color=#98a29c]le hace falta [b]%s[/b][/color]" % falta)
+		elif bool(e.get("trabado", false)):
+			lineas.append("   [color=#98a29c]preguntale qué le falta[/color]")
+	_encargos.text = "\n".join(lineas)
+
+
+# ---------------------------------------------------------------------------
+# LA ANTORCHA
+# ---------------------------------------------------------------------------
+
+var _antorcha_marca: RichTextLabel
+
+
+## `puede` es si hay fuego al lado y todavía es de noche; `resto` va de 0 a 1 si
+## la llevás prendida, y en negativo si no.
+##
+## Las dos cosas en una función y en un solo renglón de pantalla a propósito: el
+## cartel de «prendela» y la mecha que se consume nunca conviven —o tenés fuego
+## al lado o estás afuera con la antorcha— y separarlos sería dos controles para
+## dos estados que se excluyen.
+func mostrar_antorcha(puede: bool, resto: float) -> void:
+	if _antorcha_marca == null:
+		_antorcha_marca = RichTextLabel.new()
+		_antorcha_marca.bbcode_enabled = true
+		_antorcha_marca.fit_content = true
+		_antorcha_marca.scroll_active = false
+		_antorcha_marca.anchor_left = 0.0; _antorcha_marca.anchor_right = 0.0
+		_antorcha_marca.anchor_top = 1.0; _antorcha_marca.anchor_bottom = 1.0
+		_antorcha_marca.offset_left = X_MARGEN
+		_antorcha_marca.offset_right = X_MARGEN + 300
+		_antorcha_marca.offset_top = -96
+		_antorcha_marca.offset_bottom = -70
+		_legible(_antorcha_marca)
+		add_child(_antorcha_marca)
+
+	if resto >= 0.0:
+		# Cinco tramos y no un porcentaje: cuánto le queda a una antorcha no es
+		# un número que nadie mire, es «me alcanza para volver o no».
+		var llenos := clampi(int(ceil(resto * 5.0)), 0, 5)
+		var color := "#d4622a" if resto > 0.25 else "#8a3a1c"
+		_antorcha_marca.text = "[color=%s]%s[/color][color=#3a3f3c]%s[/color]  [color=#7d867f]antorcha[/color]" % [
+			color, "▮".repeat(llenos), "▮".repeat(5 - llenos)]
+	elif puede:
+		_antorcha_marca.text = "[color=#c9a227][b]X[/b][/color] [color=#98a29c]prender la antorcha[/color]"
+	else:
+		_antorcha_marca.text = ""
 
 
 ## La bienvenida. Una sola vez, al entrar: dónde estás y qué pasó acá.

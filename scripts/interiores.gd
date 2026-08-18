@@ -510,6 +510,26 @@ func actualizar(jugador: Vector3, camara: Vector3, dt := -1.0) -> void:
 	_puertas(get_process_delta_time() if dt < 0.0 else dt, jugador)
 
 
+## DÓNDE HAY FUEGO, en coordenadas del mundo.
+##
+## Existe para la antorcha (`antorcha.gd`): se prende en un fuego que existe y
+## no desde cualquier lado, y el que sabe dónde están los hogares es esto. Se
+## devuelven todos, incluso los de las casas en las que no estás parado — te
+## acercás a la puerta de cualquiera y el hogar está a metro y medio del umbral.
+##
+## Las quemadas no tienen fuego, que es de lo que se trata la Casa Quemada.
+func fuegos() -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for clave: String in _casas:
+		var c: Dictionary = _casas[clave]
+		if bool(c["quemada"]):
+			continue
+		var n: Node3D = c["nodo"]
+		if is_instance_valid(n):
+			out.append(n.to_global(HOGAR + Vector3(0.0, Detalles.CASA_PISO, 0.0)))
+	return out
+
+
 ## En qué casa estás. Lo lee `valle.gd` para decidir si tenés un puesto de
 ## trabajo al lado.
 func adentro() -> String:

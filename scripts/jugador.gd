@@ -153,6 +153,34 @@ var _sacudida_reloj := 0.0
 ## y si la sacudida se escribiera en la misma variable el lerp la iría
 ## arrastrando de vuelta y el temblor saldría untado en medio segundo.
 var _cam_suave := Vector3.ZERO
+
+## ── LA CÁMARA DE CONVERSACIÓN ──────────────────────────────────────────────
+##
+## Dicho jugando: *"perdés la persona, no sabés si te mira o no"*. Y es cierto
+## con la cámara libre: le hablás a alguien parado adentro de una casa, la
+## cámara sigue donde la dejaste, y en pantalla hay una pared. Los dos cuerpos
+## ya se orientaban entre sí desde hace rato (`Figura.conversar()`), y eso no
+## servía de nada porque **no se veían**.
+##
+## Mientras la caja está abierta, la cámara se va sola detrás tuyo, mirando al
+## otro. Es lo que hace cualquier juego con una charla, y acá hace falta más que
+## en otros: la mitad de lo que este juego te dice de alguien está en cómo te
+## mira, y hasta hoy eso se estaba dibujando fuera de cuadro.
+##
+## Tres decisiones y ninguna es de gusto:
+##
+##   · **Se mueve el YAW y nada más.** Ni el `pitch`, ni la distancia, ni un
+##     plano cerrado sobre la cara: el piso de zoom es silueta y postura, nunca
+##     la expresión (`DISENO.md` §6, decisión cerrada), y no hay caras que
+##     mostrar. Girar alcanza para que los dos entren en cuadro.
+##   · **Lerp lento y no un corte.** Un corte de cámara al abrir una charla se
+##     lee como un cambio de escena; el giro se lee como que te diste vuelta.
+##   · **Se suelta al cerrar** y la cámara se queda donde quedó, sin volver de
+##     un salto a donde estaba. El jugador ya está mirando ahí.
+var _encuadre: Node3D = null
+## Cuánto del giro va por segundo. 2,4 da poco menos de medio segundo para
+## media vuelta, que es lo que tarda alguien en darse vuelta.
+const ENCUADRE_VEL := 2.4
 ## Retroceso al recibir un golpe. Se suma a `velocity` y se apaga por
 ## rozamiento; ver `empujar()`.
 var _empuje := Vector3.ZERO
@@ -757,7 +785,26 @@ func _pesar_lo_que_llevo(dt: float) -> void:
 	cargar(int(s.call("carga")))
 
 
+## Mirá a esto mientras dure. `null` la suelta. Ver `_encuadre`.
+func encuadrar(quien: Node3D) -> void:
+	_encuadre = quien
+
+
 func _recolocar_camara(inmediato: bool) -> void:
+	# La cámara de conversación. Va antes de todo lo demás porque lo único que
+	# hace es mover `_yaw`: de ahí para abajo, esta función no se entera.
+	if _encuadre != null and is_instance_valid(_encuadre):
+		var d := global_position - _encuadre.global_position
+		if d.length_squared() > 0.04:
+			# La cámara va del lado OPUESTO al otro, o sea que mira desde atrás
+			# tuyo hacia él. Que quede él de espaldas sería la misma toma al
+			# revés y perdería justamente lo que se quiere ver.
+			var quiero := atan2(d.x, d.z)
+			# Por el camino corto. Sin esto, ir de +170° a −170° da la vuelta
+			# larga y la cámara pega un giro de 340° en media charla.
+			_yaw += wrapf(quiero - _yaw, -PI, PI) \
+				* clampf(get_process_delta_time() * ENCUADRE_VEL, 0.0, 1.0)
+
 	var desplazamiento := Vector3(
 		sin(_yaw) * cos(_pitch),
 		sin(_pitch),

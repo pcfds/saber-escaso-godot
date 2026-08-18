@@ -209,6 +209,10 @@ func _ready() -> void:
 	interfaz.conectar_api(api)
 	# Va acá y no arriba: la interfaz recién existe en esta línea.
 	jugador.tecleando = _jugador_sin_control
+	# La antorcha cuelga del jugador y necesita que exista el jugador y que las
+	# casas ya estén amuebladas — de ahí salen los hogares. Las dos cosas ya
+	# pasaron a esta altura de `_ready()`.
+	_armar_antorcha()
 
 	mapa = Mapa.new()
 	mapa.lugares = LUGARES
@@ -2146,6 +2150,10 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 	if jugador != null and jugador.figura != null:
 		jugador.figura.empunar(enMano)
 	interfaz.mostrar_pasos(datos.get("primeros_pasos", []))
+	# Y lo que te encargaron, que es lo único de la pantalla que otro te pidió a
+	# vos. Va después de los pasos porque se cuelga de abajo de ellos y necesita
+	# que ya estén medidos.
+	interfaz.mostrar_encargos(datos.get("encargos", []))
 	interfaz.mostrar_ficha(datos.get("vos", {}))
 	if mapa != null:
 		var marcas: Array = []
@@ -2345,6 +2353,14 @@ func _process(dt: float) -> void:
 	# la interfaz sólo lo dibuja.
 	var asiento := jugador.asiento_cerca()
 	interfaz.mostrar_asiento(asiento.get("nodo") if not asiento.is_empty() else null)
+
+	# La antorcha. El cartel sólo aparece de noche y junto a un fuego: de día
+	# una antorcha no es una decisión, es un botón de más.
+	if _antorcha != null:
+		var oscuro := ciclo != null and (ciclo.fraccion() < 0.23 or ciclo.fraccion() > 0.77)
+		interfaz.mostrar_antorcha(
+			oscuro and not _antorcha.prendida() and _junto_al_fuego(),
+			_antorcha.resto() if _antorcha.prendida() else -1.0)
 
 	if interiores != null:
 		var puesto := interiores.puesto_cerca(jugador.global_position)
@@ -2716,6 +2732,65 @@ func _unhandled_input(evento: InputEvent) -> void:
 		if k == KEY_M and not interfaz.escribiendo():
 			mapa.alternar()
 			get_viewport().set_input_as_handled()
+		# X: la antorcha. Ver `antorcha.gd` — se prende en un fuego que existe y
+		# se apaga sola, que es lo que la hace un recurso y no un interruptor.
+		elif k == KEY_X and not interfaz.escribiendo():
+			_alternar_antorcha()
+			get_viewport().set_input_as_handled()
 
 
 
+
+
+# ---------------------------------------------------------------------------
+# LA ANTORCHA
+# ---------------------------------------------------------------------------
+#
+# El módulo vive en `antorcha.gd` —el porqué está entero allá— y acá va lo
+# único que el módulo no puede saber: **dónde hay fuego en este valle.** El
+# fogón de la plaza lo pone `Detalles._fogon()` en `Detalles.FOGON` relativo a
+# la aldea, y los hogares los sabe `Interiores`.
+#
+# Se junta una vez y se guarda. Los fuegos de este juego no se mueven: el fogón
+# está donde está desde que se armó el valle y un hogar es parte de una casa.
+
+var _antorcha: Antorcha = null
+var _fuegos: Array[Vector3] = []
+
+
+func _armar_antorcha() -> void:
+	if jugador == null or not is_instance_valid(jugador):
+		return
+	_antorcha = Antorcha.new()
+	_antorcha.name = "Antorcha"
+	jugador.add_child(_antorcha)
+
+	_fuegos.clear()
+	var base: Vector3 = LUGARES["aldea"]["pos"]
+	_fuegos.append(Vector3(base.x + Detalles.FOGON.x, 0.0, base.z + Detalles.FOGON.z))
+	if interiores != null:
+		_fuegos.append_array(interiores.fuegos())
+
+
+func _junto_al_fuego() -> bool:
+	for f in _fuegos:
+		if Vector2(f.x, f.z).distance_to(
+				Vector2(jugador.global_position.x, jugador.global_position.z)) \
+				<= Antorcha.CERCA_DEL_FUEGO:
+			return true
+	return false
+
+
+func _alternar_antorcha() -> void:
+	if _antorcha == null:
+		return
+	if _antorcha.prendida():
+		_antorcha.apagar()
+		interfaz.avisar("Apagaste la antorcha. Lo que queda te sirve después.")
+		return
+	if _antorcha.prender(jugador.global_position, _fuegos):
+		interfaz.avisar("Prendiste la antorcha. Dura un rato, no toda la noche.")
+	else:
+		# El silencio es lo que hace que una tecla parezca rota — la misma
+		# lección que la F de sentarse. Y el aviso dice DÓNDE, no sólo que no.
+		interfaz.avisar("No hay fuego cerca. Prendela en el fogón de la plaza o en el hogar de una casa.")

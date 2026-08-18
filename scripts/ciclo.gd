@@ -33,7 +33,16 @@ var entorno: Environment
 
 ## Día del valle (el tick de la región) y en qué parte del día estamos.
 var dia := 0
-var _fraccion := 0.35          ## 0 medianoche, 0.25 amanecer, 0.5 mediodía
+## La hora del SOL: 0 medianoche, 0.25 amanecer, 0.5 mediodía, 0.75 ocaso. Es
+## lo que lee todo el mundo (`fraccion()`), y NO es proporcional al reloj — ver
+## `_curva()`.
+var _fraccion := 0.35
+## La hora del RELOJ, de 0 a 1 dentro de las seis horas reales. La manda el
+## servidor y es la misma para todos. `_fraccion` sale de acá pasando por la
+## curva; existen las dos porque el reloj tiene que seguir siendo lineal —si la
+## noche se comprimiera acumulando `dt` deformado, dos clientes con distinto
+## framerate terminarían en horas distintas.
+var _reloj := 0.35
 var _cielo: ShaderMaterial
 ## Las luciérnagas del valle. Sólo emiten de noche.
 var bichos_de_luz: Array[GPUParticles3D] = []
@@ -51,6 +60,43 @@ const LUNAR   := Color(0.52, 0.64, 0.92)
 ## Con `--hora=` puesto, el reloj queda clavado ahí y el servidor no lo mueve.
 ## Es SÓLO para verificar.
 var _hora_fija := -1.0
+
+## ── LA NOCHE DURA MENOS QUE EL DÍA ─────────────────────────────────────────
+##
+## Pedido de la dirección, textual: *"la noche debería ser más corta que el
+## día"*. Tenía razón y el motivo es geométrico, no artístico: la altura del sol
+## sale de un seno, así que **el día y la noche medían exactamente la mitad cada
+## uno**. Tres horas reales de noche por sesión, en un juego donde de noche
+## todavía no hay casi nada que hacer.
+##
+## Un tercio de noche y dos tercios de día. En tiempo real: **dos horas de noche
+## y cuatro de día** por vuelta del sol.
+##
+## Se hace deformando el reloj ANTES de calcular el ángulo, y no acelerando el
+## sol de noche: si se acelerara, el atardecer y el amanecer —que son los dos
+## momentos que más se miran— pasarían al doble de velocidad. Con la curva, los
+## bordes conservan su ritmo y lo que se come es la medianoche, que es
+## exactamente lo que sobraba.
+##
+## Es una función continua y monótona, o sea que el sol no salta nunca. Y NO
+## toca `DIA_REAL`: un día del valle sigue siendo un tick y seis horas, que es
+## el contrato con el servidor.
+const NOCHE_DEL_DIA := 1.0 / 3.0
+
+
+## Del reloj (lineal, 0..1) a la hora del sol. Ver `NOCHE_DEL_DIA`.
+##
+## Tres tramos, y los bordes coinciden por construcción:
+##   · la última parte de la noche  [0, n/2)      → el sol va de 0 a 0.25
+##   · el día entero                [n/2, 1-n/2)  → de 0.25 a 0.75
+##   · la primera parte de la noche [1-n/2, 1)    → de 0.75 a 1
+func _curva(r: float) -> float:
+	var media := NOCHE_DEL_DIA * 0.5
+	if r < media:
+		return remap(r, 0.0, media, 0.0, 0.25)
+	if r < 1.0 - media:
+		return remap(r, media, 1.0 - media, 0.25, 0.75)
+	return remap(r, 1.0 - media, 1.0, 0.75, 1.0)
 
 
 func _ready() -> void:
@@ -97,7 +143,8 @@ func sincronizar(tick_del_valle: int, segundos_en_el_dia: float) -> void:
 	dia = tick_del_valle
 	if _hora_fija >= 0.0:
 		return
-	_fraccion = fposmod(segundos_en_el_dia / DIA_REAL, 1.0)
+	_reloj = fposmod(segundos_en_el_dia / DIA_REAL, 1.0)
+	_fraccion = _curva(_reloj)
 
 
 ## Qué hora es en el valle, de 0 a 1. La lee `sonido.gd`.
@@ -111,7 +158,11 @@ func fraccion() -> float:
 
 func _process(dt: float) -> void:
 	if _hora_fija < 0.0:
-		_fraccion = fposmod(_fraccion + dt / DIA_REAL, 1.0)
+		# El que avanza es el RELOJ, que es lineal. `_fraccion` se recalcula: ver
+		# `_curva()`. Avanzar `_fraccion` directamente deformaría el paso del
+		# tiempo según en qué tramo estuvieras.
+		_reloj = fposmod(_reloj + dt / DIA_REAL, 1.0)
+		_fraccion = _curva(_reloj)
 
 	# El sol sale por el este y se pone por el oeste, inclinado — un sol que
 	# pasa justo por el cenit aplana todo al mediodía y no da sombras largas.
