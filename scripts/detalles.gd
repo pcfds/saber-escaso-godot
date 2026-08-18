@@ -1277,7 +1277,12 @@ static func _a_la_senda(p: Vector3, a: Vector3, b: Vector3) -> float:
 
 static func pasto(padre: Node3D, alturas: Callable, cantidad: int, radio: float) -> void:
 	var hoja := PrismMesh.new()
-	hoja.size = Vector3(0.09, 0.42, 0.04)
+	# 16 × 42 × 7 cm y no 9 × 42 × 4. A veintisiete metros con FOV 42 sobre 900
+	# píxeles, nueve centímetros son **1,3 píxeles de ancho**: una mata así no
+	# puede leerse como una mata, sólo como una mota. Y veintiséis mil motas son
+	# un sarpullido, que es exactamente la palabra que se usó al verlo. El alto
+	# no se toca — lo que faltaba era ancho, no altura.
+	hoja.size = Vector3(0.16, 0.42, 0.07)
 	# ===================================================================
 	# EL BUG QUE ARRASTRABA ESTE ARCHIVO, Y NO ERA UN COLOR MAL ELEGIDO.
 	#

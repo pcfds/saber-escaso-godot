@@ -254,8 +254,30 @@ const ROCA := Color(0.660, 0.642, 0.620)            ## h32  s0.06 v0.66 (V6) —
 ## Las matas del pasto en MultiMesh. Van uno o dos peldaños POR DEBAJO del
 ## suelo (V2–V4 contra V4): así se leen como textura y sombra, no como una
 ## pelusa brillante encima del terreno.
-const PASTO_MATA_OSCURA := Color(0.167, 0.210, 0.139)   ## h96 s0.34 v0.21 (V2)
-const PASTO_MATA_CLARA := Color(0.396, 0.410, 0.271)    ## h66 s0.34 v0.41 (V4)
+## ── LAS MATAS ERAN MÁS OSCURAS QUE LA TIERRA EN LA QUE CRECEN ─────────────
+##
+## Dicho jugando, mirando el suelo: *"¿qué es eso? es asqueroso"*. No era el
+## estilo y no era el pixel art: era un error de VALOR, y se midió.
+##
+## Estaban en V2 (0,21) y V4 (0,41) sobre un suelo que rinde V5 (`PASTO_SECO`,
+## 0,53). O sea **matas más oscuras que la tierra**, que en la naturaleza no
+## pasa nunca: una mata de pasto es lo que ATRAPA la luz, no lo que la tapa.
+## Medido en una captura a mediodía, sobre una franja de suelo abierto de
+## 240×550: luma media 0,265, mediana 0,32, y **el 28,8% de los píxeles por
+## debajo de 0,20**. El percentil 5 daba 0,062, o sea negro. Casi un tercio del
+## pasto era un sarpullido de puntos negros.
+##
+## Suben un peldaño y medio cada una: V4 y V6, con el suelo en V5 en el medio.
+## Ahora las matas se leen como textura del pasto —una más clara, otra más
+## oscura, alrededor del valor del suelo— y no como suciedad encima.
+##
+## Y el otro medio arreglo está en `detalles.gd`: el prisma medía 9 × 4 cm, o
+## sea **uno o dos píxeles a la distancia a la que se juega**. Una mancha de un
+## píxel no puede leerse como una forma; sólo puede leerse como ruido. Es la
+## regla 2 de la ficha de arte —la silueta hace el trabajo pesado— aplicada a la
+## cosa más chica de la escena.
+const PASTO_MATA_OSCURA := Color(0.396, 0.410, 0.271)   ## h66 s0.34 v0.41 (V4)
+const PASTO_MATA_CLARA := Color(0.632, 0.645, 0.452)    ## h64 s0.30 v0.65 (V6)
 
 const PIEDRA_SUELTA := Color(0.660, 0.646, 0.627)   ## h34 s0.05 v0.66 (V6) — puntuación clara
 

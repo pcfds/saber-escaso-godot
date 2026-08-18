@@ -1344,7 +1344,10 @@ func _punto_de(nombre: String, slug: String) -> Vector3:
 ##     que se queda con el cinturón, que es el default. Nadie de afuera lleva
 ##     el uniforme de un oficio del valle.
 func _armar_otro_jugador(nombre: String) -> Node3D:
-	var nodo := Node3D.new()
+	# Los otros jugadores también: se atravesaban igual que los vecinos, y ahí
+	# es peor todavía porque del otro lado hay alguien mirando.
+	var nodo := AnimatableBody3D.new()
+	nodo.sync_to_physics = false
 	nodo.name = "jugador_" + nombre.validate_node_name()
 	# Van ANTES de colgar la figura: su `_ready()` las lee del padre para
 	# sacarse el cuerpo del hash del nombre, y ya corrió si la agregamos antes.
@@ -1357,6 +1360,7 @@ func _armar_otro_jugador(nombre: String) -> Node3D:
 	# El nombre en el color de la gente: dos carteles distintos a la misma
 	# distancia dicen "esa es una persona y ese es un vecino" sin leerlos.
 	nodo.add_child(_cartel(nombre, COLOR_JUGADOR.lightened(0.45)))
+	_dar_cuerpo(nodo, ALTURA_JUGADOR)
 	return nodo
 
 
@@ -1642,7 +1646,9 @@ func _repartir_casas(gente: Array, slug_por_id: Dictionary) -> Dictionary:
 
 
 func _armar_vecino(nombre: String, oficio: String) -> Node3D:
-	var nodo := Node3D.new()
+	# Con cuerpo. Ver el bloque EL CUERPO DE LA GENTE al final del archivo.
+	var nodo := AnimatableBody3D.new()
+	nodo.sync_to_physics = false
 	nodo.name = "vecino_" + nombre.validate_node_name()
 	# Van ANTES de colgar la figura: su `_ready()` las lee del padre para
 	# sacarse el cuerpo del hash del nombre.
@@ -1656,6 +1662,7 @@ func _armar_vecino(nombre: String, oficio: String) -> Node3D:
 	fig.name = "Cuerpo"
 	nodo.add_child(fig)
 	nodo.add_child(_cartel(nombre))
+	_dar_cuerpo(nodo, 1.72)
 	return nodo
 
 
@@ -2867,3 +2874,55 @@ func _aparecer_donde_me_dejaron(slug: String) -> void:
 	# Y lo que se junta acá, que cuelga del lugar y lo pone `_avisar_donde_estoy`
 	# en el camino normal — el que este arranque justamente se saltea.
 	interfaz.lugar_da = LO_QUE_SE_JUNTA.get(slug, "")
+
+
+# ---------------------------------------------------------------------------
+# EL CUERPO DE LA GENTE
+# ---------------------------------------------------------------------------
+#
+# Dicho jugando: *"traspasa todo"*. De todo lo que se atraviesa en este valle
+# **lo peor es la gente**, y no por poco: este juego es sobre necesitar a
+# alguien. Un vecino al que le caminás a través no es una persona, es un cartel
+# con piernas, y eso desmiente en un paso todo lo que el diálogo intenta
+# construir en diez minutos.
+#
+# La causa es de una línea y llevaba ahí desde el principio: `Figura extends
+# Node3D`. Los bichos tienen cuerpo desde hace días (`fauna.gd`), los monstruos
+# son `CharacterBody3D`, los muros son tabique por tabique — y las personas, que
+# son el tema del juego, no tenían nada.
+#
+# ── POR QUÉ `AnimatableBody3D` Y POR QUÉ SIN `sync_to_physics` ─────────────
+#
+# `AnimatableBody3D` porque se mueven: la gente hace rondas de tres a cinco
+# paradas. Un `StaticBody3D` que se teletransporta cada cuadro deja la colisión
+# atrás.
+#
+# Pero **sin `sync_to_physics`, y ahí me aparto de `fauna.gd` a propósito.** Con
+# la sincronización puesta el cuerpo EMPUJA al que tiene encima, que para una
+# vaca está perfecto — una vaca que te corre es una vaca. Para un vecino no:
+# los cuartos miden 4,86 m, la gente duerme adentro, y un aldeano haciendo su
+# ronda te acorralaría contra la pared de su propia casa. Eso es exactamente el
+# *"se traba"* que costó dos arreglos esta semana, reinventado.
+#
+# Así queda la regla que se quería: **no podés atravesar a nadie, y nadie te
+# empuja nunca.** Si alguien camina hacia vos, te atraviesa él; el que no pasa
+# sos vos. Es asimétrico y es la asimetría correcta — la frustración de quedar
+# trabado es del jugador, y el que no la puede sufrir es el NPC.
+#
+# La cápsula es más angosta que la silueta (0,34 contra ~0,45 de hombros) por lo
+# mismo: pasar rozando entre dos vecinos tiene que salir.
+
+## El radio del cuerpo de una persona. Ver arriba: angosto a propósito.
+const RADIO_PERSONA := 0.34
+
+
+## Le cuelga el cuerpo a un nodo de gente. Lo usan los vecinos y los otros
+## jugadores, que se atravesaban igual.
+func _dar_cuerpo(nodo: Node3D, altura: float) -> void:
+	var forma := CollisionShape3D.new()
+	var cap := CapsuleShape3D.new()
+	cap.radius = RADIO_PERSONA
+	cap.height = altura
+	forma.shape = cap
+	forma.position.y = altura * 0.5
+	nodo.add_child(forma)
