@@ -34,6 +34,23 @@ const LUGARES := {
 	"bosque": {"pos": Vector3(-58, 0, -54),  "color": Paleta.COPA,        "casas": 0, "nombre": "El Sotobosque"},
 	"ruina":  {"pos": Vector3(-26, 0, -108), "color": Paleta.MURO_RUINA,  "casas": 3, "nombre": "La Casa Quemada"},
 	"camino": {"pos": Vector3(11, 0, 74),    "color": Paleta.LOSA_CAMINO, "casas": 0, "nombre": "El Camino del Norte"},
+	# EL SEGUNDO PUEBLO. Río arriba, a 97 metros de Vado Bajo — de lejos el
+	# tramo más largo que se camina en este valle, y a propósito: **el pueblo
+	# nuevo tiene que costar el viaje**, o es un barrio de Vado Bajo con otro
+	# nombre. Lo que hay allá y no acá está en el servidor
+	# (`20260818030000_sauce_quebrado.sql`): el emplasto de sauce, que es el
+	# único saber del juego que no se puede practicar en la aldea.
+	#
+	# La posición se eligió contra el río, no a ojo. El agua es un plano de 430
+	# de largo por 15 de ancho, centrado en (0, 26) y girado 9°, así que a
+	# x = −96 la orilla cae en z ≈ 41. Con cinco casas el caserío llega a z ≈ 29:
+	# quedan doce metros de pasto entre la última casa y el agua. Con el centro
+	# en z = 26 —que era lo primero que puse— las casas de atrás hubieran
+	# quedado adentro del río.
+	#
+	# Cinco casas para tres habitantes. Las dos que sobran quedan cerradas y eso
+	# es lo que se quiere decir: acá vivía más gente.
+	"sauce":  {"pos": Vector3(-96, 0, 16),   "color": Paleta.MURO_ALDEA,  "casas": 5, "nombre": "Sauce Quebrado"},
 }
 
 ## Lo más común que se junta en cada lugar. Espeja la tabla del servidor —
@@ -46,6 +63,7 @@ const LO_QUE_SE_JUNTA := {
 	"camino": "piedra de afilar",
 	"aldea": "caña de la orilla",
 	"fragua": "",
+	"sauce": "corteza de sauce",
 }
 
 const RADIO_VALLE := 165.0
@@ -2094,6 +2112,7 @@ func _al_recibir_mundo(datos: Dictionary) -> void:
 	var region: Dictionary = datos.get("region", {})
 	var yo: Dictionary = datos.get("player", {})
 	_mi_nombre = str(yo.get("name", _mi_nombre))
+	_aparecer_donde_me_dejaron(str(yo.get("place_slug", "")))
 	interfaz.mostrar_region(region, yo)
 	_sincronizar_mi_estado(yo)
 
@@ -2399,6 +2418,22 @@ func _process(dt: float) -> void:
 ## bichos muerden a quien está ahí, y los testigos de lo que hacés son los que
 ## están ahí. Caminar sin reportar es caminar en una postal.
 func _avisar_donde_estoy() -> void:
+	# HASTA QUE EL MUNDO NO DIGA DÓNDE ESTABAS, ACÁ NO SE AFIRMA NADA.
+	#
+	# Sin esto, el arranque era una carrera y **la ganaba el cliente**: el cuerpo
+	# nace en (0, 8), o sea pegado a Vado Bajo, esto corre en el primer cuadro y
+	# le manda `estoy_en('aldea')` al servidor antes de que llegue la primera
+	# respuesta de `/mundo`. Resultado, medido moviendo al jugador de prueba a
+	# Sauce Quebrado y volviendo a entrar: **la fila decía sauce, el cliente la
+	# pisaba con aldea, y el `/mundo` que llegaba después ya decía aldea.**
+	# Aparecías donde nunca te acostaste y el mundo registraba el viaje.
+	#
+	# La posición la manda el cliente (invariante 4) y por eso mismo el cliente
+	# tiene que saber de dónde parte antes de abrir la boca. Con un solo pueblo
+	# esto no se podía notar: la única salida del valle está a doce metros del
+	# punto donde nacía el cuerpo.
+	if not _ya_aparecio:
+		return
 	var yo := Vector2(jugador.global_position.x, jugador.global_position.z)
 	var cerca := ""
 	var d_min := ENTRAR
@@ -2794,3 +2829,41 @@ func _alternar_antorcha() -> void:
 		# El silencio es lo que hace que una tecla parezca rota — la misma
 		# lección que la F de sentarse. Y el aviso dice DÓNDE, no sólo que no.
 		interfaz.avisar("No hay fuego cerca. Prendela en el fogón de la plaza o en el hogar de una casa.")
+
+
+## APARECER DONDE TE DEJÓ EL MUNDO.
+##
+## El cuerpo nacía en (0, 8) escrito a mano en `_armar_jugador()`, o sea al lado
+## de Vado Bajo, sin importar lo que dijera el servidor. Con un solo pueblo eso
+## no se notaba nunca —la única salida del valle es a doce metros de ahí—. Con
+## dos, **cerrás el juego en Sauce Quebrado y volvés a aparecer a noventa y
+## siete metros**, sin haber caminado.
+##
+## Y no es sólo comodidad: la posición la manda el cliente (`/estoy`), así que
+## el servidor le hubiera creído. Un jugador que se acostó allá amanece acá y el
+## mundo registra el viaje que no hizo — es el invariante 4 al revés.
+##
+## Una vez y nada más, en la primera respuesta. Hacerlo en cada `/mundo` sería
+## pelearle a la caminata: la ruta se pega cada cinco segundos y el cuerpo
+## volvería al centro del pueblo cada vez que te alejaras.
+var _ya_aparecio := false
+
+func _aparecer_donde_me_dejaron(slug: String) -> void:
+	if _ya_aparecio:
+		return
+	_ya_aparecio = true
+	if slug == "" or not LUGARES.has(slug) or jugador == null \
+			or not is_instance_valid(jugador):
+		return
+	# Al borde del lugar y no al centro: el centro de un caserío es el fogón, y
+	# aparecer arriba del fuego —o adentro de una casa— es peor que aparecer
+	# lejos. Doce metros al sur es afuera del anillo de adelante y adentro del
+	# radio con que el servidor considera que estás en el lugar.
+	var centro: Vector3 = LUGARES[slug]["pos"]
+	var p := Vector3(centro.x, 0.0, centro.z + 12.0)
+	jugador.global_position = Vector3(p.x, altura_en(p.x, p.z) + 2.0, p.z)
+	jugador.velocity = Vector3.ZERO
+	_lugar_actual = slug
+	# Y lo que se junta acá, que cuelga del lugar y lo pone `_avisar_donde_estoy`
+	# en el camino normal — el que este arranque justamente se saltea.
+	interfaz.lugar_da = LO_QUE_SE_JUNTA.get(slug, "")

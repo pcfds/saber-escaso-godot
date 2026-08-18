@@ -1235,6 +1235,11 @@ const SENDAS := [
 	[Vector3(0, 0, 0),   Vector3(62, 0, -18)],   # la aldea y la fragua
 	[Vector3(0, 0, 0),   Vector3(11, 0, 74)],    # la aldea y el camino del norte
 	[Vector3(62, 0, -18), Vector3(11, 0, 74)],   # la fragua y el camino
+	# La aldea y Sauce Quebrado, río arriba. Es el tramo más largo del valle —97
+	# metros— y por eso es el que más falta le hacía: un pueblo al que se llega
+	# cruzando pasto abierto no se lee como un pueblo del valle, se lee como un
+	# sitio que apareció ahí. La senda es lo que dice que hay ida y vuelta.
+	[Vector3(0, 0, 0),   Vector3(-96, 0, 16)],
 ]
 const ANCHO_SENDA := 3.1
 

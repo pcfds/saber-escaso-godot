@@ -222,6 +222,7 @@ const LUGARES_DEFECTO := {
 	"bosque": Vector3(-58, 0, -54),
 	"ruina": Vector3(-26, 0, -108),
 	"camino": Vector3(11, 0, 74),
+	"sauce": Vector3(-96, 0, 16),
 }
 
 ## Tipos de planta. El tipo decide en qué MultiMesh cae.
@@ -614,6 +615,17 @@ func _campo(x: float, z: float, r: float) -> Dictionary:
 	d *= smoothstep(4.6, 7.4, d_cam)            # el camino queda libre
 	d *= smoothstep(11.0, 22.0, p.distance_to(VADO))   # el vado
 	d *= smoothstep(36.0, 54.0, d_ruina)        # el páramo de la Casa Quemada
+	# SAUCE QUEBRADO. El claro se agregó DESPUÉS de mirar la captura y no antes:
+	# el pueblo entró al valle sin claro propio, y como cae a diecisiete metros
+	# de la orilla se comió la densidad de ribera entera —0,63— con lo cual
+	# **nació adentro del bosque**, con un árbol plantado entre dos casas.
+	#
+	# El claro es más chico que el de la aldea (19→42) a propósito: son cinco
+	# casas y no once, y **un pueblo con el monte encima es lo que tiene que
+	# parecer.** Lo que hace falta es que no haya troncos entre los techos, no
+	# que quede un prado.
+	var c_sauce: Vector3 = _lugares.get("sauce", Vector3(-96, 0, 16))
+	d *= smoothstep(16.0, 33.0, p.distance_to(Vector2(c_sauce.x, c_sauce.z)))
 	# La Puerta del Norte. Adentro de una mole de roca no crece nada, y al pie
 	# tampoco: es pedrero. Se pregunta a `Hitos` en vez de copiar acá las
 	# coordenadas porque el día que la puerta se mueva un metro, se mueve sola.
